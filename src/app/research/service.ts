@@ -1,3 +1,4 @@
+import { withWikiProjectCommit } from "@/app/wiki/commit"
 import { createTaskRuntime } from "@/modules/tasks"
 import {
   createResearchExecutor,
@@ -22,7 +23,7 @@ import { anyTxtSearchSmart, hasConfiguredAnyTxt } from "@/lib/anytxt-search"
 import { hasConfiguredSearchProvider, resolveSearchConfig, webSearch } from "@/lib/web-search"
 import { streamChat } from "@/lib/llm-client"
 import { currentWikiDate } from "@/lib/ingest"
-import { fileExists, writeFile, readFile } from "@/commands/fs"
+import { fileExists, readFile } from "@/commands/fs"
 import { useWikiStore, type LlmConfig, type SearchApiConfig } from "@/stores/wiki-store"
 import { useResearchStore } from "@/stores/research-store"
 import { normalizePath } from "@/lib/path-utils"
@@ -502,18 +503,21 @@ async function executeResearch(
         )
         if (failure) throw failure
       },
-      save: async (input, synthesis, references, context) => {
-        const { fileName, date } = makeDeepResearchFileName(input.topic)
-        const taskFileName = addResearchTaskDiscriminator(fileName, context.taskId)
-        const filePath = await makeAvailableResearchFilePath(
-          `${input.projectPath}/wiki/queries`,
-          taskFileName,
-        )
-        context.assertCurrent()
-        const pageContent = buildResearchPageContent(input.topic, date, synthesis, references)
-        await writeFile(filePath, pageContent)
-        return filePath.slice(`${input.projectPath}/`.length)
-      },
+      save: (input, synthesis, references, context) =>
+        withWikiProjectCommit(input.projectPath, async (commit) => {
+          context.assertCurrent()
+          const { fileName, date } = makeDeepResearchFileName(input.topic)
+          const taskFileName = addResearchTaskDiscriminator(fileName, context.taskId)
+          const filePath = await makeAvailableResearchFilePath(
+            `${input.projectPath}/wiki/queries`,
+            taskFileName,
+            (path) => commit.exists(path),
+          )
+          context.assertCurrent()
+          const pageContent = buildResearchPageContent(input.topic, date, synthesis, references)
+          await commit.write(filePath, pageContent)
+          return filePath.slice(`${input.projectPath}/`.length)
+        }),
       update: (id, patch) => {
         updateTaskIfActive(pp, id, patch)
       },

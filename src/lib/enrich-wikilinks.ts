@@ -1,3 +1,5 @@
+import { withProjectLock } from "@/lib/project-mutex"
+import { withWikiProjectCommit } from "@/app/wiki/commit"
 import { listDirectory, readFile, writeFile } from "@/commands/fs"
 import type { FileNode } from "@/types/wiki"
 import { streamChat } from "./llm-client"
@@ -104,12 +106,23 @@ export async function enrichWithWikilinks(
       })
   if (links.length === 0) return // nothing to do
 
-  // Apply substitutions to the ORIGINAL content. This guarantees the only
+  // Apply substitutions to the latest committed content. This guarantees the only
   // change is inserted [[...]] brackets.
-  const enriched = applyLinks(content, links)
-  if (enriched === content) return
-
-  await writeFile(fp, enriched)
+  const applyLatest = async (
+    read: (path: string) => Promise<string>,
+    write: (path: string, content: string) => Promise<void>,
+  ) => {
+    const current = await read(fp)
+    const enriched = applyLinks(current, links)
+    if (enriched === current) return false
+    await write(fp, enriched)
+    return true
+  }
+  const changed = fp.startsWith(`${pp.replace(/\/+$/, "")}/wiki/`)
+    ? await withWikiProjectCommit(pp, (commit) => applyLatest(commit.read, commit.write))
+    // Preserve legacy utility callers that enrich a non-Wiki project file.
+    : await withProjectLock(pp, () => applyLatest(readFile, writeFile))
+  if (!changed) return
   useWikiStore.getState().bumpDataVersion()
 }
 

@@ -1,3 +1,4 @@
+import { saveGeneratedQuery, saveGeneratedReviewPages } from "@/app/wiki/generated-pages"
 import { useCallback, useMemo, useState } from "react"
 import { queueResearch, queueResearchBatch } from "@/lib/deep-research"
 import {
@@ -15,13 +16,11 @@ import {
 import { Button } from "@/components/ui/button"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
 import { useWikiStore } from "@/stores/wiki-store"
-import { writeFile, readFile, deleteFile, fileExists } from "@/commands/fs"
+import { readFile, deleteFile } from "@/commands/fs"
 import { normalizePath } from "@/lib/path-utils"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { hasConfiguredDeepResearchSources } from "@/lib/web-search"
-import { makeQueryFileName } from "@/lib/wiki-filename"
-import { availableReviewPageFileName, createReviewPageDrafts } from "@/lib/review-create-page"
-import { cleanAssistantContentForWikiSave, titleFromCleanAssistantContent } from "@/lib/chat-save-to-wiki"
+import { createReviewPageDrafts } from "@/lib/review-create-page"
 import { useTranslation } from "react-i18next"
 import { useAppDialog } from "@/stores/app-dialog-store"
 import { useResearchStore } from "@/stores/research-store"
@@ -123,33 +122,9 @@ export function ReviewView() {
         const encoded = action.slice(5)
         const content = decodeURIComponent(atob(encoded))
 
-        const cleanContent = cleanAssistantContentForWikiSave(content)
-        const title = titleFromCleanAssistantContent(cleanContent)
-        const { date, fileName } = makeQueryFileName(title)
-        const filePath = `${pp}/wiki/queries/${fileName}`
-
-        const frontmatter = `---\ntype: query\ntitle: "${title.replace(/"/g, '\\"')}"\ncreated: ${date}\ntags: []\n---\n\n`
-        const pageContent = frontmatter + cleanContent
-        await writeFile(filePath, pageContent)
-
-        // Update index
-        const indexPath = `${pp}/wiki/index.md`
-        let indexContent = ""
-        try { indexContent = await readFile(indexPath) } catch { indexContent = "# Wiki Index\n" }
-        const linkTarget = fileName.replace(/\.md$/, "")
-        const entry = `- [[queries/${linkTarget}|${title}]]`
-        if (indexContent.includes("## Queries")) {
-          indexContent = indexContent.replace(/(## Queries\n)/, (match) => `${match}${entry}\n`)
-        } else {
-          indexContent = indexContent.trimEnd() + "\n\n## Queries\n" + entry + "\n"
-        }
-        await writeFile(indexPath, indexContent)
-
-        // Append log
-        const logPath = `${pp}/wiki/log.md`
-        let logContent = ""
-        try { logContent = await readFile(logPath) } catch { logContent = "# Wiki Log\n" }
-        await writeFile(logPath, logContent.trimEnd() + `\n- ${date}: Saved query page \`${fileName}\`\n`)
+        const { filePath, pageContent } = await saveGeneratedQuery(pp, content)
+        if (useWikiStore.getState().project?.id !== project.id
+          || normalizePath(useWikiStore.getState().project?.path ?? "") !== pp) return
 
         await refreshProjectFileTree(pp, {
           projectId: project.id,
@@ -244,52 +219,9 @@ export function ReviewView() {
           setReviewWorking(id, true)
           setReviewError(id, null)
           const drafts = createReviewPageDrafts(item, realAction)
-          const created: Array<{
-            title: string
-            dir: string
-            fileName: string
-            filePath: string
-            pageContent: string
-            pageType: string
-            date: string
-          }> = []
-
-          for (const draft of drafts) {
-            const { date, fileName } = await availableReviewPageFileName(
-              draft.title,
-              (candidate) => fileExists(`${pp}/wiki/${draft.dir}/${candidate}`),
-            )
-            const filePath = `${pp}/wiki/${draft.dir}/${fileName}`
-            const frontmatter = `---\ntype: ${draft.pageType}\ntitle: "${draft.title.replace(/"/g, '\\"')}"\ncreated: ${date}\ntags: []\nrelated: []\n---\n\n`
-            const body = `# ${draft.title}\n\n${item.description}\n`
-            const pageContent = frontmatter + body
-            await writeFile(filePath, pageContent)
-            created.push({ title: draft.title, dir: draft.dir, fileName, filePath, pageContent, pageType: draft.pageType, date })
-          }
-
-          // Update index
-          const indexPath = `${pp}/wiki/index.md`
-          let indexContent = ""
-          try { indexContent = await readFile(indexPath) } catch { indexContent = "# Wiki Index\n" }
-          for (const createdPage of created) {
-            const sectionHeader = `## ${createdPage.dir.charAt(0).toUpperCase() + createdPage.dir.slice(1)}`
-            const linkTarget = createdPage.fileName.replace(/\.md$/, "")
-            const entry = `- [[${createdPage.dir}/${linkTarget}|${createdPage.title}]]`
-            if (indexContent.includes(sectionHeader)) {
-              indexContent = indexContent.replace(new RegExp(`(${sectionHeader}\n)`), (match) => `${match}${entry}\n`)
-            } else {
-              indexContent = indexContent.trimEnd() + `\n\n${sectionHeader}\n${entry}\n`
-            }
-          }
-          await writeFile(indexPath, indexContent)
-
-          // Log
-          const logPath = `${pp}/wiki/log.md`
-          let logContent = ""
-          try { logContent = await readFile(logPath) } catch { logContent = "# Wiki Log\n" }
-          const createdNames = created.map((p) => `\`${p.fileName}\``).join(", ")
-          const logDate = created[0]?.date ?? makeQueryFileName("review").date
-          await writeFile(logPath, logContent.trimEnd() + `\n- ${logDate}: Created ${created.length} page${created.length === 1 ? "" : "s"} from review: ${createdNames}\n`)
+          const created = await saveGeneratedReviewPages(pp, drafts, item.description)
+          if (useWikiStore.getState().project?.id !== project.id
+          || normalizePath(useWikiStore.getState().project?.path ?? "") !== pp) return
 
           await refreshProjectFileTree(pp, {
             projectId: project.id,

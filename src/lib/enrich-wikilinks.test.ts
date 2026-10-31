@@ -207,3 +207,15 @@ describe("enrichWithWikilinks — JSON-based substitution", () => {
     expect(mockStreamChat).not.toHaveBeenCalled()
   })
 })
+
+it("applies generated links to the latest committed body without overwriting a concurrent edit",async()=>{
+ let current="# Page\nTransformer text."
+ mockReadFile.mockImplementation(async(path)=>path.endsWith("index.md")?"# Index\nTransformer":current)
+ mockStreamChat.mockImplementation(async(_config,_messages,callbacks)=>{
+  current+="\nA human edit arrived during generation."
+  callbacks.onToken('{"links":[{"term":"Transformer","target":"transformer"}]}')
+ })
+ await enrichWithWikilinks("/p","/p/wiki/f.md",fakeLlmConfig())
+ expect(mockWriteFile).toHaveBeenCalledWith("/p/wiki/f.md",expect.stringContaining("A human edit arrived during generation."))
+ expect(mockWriteFile).toHaveBeenCalledWith("/p/wiki/f.md",expect.stringContaining("[[Transformer]]"))
+})

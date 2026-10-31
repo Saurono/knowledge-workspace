@@ -1,12 +1,12 @@
 # 新会话交接
 
-> 当前状态：已按用户最新要求暂停。当前 B08c2 已完成；下一项 B08c3 尚未开始，需等待用户恢复工作指令。
+> 当前状态：B08c3 已完成。用户最新要求完成到 B09 后暂停，继续 B08c4 与 B09。
 
 ## 先读与工作约定
 
 1. 读本文件、[TASKS](TASKS.md)、[WORKLOG](WORKLOG.md)、[ARCHITECTURE](ARCHITECTURE.md)。检查实际 Git 分支、状态和日志，不假设旧后台进程存在。
 2. TASKS 是状态入口。完成一项就勾选、追加 WORKLOG（实现/验证/限制）、更新本交接点并提交；不能只更新复选框。
-3. 用户此前要求每项完成后自动继续，但**最新指令是完成当前任务后暂停**，因此现在不得自动开始新任务。用户明确恢复后，再按其新指令推进。
+3. 用户最新指令是**完成到 B09 后暂停**；先完成 B08c4，再推进 B09，完成后停止，不自动开始 B10。
 4. 保持小批次可回归迁移，业务放模块，通过公开 API 和端口组合。旧调用者迁完才删兼容入口；新模块不得依赖旧 Store/Tauri/文件系统。
 5. 后续仓库默认公开，推送到用户 origin；不加入真实笔记、凭据或机密。当前工作目录 `/workspace/llm_wiki`，新环境路径变化时重新定位。
 
@@ -31,21 +31,21 @@
 - B07a/B07b：documents 来源规则/目录/修订查询，app/document-records 保持旧聚合格式；本地监听/定时导入登记原路径，来源移动协调目录和 Wiki 引用/摘要时间，历史回执不改。跨文件失败恢复不是事务。B07c 新 API/MCP 统一入口依赖 C02/I02；B07 总项未完成。
 - B08a/B08b：Wiki 页面仓储、修订冲突接口与编辑预览接入；合并服务和正文链接规则迁出，解析/模型/备份由端口注入。旧编辑器仍用无条件保存，冲突提示和完整历史统一待后续。
 - B08c1：单条/批量纠错在项目锁内变换最新内容，跳过无变化写入；并发补建页只创建一次。
-- **B08c2（本次收尾）**：documents 文件历史模型和服务、app/wiki 历史查询/恢复适配、wiki/ui 受控展示；Wiki Markdown 也有历史入口。查询/恢复晚到结果按文件/项目世代丢弃，恢复使用项目提交锁；原生历史库格式与命令保留。Rust 原生运行未验收。
+- **B08c2**：documents 文件历史模型和服务、app/wiki 历史查询/恢复适配、wiki/ui 受控展示；Wiki Markdown 也有历史入口。查询/恢复晚到结果按文件/项目世代丢弃，恢复使用项目提交锁；原生历史库格式与命令保留。Rust 原生运行未验收。
 
 现有本地数据格式仍兼容：workspace.json v1、ingest-records.json v1、队列数组、project.json 及 app-state.json 原 key。未实现生产账号/授权、共享记忆后端、生产 Web 服务；模拟预览不能证明这些能力存在。
 
-## 恢复后的下一步（当前暂停）
+## 下一步
 
-下一项 B08c3：迁移生成/入库写入，必须显式传递提交上下文，避免已有项目锁内再次加锁造成死锁。
+B08c3 已完成：Wiki application 提供有生命周期的提交上下文，app/wiki 装配共享项目锁和原生读写；上下文在回调结束后关闭，并等待已启动的 I/O 结束才释放锁。入库显式传入该上下文，复用队列提交回合，不再在内部重复获取项目锁。
 
-只读梳理结果，尚无该项代码修改：
+- 覆盖入库正文/目录/概览/日志/旧摘要迁移/图片注入、补充生成、对话与审阅发布、研究落盘、去重合并及链接增强。
+- 页面服务仍只接收 Markdown；提交存储接口保留 wiki/ 下非 Markdown 输出兼容。缓存、检查点、警告和备份 sidecar 保持原路径/写入语义。
+- 对话/审阅共用发布服务，锁内分配文件名并更新最新目录/日志，保留审阅稳定名优先。读取已有目录失败不会伪造空目录覆盖。
+- 去重提交前验证模型输入快照，正文变动则要求重试；目录独立处理并保留模型准备期间新增条目。链接增强基于最新正文应用结果。
+- 这不是跨文件回滚事务；失败保留已完成写入。保留原生写入与历史格式，不代表身份授权、跨进程锁或生产 Web 后端完成。
 
-- `lib/ingest.ts` autoIngestImpl 的 runCommit 已包项目锁（两处回调）；executeIngestWrites 也包项目锁。
-- Wiki 写入分布在 writeFileBlocks、更新 index/overview、旧摘要迁移、图片注入和 executeIngestWritesImpl。应通过一个有生命周期的提交 writer 复用原锁，再逐个传参。
-- ingest-warnings.log、generation checkpoint、解析缓存和备份是 sidecar，不应误作为 Wiki 页面迁移。
-- 旧 isSafeIngestPath 允许 wiki/ 下非 Markdown 文件；提交作用域须区分通用 Wiki 存储路径与 Markdown 页面接口，避免无故改变旧行为。
-- 再处理 B08c4 元数据归属/版本历史统一/编辑器冲突 UI；B08/B08c 均保持未完成。其后按清单推进 B09 等。
+下一项 B08c4：Wiki 元数据归属、版本历史统一与编辑器冲突 UI/平台解耦，**下一项，用户已授权继续**。B08/B08c 保持未完成；B07c 仍依赖 C02/I02。
 
 ## 验证与启动
 
@@ -58,10 +58,10 @@ npm run build
 npm run build:preview
 ```
 
-最新完整模拟回归：160 文件 / 2168 项通过。十二模块边界、类型、正式/预览构建通过。历史相关契约/文件接口 33 项通过；Chromium 验证历史入口、选择/恢复、预览更新与项目 ABA 切换丢弃迟到结果，页面异常为 0。
+最新完整模拟回归：164 文件 / 2192 项通过。十二模块边界、类型、正式/预览构建通过。新增提交/发布/并发防丢失测试通过。Chromium 验证对话保存、审阅保存/建页、目录/日志和审阅完成状态，页面异常及外部请求均为 0；先前历史/项目 ABA 浏览器验证保留。
 
 - 真实模型、真实 Vault、原生 Rust/watcher/桌面安装包尚未验收；本环境此前没有 cargo，新环境重新检查。
 - `npm run dev` 是前端；桌面需 `npm run tauri dev` 与 Rust/Tauri 依赖。
 - 显式沙箱入口 preview.html / src/preview，构建为 dist-preview/preview.html，使用模拟文件系统和合成数据。
-- 可复现浏览器脚本在 analysis/implementation：smoke-task-ui.mjs、smoke-wiki-repository.mjs、smoke-file-history.mjs；需要 PLAYWRIGHT_MODULE、CHROMIUM_PATH 与 Vite。禁止将夹具脚本指向真实知识库。
+- 可复现浏览器脚本在 analysis/implementation：smoke-task-ui.mjs、smoke-wiki-repository.mjs、smoke-file-history.mjs、smoke-generated-pages.mjs；需要 PLAYWRIGHT_MODULE、CHROMIUM_PATH 与 Vite。禁止将夹具脚本指向真实知识库。
 - `/tmp` 工具、端口与 `/workspace/artifacts` 预览是环境临时产物，不保证新会话存在。新增测试避免放进被忽略的 tests/ 目录。

@@ -18,15 +18,20 @@ export class WikiRevisionConflict extends Error {
     this.name = "WikiRevisionConflict"
   }
 }
-/** Storage-relative Markdown paths; authorization/symlink checks belong to adapters. */
-export function canonicalWikiPagePath(path: string): string {
+/** Wiki storage paths may include non-Markdown outputs used by legacy generators. */
+export function canonicalWikiStoragePath(path: string): string {
   const normalized = path.replace(/\\/g, "/")
   if (
     !normalized.startsWith("wiki/") ||
-    !/\.md$/i.test(normalized) ||
     normalized.includes("\0") ||
     normalized.split("/").some((part) => !part || part === "." || part === "..")
   )
-    throw new Error("Expected a Markdown page path inside wiki/")
+    throw new Error("Expected a storage path inside wiki/")
   return normalized
+}
+/** Storage-relative Markdown paths; authorization/symlink checks belong to adapters. */
+export function canonicalWikiPagePath(path: string): string {
+  const canonical = canonicalWikiStoragePath(path)
+  if (!/\.md$/i.test(canonical)) throw new Error("Expected a Markdown page path inside wiki/")
+  return canonical
 }

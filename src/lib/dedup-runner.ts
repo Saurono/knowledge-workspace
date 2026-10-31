@@ -1,3 +1,4 @@
+import { withWikiProjectCommit } from "@/app/wiki/commit"
 /**
  * I/O wrapper that connects the pure dedup algorithm in dedup.ts
  * to the project's filesystem + LLM. The UI layer calls these
@@ -425,7 +426,9 @@ export async function executeMerge(
   }
 
   const groupPaths = new Set(groupPages.map((p) => p.path))
-  const otherPages = allPages.filter((p) => !groupPaths.has(p.path))
+  // The index is a live navigation listing, removed entries are handled under
+  // the commit lock below rather than redirected as ordinary body links.
+  const otherPages = allPages.filter((p) => !groupPaths.has(p.path) && p.path !== "wiki/index.md")
 
   // Merge rewrites a COMPLETE page that gets written to disk, so it gets
   // the generous merge budget — never the small detection cap, which
@@ -441,46 +444,55 @@ export async function executeMerge(
     { signal: options.signal },
   )
 
-  // 2. Snapshot backup before any writes. If a write fails partway
-  //    through, the user has the pre-merge state intact in
-  //    .llm-wiki/page-history/.
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-")
-  const backupDir = `${pp}/.llm-wiki/page-history/dedup-${stamp}`
-  for (const b of result.backup) {
-    const sanitized = b.path.replace(/[/\\]/g, "_")
-    await writeFile(`${backupDir}/${sanitized}`, b.content)
-  }
-
-  // 3. Write canonical
-  await writeFile(`${pp}/${result.canonicalPath}`, result.canonicalContent)
-
-  // 4. Apply rewrites
-  for (const r of result.rewrites) {
-    await writeFile(`${pp}/${r.path}`, r.newContent)
-  }
-
-  // 5. Delete merged-away pages
-  for (const dead of result.pagesToDelete) {
-    try {
-      await deleteFile(`${pp}/${dead}`)
-    } catch (err) {
-      // Surface as a warning — backup is still safe.
-      console.warn(`[dedup] failed to delete ${dead}: ${err}`)
+  await withWikiProjectCommit(pp, async (commit) => {
+    const assertNotAborted = () => {
+      if (options.signal?.aborted) throw new DOMException("Merge cancelled", "AbortError")
     }
-  }
-
-  // 6. Rewrite index.md to drop merged-away entries.
-  const indexPath = `${pp}/wiki/index.md`
-  const indexEntry = allPages.find((p) => p.path === "wiki/index.md")
-  if (indexEntry) {
-    const removed = new Set(
-      group.slugs.filter((s) => s !== canonicalSlug),
-    )
-    const rewritten = rewriteIndexMd(indexEntry.content, removed)
-    if (rewritten !== indexEntry.content) {
-      await writeFile(indexPath, rewritten)
+    assertNotAborted()
+    // Model preparation runs outside the lock. Never overwrite/delete a page
+    // whose content changed while the model was producing the merge.
+    for (const backup of result.backup) {
+      if ((await commit.read(`${pp}/${backup.path}`)) !== backup.content)
+        throw new Error(`Wiki page changed during merge: ${backup.path}; retry the merge`)
     }
-  }
+    // 2. Snapshot backup before any writes. If a write fails partway
+    //    through, the user has the pre-merge state intact in
+    //    .llm-wiki/page-history/.
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+    const backupDir = `${pp}/.llm-wiki/page-history/dedup-${stamp}`
+    for (const b of result.backup) {
+      const sanitized = b.path.replace(/[/\\]/g, "_")
+      await writeFile(`${backupDir}/${sanitized}`, b.content)
+    }
 
+    assertNotAborted()
+    // 3. Write canonical
+    await commit.write(`${pp}/${result.canonicalPath}`, result.canonicalContent)
+
+    // 4. Apply rewrites
+    for (const r of result.rewrites) {
+      await commit.write(`${pp}/${r.path}`, r.newContent)
+    }
+
+    // 5. Delete merged-away pages
+    for (const dead of result.pagesToDelete) {
+      assertNotAborted()
+      try {
+        await deleteFile(`${pp}/${dead}`)
+      } catch (err) {
+        // Surface as a warning — backup is still safe.
+        console.warn(`[dedup] failed to delete ${dead}: ${err}`)
+      }
+    }
+
+    // 6. Rewrite index.md to drop merged-away entries.
+    const indexPath = `${pp}/wiki/index.md`
+    if (await commit.exists(indexPath)) {
+      const currentIndex = await commit.read(indexPath)
+      const removed = new Set(group.slugs.filter((slug) => slug !== canonicalSlug))
+      const rewritten = rewriteIndexMd(currentIndex, removed)
+      if (rewritten !== currentIndex) await commit.write(indexPath, rewritten)
+    }
+  })
   return result
 }

@@ -1,3 +1,4 @@
+import { withWikiProjectCommit, type ProjectWikiCommit } from "@/app/wiki/commit"
 import type { IngestCommitRunner } from "@/modules/ingestion/application"
 import {
   createDirectory,
@@ -754,9 +755,9 @@ async function autoIngestImpl(
   const sourceSummarySlug = sourceSummarySlugFromIdentity(sourceIdentity)
   const sourceSummaryPath = `wiki/sources/${sourceSummarySlug}.md`
   const queueCommit = options?.runCommit
-  const runCommit: IngestCommitRunner = queueCommit
-    ? ((operation) => queueCommit(() => withProjectLock(pp, operation)))
-    : ((operation) => withProjectLock(pp, operation))
+  const runCommit: <T>(operation: (commit: ProjectWikiCommit) => Promise<T>) => Promise<T> = queueCommit
+    ? ((operation) => queueCommit(() => withWikiProjectCommit(pp, operation)))
+    : ((operation) => withWikiProjectCommit(pp, operation))
   console.log(`[ingest:diag] autoIngestImpl ENTRY for "${fileName}" (project="${pp}", source="${sp}")`)
   const activityId = activity.addItem({
     type: "ingest",
@@ -851,7 +852,7 @@ async function autoIngestImpl(
   const cachedFiles = await checkIngestCache(pp, sourceIdentity, sourceContent)
   console.log(`[ingest:diag] cache check for "${sourceIdentity}":`, cachedFiles === null ? "MISS (full pipeline)" : `HIT (${cachedFiles.length} cached files)`)
   if (cachedFiles !== null) {
-    return runCommit(async () => {
+    return runCommit(async (commit) => {
       throwIfIngestAborted(signal, activityId)
       try {
       console.log(`[ingest:diag] cache-hit branch: starting image extraction for ${sp}`)
@@ -910,6 +911,7 @@ async function autoIngestImpl(
             }
           }
           await injectImagesIntoSourceSummary(
+            commit,
             pp,
             sourceIdentity,
             sourceSummarySlug,
@@ -1290,11 +1292,12 @@ async function autoIngestImpl(
   }
 
   // ── Step 3: Write files ───────────────────────────────────────
-  return runCommit(async () => {
+  return runCommit(async (commit) => {
   throwIfIngestAborted(signal, activityId)
   activity.updateItem(activityId, { detail: "Writing files..." })
-  await migrateLegacySourceSummaryIfSafe(pp, sourceIdentity, sourceSummaryPath)
+  await migrateLegacySourceSummaryIfSafe(commit, pp, sourceIdentity, sourceSummaryPath)
   const writeResult = await writeFileBlocks(
+    commit,
     pp,
     generation,
     llmConfig,
@@ -1374,6 +1377,7 @@ async function autoIngestImpl(
         )
         writeWarnings.push(...filteredRepair.warnings)
         const repairResult = await writeFileBlocks(
+          commit,
           pp,
           filteredRepair.text,
           llmConfig,
@@ -1420,11 +1424,11 @@ async function autoIngestImpl(
   }
 
   try {
-    if (await updateWikiIndexDeterministically(pp, writtenPaths)) {
+    if (await updateWikiIndexDeterministically(commit, pp, writtenPaths)) {
       writtenPaths.push("wiki/index.md")
       onFileWritten?.("wiki/index.md")
     }
-    if (await updateWikiOverviewDeterministically(pp, writtenPaths)) {
+    if (await updateWikiOverviewDeterministically(commit, pp, writtenPaths)) {
       writtenPaths.push("wiki/overview.md")
       onFileWritten?.("wiki/overview.md")
     }
@@ -1442,7 +1446,7 @@ async function autoIngestImpl(
     try {
       const logPath = `${pp}/wiki/log.md`
       const existingLog = await tryReadFile(logPath)
-      await writeFile(logPath, buildDeterministicIngestLog(existingLog, sourceIdentity))
+      await commit.write(logPath, buildDeterministicIngestLog(existingLog, sourceIdentity))
       writtenPaths.push("wiki/log.md")
       onFileWritten?.("wiki/log.md")
     } catch (err) {
@@ -1479,7 +1483,7 @@ async function autoIngestImpl(
     const date = new Date().toISOString().slice(0, 10)
     const fallbackContent = buildFallbackSourceSummary(sourceIdentity, analysis, date)
     try {
-      await writeFile(sourceSummaryFullPath, fallbackContent)
+      await commit.write(sourceSummaryFullPath, fallbackContent)
       writtenPaths.push(sourceSummaryPath)
       onFileWritten?.(sourceSummaryPath)
     } catch {
@@ -1494,6 +1498,7 @@ async function autoIngestImpl(
   // through the back door.
   if (mmCfg.enabled && savedImages.length > 0 && !signal?.aborted) {
     await injectImagesIntoSourceSummary(
+      commit,
       pp,
       sourceIdentity,
       sourceSummarySlug,
@@ -1733,6 +1738,7 @@ export function rewriteIngestPathFromTitleForTargetLanguage(
 }
 
 async function updateWikiIndexDeterministically(
+  commit: ProjectWikiCommit,
   projectPath: string,
   writtenPaths: string[],
 ): Promise<boolean> {
@@ -1762,7 +1768,7 @@ async function updateWikiIndexDeterministically(
   }
   if (additions.length === 0) return false
 
-  await writeFile(indexPath, updateBoundedRecentIndexSection(index, additions))
+  await commit.write(indexPath, updateBoundedRecentIndexSection(index, additions))
   return true
 }
 
@@ -1770,6 +1776,7 @@ const OVERVIEW_RECENT_START = "<!-- llm-wiki:recent-start -->"
 const OVERVIEW_RECENT_END = "<!-- llm-wiki:recent-end -->"
 
 async function updateWikiOverviewDeterministically(
+  commit: ProjectWikiCommit,
   projectPath: string,
   writtenPaths: string[],
 ): Promise<boolean> {
@@ -1804,7 +1811,7 @@ async function updateWikiOverviewDeterministically(
   }
   const updated = updateBoundedOverviewRecentSection(overview, additions)
   if (updated === overview) return false
-  await writeFile(overviewPath, updated)
+  await commit.write(overviewPath, updated)
   return true
 }
 
@@ -1898,6 +1905,7 @@ export function canonicalizeSourcesField(content: string, sourceIdentity: string
 }
 
 async function migrateLegacySourceSummaryIfSafe(
+  commit: ProjectWikiCommit,
   projectPath: string,
   sourceIdentity: string,
   sourceSummaryPath: string,
@@ -1905,7 +1913,7 @@ async function migrateLegacySourceSummaryIfSafe(
   const normalizedIdentity = normalizePath(sourceIdentity)
   if (!normalizedIdentity.includes("/")) return
 
-  if (await migrateExactLegacySourceSummaryIfSafe(projectPath, normalizedIdentity, sourceSummaryPath)) {
+  if (await migrateExactLegacySourceSummaryIfSafe(commit, projectPath, normalizedIdentity, sourceSummaryPath)) {
     return
   }
 
@@ -1949,7 +1957,7 @@ async function migrateLegacySourceSummaryIfSafe(
   if (!legacyOnlyReferencesBasename) return
 
   try {
-    await writeFile(canonicalFullPath, canonicalizeSourcesField(legacyContent, sourceIdentity))
+    await commit.write(canonicalFullPath, canonicalizeSourcesField(legacyContent, sourceIdentity))
     await deleteFile(legacyFullPath)
   } catch (err) {
     console.warn(
@@ -1960,6 +1968,7 @@ async function migrateLegacySourceSummaryIfSafe(
 }
 
 async function migrateExactLegacySourceSummaryIfSafe(
+  commit: ProjectWikiCommit,
   projectPath: string,
   sourceIdentity: string,
   sourceSummaryPath: string,
@@ -1996,7 +2005,7 @@ async function migrateExactLegacySourceSummaryIfSafe(
     if (!referencesSameSource) continue
 
     try {
-      await writeFile(canonicalFullPath, canonicalizeSourcesField(legacyContent, sourceIdentity))
+      await commit.write(canonicalFullPath, canonicalizeSourcesField(legacyContent, sourceIdentity))
       await deleteFile(legacyFullPath)
       return true
     } catch (err) {
@@ -2128,6 +2137,7 @@ function sourceSummaryBlockWarning(
 }
 
 async function writeFileBlocks(
+  commit: ProjectWikiCommit,
   projectPath: string,
   text: string,
   llmConfig: LlmConfig,
@@ -2273,7 +2283,7 @@ async function writeFileBlocks(
       if (isLogPath(relativePath)) {
         const existing = await tryReadFile(fullPath)
         const appended = existing ? `${existing}\n\n${content.trim()}` : content.trim()
-        await writeFile(fullPath, appended)
+        await commit.write(fullPath, appended)
       } else if (
         isListingPath(relativePath)
       ) {
@@ -2281,7 +2291,7 @@ async function writeFileBlocks(
         // wholesale — their sources field is incidental and merging
         // wouldn't make semantic sense (they aren't source-derived
         // content pages).
-        await writeFile(fullPath, content)
+        await commit.write(fullPath, content)
       } else {
         // Content pages (entities / concepts / queries / synthesis /
         // comparisons / sources summaries): if a page with this
@@ -2321,7 +2331,7 @@ async function writeFileBlocks(
         // The merge unions existing frontmatter arrays, so sanitize again to
         // remove legacy/generated paths that may already be stored on disk.
         const toWrite = canonicalizeSourcesField(merged, sourceFileName)
-        await writeFile(fullPath, toWrite)
+        await commit.write(fullPath, toWrite)
       }
       writtenPaths.push(relativePath)
       if (relativePath === sourceSummaryPath) summaryWritten = true
@@ -3547,6 +3557,7 @@ async function backupExistingPage(
  * that didn't match `${sourceBaseName}.md`).
  */
 async function injectImagesIntoSourceSummary(
+  commit: ProjectWikiCommit,
   pp: string,
   sourceIdentity: string,
   sourceSummarySlug: string,
@@ -3582,7 +3593,7 @@ async function injectImagesIntoSourceSummary(
         new RegExp(`\\n*${marker}[\\s\\S]*?${marker}\\n*`, "g"),
         "",
       )
-      await writeFile(sourceSummaryFullPath, stripped.trimEnd() + wrapped)
+      await commit.write(sourceSummaryFullPath, stripped.trimEnd() + wrapped)
     } else {
       // Page is missing — write a minimal stub so the user actually
       // sees the images in the file tree. Without this fallback, the
@@ -3605,7 +3616,7 @@ async function injectImagesIntoSourceSummary(
         `# Source: ${sourceIdentity}`,
         "",
       ].join("\n")
-      await writeFile(sourceSummaryFullPath, stubFrontmatter + wrapped)
+      await commit.write(sourceSummaryFullPath, stubFrontmatter + wrapped)
     }
     console.log(
       `[ingest:images] injected ${savedImages.length} image reference(s) into ${sourceSummaryPath}`,
@@ -3758,12 +3769,13 @@ export function executeIngestWrites(
   signal?: AbortSignal,
 ): Promise<string[]> {
   const pp = normalizePath(projectPath)
-  return withProjectLock(pp, () =>
-    executeIngestWritesImpl(pp, llmConfig, userGuidance, signal)
+  return withWikiProjectCommit(pp, (commit) =>
+    executeIngestWritesImpl(commit, pp, llmConfig, userGuidance, signal)
   )
 }
 
 async function executeIngestWritesImpl(
+  commit: ProjectWikiCommit,
   projectPath: string,
   llmConfig: LlmConfig,
   userGuidance?: string,
@@ -3904,9 +3916,9 @@ async function executeIngestWritesImpl(
         const appended = existing
           ? `${existing}\n\n${content.trim()}`
           : content.trim()
-        await writeFile(fullPath, appended)
+        await commit.write(fullPath, appended)
       } else {
-        await writeFile(fullPath, content)
+        await commit.write(fullPath, content)
       }
       writtenPaths.push(fullPath)
       if (relativePath === activeSourceSummaryPath) summaryWritten = true
@@ -3959,7 +3971,7 @@ async function executeIngestWritesImpl(
         sourceSummarySlug,
       )
       if (savedImages.length > 0) {
-        await injectImagesIntoSourceSummary(pp, sourceIdentity, sourceSummarySlug, savedImages)
+        await injectImagesIntoSourceSummary(commit, pp, sourceIdentity, sourceSummarySlug, savedImages)
       }
     } catch (err) {
       console.warn(

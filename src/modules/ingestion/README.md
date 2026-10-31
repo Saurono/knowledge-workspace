@@ -14,6 +14,8 @@
 
 `src/app/tasks/ingestion.ts` 为每次编译尝试创建独立运行时，注入旧 autoIngest 的解析、模型、原子写入与回执；逻辑 taskId 保留用于来源/回执，不与尚未退出的旧尝试共享运行槽。队列/源文件/项目锁继续保证排他性。
 
+B08c3：`lib/ingest.ts` 在队列提交回合内通过 `app/wiki/commit` 获取一次项目提交锁，将 `ProjectWikiCommit` 显式传入正文、目录/概览/日志、旧摘要迁移和图片注入等 helper。helper 不重复加锁，补充生成也使用同一作用域。wiki/ 下非 Markdown 输出保持兼容；警告、解析缓存、检查点和备份仍用原 sidecar 适配。上下文关闭后不能继续写，已启动 I/O 完成才释放锁；失败不回滚已完成的文件写入。
+
 旧 `lib/ingest-queue.ts` 和 `lib/ingest-commit-coordinator.ts` 仅重导出兼容入口。现有调用者和原回归测试不需要更换导入路径。
 
 ## 状态与数据规则
