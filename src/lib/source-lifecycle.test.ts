@@ -1,5 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
 
+vi.mock("@/lib/ingest-receipts", () => ({
+  registerImportedSource: vi.fn(async () => {}),
+  registerObservedSourcePaths: vi.fn(async () => {}),
+  migrateSourceMetadata: vi.fn(async () => false),
+}))
+
 const mocks = vi.hoisted(() => ({
   copyFile: vi.fn(),
   createDirectory: vi.fn(),

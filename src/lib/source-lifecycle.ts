@@ -40,7 +40,7 @@ import { naturalCompare } from "@/lib/natural-sort"
 import type { SourceWatchConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useActivityStore } from "@/stores/activity-store"
-import { registerImportedSource } from "@/lib/ingest-receipts"
+import { registerImportedSource, registerObservedSourcePaths, migrateSourceMetadata } from "@/lib/ingest-receipts"
 import { preprocessSourceFiles } from "@/lib/source-preprocess"
 import { moveParsedMarkdown, removeParsedMarkdown } from "@/lib/parsed-source-output"
 
@@ -214,6 +214,13 @@ export async function migrateSourcePath(
     } catch (err) {
       console.warn("[source-lifecycle] failed to move optional parsed Markdown:", err)
     }
+    // Preserve completed file migration if provenance storage is temporarily
+    // unavailable; surface a retryable metadata error instead of rolling back
+    // files after the cache/summary move has already completed.
+    try { await migrateSourceMetadata(pp, oldSourcePath, newSourcePath, summaryMoves) }
+    catch (error) {
+      useActivityStore.getState().addItem({type:"ingest",title:"Source metadata migration",status:"error",detail:String(error),filesWritten:[newSourcePath]})
+    }
     return writes.length
   } catch (err) {
     if (newSummaryCreated) {
@@ -281,6 +288,7 @@ export async function enqueueSourceIngest(
       ),
     }))
   if (files.length === 0) return []
+  await registerObservedSourcePaths(normalizePath(project.path), files.map(file=>file.sourcePath))
   const parsingConcurrency = options.parsingConcurrency
     ?? normalizeSourceWatchConfig(useWikiStore.getState().sourceWatchConfig).parsingConcurrency
   await preprocessSourceFiles(files.map((file) => file.sourcePath), parsingConcurrency)

@@ -24,7 +24,15 @@ export function registerSource(
   context: { createId(): string; now: string },
 ): SourceCatalog {
   const key = normalizeSourceKey(path)
-  if (sourceAt(catalog, key)) return catalog
+  const existing = sourceAt(catalog, key)
+  if (existing) {
+    const original = normalizeSourceKey(originalPath)
+    // A watcher can observe the local copy before its importing connector.
+    // Enrich an unknown/self location, but never overwrite a known origin.
+    if ((!existing.originalPath || existing.originalPath === key) && original !== key)
+      return { ...catalog, [key]: { ...existing, originalPath: original } }
+    return catalog
+  }
   return {
     ...catalog,
     [key]: {
@@ -52,4 +60,18 @@ export function recordSourceIngested(
   }
   if (!context.cacheHit) source.ingestedAt ??= context.now
   return { catalog: { ...catalog, [key]: source }, source }
+}
+
+/** Only call after the caller has established content identity for a move. */
+export function moveSourceKey(catalog: SourceCatalog, from: string, to: string): SourceCatalog {
+  const previous = normalizeSourceKey(from),
+    next = normalizeSourceKey(to)
+  const source = sourceAt(catalog, previous)
+  if (previous === next || !source) return catalog
+  const destination = sourceAt(catalog, next)
+  if (destination && destination.id !== source.id)
+    throw new Error("Cannot replace another source identity during a move")
+  const updated = { ...catalog, [next]: source }
+  delete updated[previous]
+  return updated
 }

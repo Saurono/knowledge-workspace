@@ -5,7 +5,9 @@ export const documentRepository: DocumentRepository = {
   update: (path, change) =>
     withRecordsLock(path, async () => {
       const records = await loadIngestRecords(path)
-      records.sources = change(records.sources)
+      const updated = change(records.sources)
+      if (updated === records.sources) return
+      records.sources = updated
       await saveRecords(path, records)
     }),
   revisions: async (path, sourceId) =>

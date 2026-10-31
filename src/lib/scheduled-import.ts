@@ -1,3 +1,4 @@
+import { registerImportedSource } from "@/lib/ingest-receipts"
 import {
   copyFile,
   fileExists,
@@ -540,6 +541,7 @@ export async function scanAndImport(
         if (normalizePath(destPath) !== sourcePath) {
           await copyFile(sourcePath, destPath)
         }
+        await registerImportedSource(projectPath, destPath, sourcePath)
         changedFiles.push({ key, md5, destPath })
       } catch (err) {
         const key = dbDirectoryKey(file.path)

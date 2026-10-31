@@ -83,3 +83,64 @@ describe("document catalog adapter", () => {
     )
   })
 })
+
+describe("observed source and move metadata workflow", () => {
+  it("enriches a watcher self-location without changing the source ID or first time", async () => {
+    const { registerObservedSourcePaths } = await import("./source-paths")
+    await registerObservedSourcePaths("/p", ["raw/sources/a.md"])
+    const first = (await documents.list("/p"))[input.sourcePath]
+    await registerImportedSource("/p", input.sourcePath, "/vault/original.md")
+    const next = (await documents.list("/p"))[input.sourcePath]
+    expect(next).toEqual({ ...first, originalPath: "/vault/original.md" })
+  })
+  it("moves source and summary references while preserving revision identity and historical receipts", async () => {
+    const { migrateSourceMetadata } = await import("./source-paths")
+    await registerImportedSource("/p", input.sourcePath, "/vault/a.md")
+    const id = await recordSuccessfulIngest({
+      ...input,
+      writtenPaths: ["wiki/sources/a.md"],
+      createdPages: { "wiki/sources/a.md": "2026-10-31T00:00:00Z" },
+    })
+    const before = await loadIngestRecords("/p")
+    const source = before.sources[input.sourcePath]
+    const nextPath = "/p/raw/sources/moved.md"
+    expect(
+      await migrateSourceMetadata(
+        "/p",
+        input.sourcePath,
+        nextPath,
+        new Map([["wiki/sources/a.md", "wiki/sources/moved.md"]]),
+      ),
+    ).toBe(true)
+    const next = await loadIngestRecords("/p")
+    expect(next.sources[nextPath]).toEqual(source)
+    expect(next.sources[input.sourcePath]).toBeUndefined()
+    expect(next.pages["wiki/sources/moved.md"]).toEqual({
+      createdAt: "2026-10-31T00:00:00Z",
+      sources: [nextPath],
+    })
+    expect(next.receipts[id]).toEqual(before.receipts[id])
+    expect((await documents.revisions("/p", nextPath))[0].sourceId).toBe(source.id)
+    expect(await migrateSourceMetadata("/p", input.sourcePath, nextPath)).toBe(false)
+  })
+  it("refuses to replace an independently registered destination", async () => {
+    const { migrateSourceMetadata } = await import("./source-paths")
+    await registerImportedSource("/p", input.sourcePath, "/vault/a.md")
+    await registerImportedSource("/p", "/p/raw/sources/b.md", "/vault/b.md")
+    const before = JSON.stringify(await documents.list("/p"))
+    await expect(
+      migrateSourceMetadata("/p", input.sourcePath, "/p/raw/sources/b.md"),
+    ).rejects.toThrow("another source")
+    expect(JSON.stringify(await documents.list("/p"))).toBe(before)
+  })
+})
+
+it("registers a watcher batch in one write and avoids rewriting unchanged sources", async () => {
+  const { registerObservedSourcePaths } = await import("./source-paths")
+  const paths = Array.from({ length: 25 }, (_, i) => `raw/sources/${i}.md`)
+  await registerObservedSourcePaths("/p", paths)
+  expect(state.write).toHaveBeenCalledTimes(1)
+  expect(Object.keys(await documents.list("/p"))).toHaveLength(25)
+  await registerObservedSourcePaths("/p", paths)
+  expect(state.write).toHaveBeenCalledTimes(1)
+})

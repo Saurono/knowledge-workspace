@@ -21,6 +21,21 @@ export function createDocumentService(
           now: clock.now(),
         }),
       ),
+    registerImportedSources: (
+      projectPath: string,
+      sources: readonly { sourcePath: string; originalPath: string }[],
+    ) =>
+      repository.update(projectPath, (catalog) => {
+        const now = clock.now()
+        return sources.reduce(
+          (current, source) =>
+            registerSource(current, source.sourcePath, source.originalPath, {
+              createId: clock.createId,
+              now,
+            }),
+          catalog,
+        )
+      }),
     list: (projectPath: string) => repository.read(projectPath),
     revisions: async (projectPath: string, sourcePath: string) => {
       const catalog = await repository.read(projectPath)

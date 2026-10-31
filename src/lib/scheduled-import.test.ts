@@ -1,4 +1,11 @@
+import { registerImportedSource } from "@/lib/ingest-receipts"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+
+vi.mock("@/lib/ingest-receipts", () => ({
+  registerImportedSource: vi.fn(async () => {}),
+  registerObservedSourcePaths: vi.fn(async () => {}),
+  migrateSourceMetadata: vi.fn(async () => false),
+}))
 import type { WikiProject } from "@/types/wiki"
 
 const mocks = vi.hoisted(() => ({
@@ -382,6 +389,7 @@ describe("scanAndImport failure handling", () => {
 
     const destination = "/Users/me/wiki-project/raw/sources/scheduled-import/paper.pdf"
     expect(mocks.copyFile).toHaveBeenCalledWith("/Users/me/inbox/paper.pdf", destination)
+    expect(registerImportedSource).toHaveBeenCalledWith(project.path,destination,"/Users/me/inbox/paper.pdf")
     expect(mocks.enqueueSourceIngest).not.toHaveBeenCalled()
     expect(mocks.enqueueInactiveProjectBatch).toHaveBeenCalledWith(
       project.id,

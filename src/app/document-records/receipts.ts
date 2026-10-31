@@ -103,3 +103,4 @@ export async function deliverObsidianReceipt(projectPath: string, id: string): P
     await saveRecords(projectPath, records)
   })
 }
+export { registerObservedSourcePaths, migrateSourceMetadata } from "./source-paths"

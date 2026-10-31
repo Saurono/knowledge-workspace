@@ -1,4 +1,11 @@
+import { registerObservedSourcePaths } from "@/lib/ingest-receipts"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+
+vi.mock("@/lib/ingest-receipts", () => ({
+  registerImportedSource: vi.fn(async () => {}),
+  registerObservedSourcePaths: vi.fn(async () => {}),
+  migrateSourceMetadata: vi.fn(async () => false),
+}))
 
 const mocks = vi.hoisted(() => {
   const resolvers: Array<(value: { queue: { version: number; tasks: Array<{ id: string; projectId: string; path: string; kind: "modified"; status: "pending"; createdAt: number; updatedAt: number; retryCount: number; needsRerun: boolean }> }; changedTasks: Array<{ id: string; projectId: string; path: string; kind: "modified"; status: "pending"; createdAt: number; updatedAt: number; retryCount: number; needsRerun: boolean }> }) => void> = []
@@ -935,6 +942,7 @@ describe("project file sync", () => {
     startAllProjectFileSync(active)
 
     await vi.waitFor(() => {
+      expect(registerObservedSourcePaths).toHaveBeenCalledWith("/tmp/b",["raw/sources/chapter 2.pdf"])
       expect(mocks.enqueueInactiveProjectBatch).toHaveBeenCalledWith(
         "B",
         "/tmp/b",

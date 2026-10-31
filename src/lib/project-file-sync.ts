@@ -1,3 +1,4 @@
+import { registerObservedSourcePaths } from "@/lib/ingest-receipts"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { readFile } from "@/commands/fs"
 import {
@@ -354,6 +355,7 @@ async function enqueueRawSourceChanges(
   if (paths.length === 0) return
 
   try {
+    await registerObservedSourcePaths(project.path, paths)
     if (activeProject) {
       await enqueueSourceIngest(project, paths, useWikiStore.getState().llmConfig, {
         parsingConcurrency: config.parsingConcurrency,

@@ -7,3 +7,5 @@
 `app/document-records` 是 v1 聚合文件兼容层：来源归 documents 模块，Wiki 时间与回执仍在应用组合层，统一在规范化的项目锁下更新 `.llm-wiki/ingest-records.json`。原 lib/ingest-receipts 和 source-identity 保留兼容入口；现有字段与 JSON 格式不变。
 
 本批只完成已存在来源规则/仓储/版本查询迁移。所有导入入口、移动/重命名对齐及未来 API/MCP 接入属于 B07 的后续子任务；多用户授权、强事务与自动 Vault 移动同步尚未实现。
+
+B07b 已接入本地监听、队列入列与定时复制，批次登记单次写入，已知原路径不被副本覆盖。app/document-records/source-paths 在确认内容相同的移动后协调目录与 Wiki 引用/摘要时间；目标来源冲突拒绝覆盖、历史回执不改写。跨文件事务/失败自动恢复与新增 API/MCP 仍待后续任务。
