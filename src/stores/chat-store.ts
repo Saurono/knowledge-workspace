@@ -10,43 +10,8 @@ import type { ChatAgentFileChange, ChatAgentMode, ChatAgentStep, ChatRetrievalMo
  * spread — no remapping, no `data:` framing here (the provider
  * translators own that).
  */
-export interface MessageImage {
-  mediaType: string
-  dataBase64: string
-}
-
-export interface Conversation {
-  id: string
-  title: string
-  createdAt: number
-  updatedAt: number
-  selectedSkills?: string[]
-  contextFiles?: string[]
-}
-
-export interface MessageReference {
-  title: string
-  path: string
-  kind?: "wiki" | "external" | "workspace"
-  source?: string
-  url?: string
-  snippet?: string
-  graphRelations?: string[]
-}
-
-export interface DisplayMessage {
-  id: string
-  role: "user" | "assistant" | "system"
-  content: string
-  timestamp: number
-  conversationId: string
-  references?: MessageReference[]  // pages cited in this response, saved at creation time
-  agentSteps?: ChatAgentStep[]  // agent tool calls and routing decisions saved with assistant replies
-  agentFileChanges?: ChatAgentFileChange[]  // concrete project files changed by this Agent turn
-  userInputRequest?: ChatUserInputRequest  // dynamic schema-driven form requested by backend Agent
-  images?: MessageImage[]  // images attached to a user message (vision input)
-  contextFiles?: string[]  // absolute project files explicitly attached to this user turn
-}
+import type { MessageImage, Conversation, MessageReference, DisplayMessage } from "@/modules/agent/domain"
+export type { MessageImage, Conversation, MessageReference, DisplayMessage } from "@/modules/agent/domain"
 
 interface ChatState {
   conversations: Conversation[]
