@@ -10,7 +10,7 @@
 | tasks | 执行器注册、外部取消信号、进度/结果、作用域隔离 | 研究接入、持久化调度、任务页面 |
 | quality | 结构检查算法、配置规范化、检查类型、Wiki 检查执行器 | 语义检查 I/O、纠错写入适配 |
 | wiki | 来源数组合并、页面类型、Wiki 链接转换 | 文档仓储、版本、编辑器、知识回流 |
-| ingestion | 文本清洗、编译执行器契约与真实队列接入 | 队列端口化、解析/编译 I/O、Obsidian 回执 |
+| ingestion | 文本清洗、编译执行器、独立队列服务、恢复/调度/快照端口、有序提交 | 解析/编译 I/O、Obsidian 回执、强持久化服务 |
 | retrieval | Markdown 分块算法 | 索引、搜索、LLM 检索 |
 | cli | Claude/Codex 协议与错误解析 | 进程/会话适配、授权身份 |
 
@@ -47,6 +47,14 @@ flowchart TD
 - Chromium 在线与加载后断网预览均通过：记忆创建保存、搜索、任务切换、Wiki 模式切换和星图交互，无页面运行异常。
 - 模拟验证不代表原生 Tauri 或真实模型已验收；当前环境没有 Rust 工具链。
 
-导入队列现已通过执行器运行（B02）；下一批优先队列端口化与研究执行器（B03/B04），再逐步迁移 Wiki 仓储与 Obsidian 回执适配。identity/AccessContext 及共享记忆后端需要新增实现，不作为本批代码搬迁已完成项。移除兼容入口之前，应先迁移全部调用者与对应测试。
+导入队列现已通过执行器运行（B02），队列状态机/恢复/持久化端口已抽离（B03）；下一批优先研究执行器（B04），再逐步迁移 Wiki 仓储与 Obsidian 回执适配。identity/AccessContext 及共享记忆后端需要新增实现，不作为本批代码搬迁已完成项。移除兼容入口之前，应先迁移全部调用者与对应测试。
 
 最新任务与验证以根目录 [TASKS](../../TASKS.md)、[WORKLOG](../../WORKLOG.md)、[HANDOFF](../../HANDOFF.md) 为准。上述首批测试数字是历史记录。
+
+## B03 队列服务迁移
+
+- `modules/ingestion/application/queue.ts` 拥有每实例独立的完整队列状态；平台依赖经 queue-ports 注入。
+- `domain/queue-task.ts` 与 `queue-snapshot.ts` 保存旧任务模型和数组快照兼容；commit-coordinator 保持有序写入。
+- `app/ingestion/queue.ts` 为现有桌面调用者创建单例，`queue-repository.ts` 保持旧文件路径；原 lib 仅作兼容重导出。
+- 新增恢复 epoch 检查，避免旧异步读取污染后续项目或同项目新恢复；计时器支持注入的零值句柄。
+- 强持久化、损坏队列恢复与跨进程任务调度没有在本次实现；活动写入 best-effort 语义保持原样。

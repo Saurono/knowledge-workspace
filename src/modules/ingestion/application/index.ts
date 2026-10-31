@@ -1,2 +1,6 @@
 export { createIngestExecutor, INGEST_EXECUTOR } from "./execute-ingest"
 export type { IngestCompiler, IngestExecutionInput, IngestCommitRunner } from "./execute-ingest"
+export { createIngestQueue } from "./queue"
+export type { IngestQueue } from "./queue"
+export { IngestCommitCoordinator } from "./commit-coordinator"
+export type { IngestQueuePorts, QueueSnapshotRepository, QueueClock } from "./queue-ports"

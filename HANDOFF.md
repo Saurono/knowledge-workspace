@@ -29,12 +29,13 @@
 
 ## 当前执行点
 
-- 本批完成 A10（任务与交接入口）、B01（外部取消契约，`227da96`）、B02（真实队列通过入库执行器运行；提交与本文件同批，查 Git 最新日志）。
-- 下一项 B03：`lib/ingest-queue.ts` 仍包含调度与持久化，优先将其拆为可注入端口的应用服务，保留旧格式/兼容入口与现有竞态测试；不要一次改写全部状态机。
-- 继而 B04：`lib/deep-research.ts`/`stores/research-store.ts` 的研究模型、证据规则与执行器；现有研究尚未接入 tasks。
-- 当前入库入口：`modules/ingestion/application/execute-ingest.ts` → `app/tasks/ingestion.ts` → 旧 autoIngest，队列保留 epoch、并发提交顺序、部分写入和回执链路。
-- 入库每次尝试独立运行时，以隔离同逻辑 ID 的恢复；它不提供持久状态或跨尝试历史。恢复/重试的排他仍由队列/锁负责。
-- 最新验证：模拟回归 152 文件/2114 项、九模块边界、类型、正式/预览构建通过；详情 L006/L007。B03/B04 尚未开始，不误标完成。
+- 已完成 A10（任务与交接入口）、B01（外部取消，`227da96`）、B02（入库执行器接入，`a4c2641`）、B03（本批队列服务迁移；提交与本文件同批，查最新 Git 日志）。
+- 下一项 B04：拆 `lib/deep-research.ts`/`stores/research-store.ts` 的研究业务模型、证据规则与执行器；研究仍未接入 tasks，勿误标完成。随后 B05 受控任务 UI。
+- 队列入口已变更：`modules/ingestion/application/queue.ts` 的 `createIngestQueue(ports)` 拥有完整调度/恢复/串行快照写入；`app/ingestion/queue.ts` 装配桌面实例，`queue-repository.ts` 适配旧文件路径；旧 `lib/ingest-queue.ts` 仅兼容重导出。
+- 入库执行入口：`modules/ingestion/application/execute-ingest.ts` → `app/tasks/ingestion.ts` → 旧 autoIngest。每次尝试独立运行时，逻辑 taskId 继续用于回执；恢复/重试排他仍由队列和源文件/项目锁负责。
+- 保持 `pauseQueue()` 项目切换握手、队列 epoch、并发提交顺序、部分写入记账、重试/限额自动恢复与回执链路。restore 的异步边界现有版本校验，不能删掉。
+- 原快照数组和存储路径不变。活动写入 best-effort、读取失败视空的旧语义没有升级为强持久化；损坏恢复和统一任务服务仍是 H03/J01。
+- 最新验证：针对性 7 文件/101 项；完整模拟回归 154 文件/2124 项；九模块边界、类型、正式/预览构建通过。记录见 L008；Rust/真实 Vault/真实模型仍未验收。
 
 ## 验证与启动
 
