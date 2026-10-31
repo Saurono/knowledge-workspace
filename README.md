@@ -1,5 +1,7 @@
 # LLM Wiki
 
+> Fork development: see [modular architecture](ARCHITECTURE.md) and [implementation progress](analysis/implementation/progress-v0.1.md).
+
 <p align="center">
   <img src="logo.jpg" width="128" height="128" style="border-radius: 22%;" alt="LLM Wiki Logo">
 </p>

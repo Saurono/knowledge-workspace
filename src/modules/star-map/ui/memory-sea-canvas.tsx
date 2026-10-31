@@ -1,4 +1,4 @@
-/** Canvas scene adapted from asdfd3/3d-memory-sea, MIT. See memory-sea.LICENSE. */
+/** Canvas scene adapted from asdfd3/3d-memory-sea, MIT. See ../LICENSE. */
 import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import {
@@ -11,7 +11,7 @@ import {
   type SeaCamera,
   type SeaEdge,
   type SeaPoint,
-} from "@/lib/memory-sea-scene"
+} from "../domain"
 import "./memory-sea.css"
 
 interface Props {

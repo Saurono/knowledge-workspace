@@ -3,8 +3,8 @@
 ## 3d-memory-sea
 
 The memory sea layout, perspective projection, and Canvas interaction/rendering
-in `src/lib/memory-sea-scene.ts` and
-`src/components/workspace/memory-sea-canvas.tsx` are adapted from
+in `src/modules/star-map/domain/scene.ts` and
+`src/modules/star-map/ui/memory-sea-canvas.tsx` are adapted from
 [asdfd3/3d-memory-sea](https://github.com/asdfd3/3d-memory-sea),
 commit `bcc1bb6b7e9e8b3dc4cf16b649a94445c8b6f25f`.
 The reference data classification, retrieval and memory state machine are not imported.

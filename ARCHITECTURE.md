@@ -1,0 +1,34 @@
+# Modular development
+
+New business functionality belongs in a feature module under `src/modules/`.
+Use a modular monolith with explicit public contracts, not shared mutable state
+or imports of another feature's private implementation.
+
+- `domain/`: pure rules and models, independent of React, Tauri and stores.
+- `application/`: use cases and dependency ports.
+- `infrastructure/`: concrete platform/storage/transport adapters.
+- `ui/`: presentation and local view state.
+- `index.ts` and explicitly declared additional entry points: public API.
+- `module.json`: allowed entry points and dependencies.
+
+Do not create empty layers merely to satisfy this layout. The application
+composition root wires executors, adapters and cross-feature workflows.
+Modules own their data and migrations. Local and Web clients reuse business
+contracts and select different platform adapters.
+
+Before submitting a change:
+
+```sh
+npm run check:modules
+npm run typecheck
+# Run the module tests and any affected integration checks.
+```
+
+The boundary checker is part of CI. It rejects private cross-module imports,
+undeclared dependencies, UI/platform coupling in domain code, non-literal module
+imports and module dependency cycles. It currently governs the new modules tree;
+legacy code is being migrated, with explicit compatibility entry points.
+
+The first extracted module is [star-map](src/modules/star-map/README.md).
+The complete module inventory, dependency rules, storage ownership and migration
+sequence are in [the architecture design](analysis/architecture/modular-design-v1.md).

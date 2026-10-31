@@ -5,7 +5,7 @@ import {
   projectSea,
   visibleSeaEdges,
   type SeaPoint,
-} from "./memory-sea-scene"
+} from "./scene"
 const points: SeaPoint[] = [
   { id: "a", title: "A", text: "A", group: "One", color: "#96beff", weight: 1 },
   { id: "b", title: "B", text: "B", group: "Two", color: "#82e6c8", weight: 2 },

@@ -47,3 +47,9 @@
 先补统一任务协议与执行器持久化，再实现账户授权和 Web 平台适配；同步补齐来源稳定身份、自动同步到 Vault 的回执、索引真实状态及完整时间写入链路。收到专门记忆分类方案后再扩展记忆模型和 Agent 接口。
 
 浏览器验证脚本见 smoke-workspace.mjs；需另行安装 playwright-core 并设置 PLAYWRIGHT_MODULE 和 CHROMIUM_PATH，先运行 Vite。它使用原生 API 模拟器，不用于连接生产知识库。
+
+## 模块化增量
+
+星图渲染已迁移到 src/modules/star-map，公开 domain 与 UI API；旧 lib/memory-sea-scene.ts 仅保留兼容重导出。模块声明与公开接口见该模块 README。
+
+新增 check:modules，生产/预览构建与 CI 均执行依赖边界检查。模块检查器及星图领域共 10 项相关测试通过；生产构建、预览构建通过；浏览器在线与离线预览交互检查页面错误为 0。其余旧功能尚未全部迁入 modules，迁移规则见 analysis/architecture/modular-design-v1.md。

@@ -6,9 +6,8 @@ import { useWorkspaceStore } from "@/stores/workspace-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { buildWikiGraph, type GraphNode, type GraphEdge } from "@/lib/wiki-graph"
 import { normalizePath } from "@/lib/path-utils"
-import { seaColor, visibleSeaEdges, type SeaPoint, type SeaEdge } from "@/lib/memory-sea-scene"
-import { MemorySeaCanvas } from "./memory-sea-canvas"
-import "./memory-sea.css"
+import { seaColor, visibleSeaEdges, type SeaPoint, type SeaEdge } from "@/modules/star-map/domain"
+import { MemorySeaCanvas } from "@/modules/star-map"
 
 const MAX_POINTS = 4000
 const MAX_EDGES = 12000

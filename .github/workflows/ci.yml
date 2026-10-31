@@ -49,6 +49,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Check module boundaries
+        run: npm run check:modules
+
       - name: Check frontend build
         run: npx vite build
 

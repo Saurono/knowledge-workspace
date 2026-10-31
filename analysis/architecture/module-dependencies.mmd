@@ -1,0 +1,11 @@
+flowchart TB
+  SHELL["应用壳 / 页面路由 / 依赖装配"] --> UI["各功能模块 UI / 用例入口"]
+  SHELL --> WORKFLOW["跨模块工作流 / Executor 注册"]
+  UI --> APP["Application / 端口"]
+  APP --> DOMAIN["Domain / 纯业务规则"]
+  ADAPTER["Tauri / HTTP / MCP / CLI / 数据库适配"] --> APP
+  WORKFLOW --> APP
+  GRAPHQUERY["获授权 Wiki / 记忆场景查询"] --> CONTRACT["公开场景契约"]
+  CONTRACT --> RENDER["独立 star-map 渲染模块"]
+  TOKENS["共享契约 / UI tokens"] --> UI
+  TOKENS --> RENDER

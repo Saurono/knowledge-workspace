@@ -1,0 +1,7 @@
+{
+  "id": "star-map",
+  "publicEntrypoints": ["index.ts", "domain/index.ts"],
+  "allowedModuleDependencies": [],
+  "allowedExternalImports": ["react", "react-i18next"],
+  "allowedLegacyImports": []
+}
