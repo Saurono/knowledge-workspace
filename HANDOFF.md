@@ -30,7 +30,7 @@
 ## 当前执行点
 
 - 已完成 A10（任务与交接入口）、B01（外部取消，`227da96`）、B02（入库执行器接入，`a4c2641`）、B03（本批队列服务迁移；提交与本文件同批，查最新 Git 日志）。
-- B04/B05 已完成：research 模型/证据/执行器（ef25e89）；tasks/ui 和 research/ui 为受控页面，应用容器注入数据与操作。B06 项目模型/仓储也已完成（相关 95 项测试、类型通过）；B07a 文档来源规则/仓储/版本查询也已完成；B07b 本地登记/移动链路也已完成；B07c 依赖新增 API/MCP（C02/I02），B08a Wiki 仓储/编辑预览接入也已完成；当前自动继续 B08b 页面合并规则/解析与备份端口。B08c 和 B08 总项仍未完成。
+- B04/B05 已完成：research 模型/证据/执行器（ef25e89）；tasks/ui 和 research/ui 为受控页面，应用容器注入数据与操作。B06 项目模型/仓储也已完成（相关 95 项测试、类型通过）；B07a 文档来源规则/仓储/版本查询也已完成；B07b 本地登记/移动链路也已完成；B07c 依赖新增 API/MCP（C02/I02），B08a Wiki 仓储/编辑预览接入也已完成；B08b 页面合并/链接规则与端口也已完成，当前继续 B08c 的纠错读改写/占位页创建，随后历史与生成写入。B08c 和 B08 总项仍未完成。
 - 队列入口已变更：`modules/ingestion/application/queue.ts` 的 `createIngestQueue(ports)` 拥有完整调度/恢复/串行快照写入；`app/ingestion/queue.ts` 装配桌面实例，`queue-repository.ts` 适配旧文件路径；旧 `lib/ingest-queue.ts` 仅兼容重导出。
 - 入库执行入口：`modules/ingestion/application/execute-ingest.ts` → `app/tasks/ingestion.ts` → 旧 autoIngest。每次尝试独立运行时，逻辑 taskId 继续用于回执；恢复/重试排他仍由队列和源文件/项目锁负责。
 - 保持 `pauseQueue()` 项目切换握手、队列 epoch、并发提交顺序、部分写入记账、重试/限额自动恢复与回执链路。restore 的异步边界现有版本校验，不能删掉。
@@ -62,3 +62,5 @@ B06 新入口为 modules/projects 与 app/projects；项目身份原子持久化
 B07b：app/document-records/source-paths 提供批次观察登记和来源移动组合，原历史回执不改写。定时复制记录外部原路径；相同来源自路径可被可靠连接器补充。元数据移动失败保留错误活动，不是跨文件事务。相关 117 项测试、类型和正式构建通过。
 
 最新验证 L014：159 文件/2160 项、十二模块边界/类型/正式与预览构建、实际 Wiki 编辑保存浏览器冒烟通过。新仓储支持 expectedRevision，旧编辑器保持无条件兼容保存；冲突 UI、历史存储、所有生成/纠错入口迁移仍属 B08c。
+
+B08b：modules/wiki/application/merge.ts 为注入解析/规范化的合并服务，domain/body-links 为纯链接规则；旧 lib/page-merge 兼容。全量 2160 项及正式构建通过。
