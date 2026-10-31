@@ -1,0 +1,16 @@
+stateDiagram-v2
+  [*] --> candidate: 任务信息 / 人工录入 / Agent 提案
+  candidate --> active: 证据与权限规则满足 / 获准审核
+  candidate --> rejected: 拒绝或不适合保存
+  active --> conflicted: 发现互斥证据
+  conflicted --> active: 处理争议 / 明确适用条件
+  active --> superseded: 新版本或新结论替代
+  active --> expired: 有效期结束
+  active --> archived: 授权归档
+  superseded --> archived
+  expired --> archived
+  archived --> candidate: 经授权重新评估
+  active --> deleted: 授权删除
+  archived --> deleted: 授权删除
+  candidate --> deleted: 授权删除
+  deleted --> [*]: 清理派生索引与缓存

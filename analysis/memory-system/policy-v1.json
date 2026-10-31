@@ -1,0 +1,137 @@
+{
+  "$comment": "Design contract only; not an implemented authorization engine.",
+  "schemaVersion": "1.0-draft",
+  "defaultSharing": {
+    "scope": "project_and_role",
+    "privateRequiresExplicitGrant": true
+  },
+  "identity": {
+    "preserveActor": true,
+    "effectiveIdentityRequiresGrant": true,
+    "workRoleRequiresGrant": true,
+    "contextScopedToTask": true,
+    "revalidateOnEveryRequest": true,
+    "clearUnauthorizedContextOnSwitch": true
+  },
+  "layers": [
+    "core_rule",
+    "working",
+    "episodic",
+    "semantic",
+    "procedural",
+    "reflection"
+  ],
+  "states": [
+    "candidate",
+    "active",
+    "conflicted",
+    "superseded",
+    "expired",
+    "archived",
+    "rejected",
+    "deleted"
+  ],
+  "write": {
+    "agentDefault": "proposal",
+    "concurrency": "expectedVersion",
+    "createRetry": "idempotencyKey",
+    "coreRuleChange": "authorized_review",
+    "sameSourceCountsOnce": true
+  },
+  "retrieval": {
+    "authorizationBeforeRetrieval": true,
+    "returnVersionsAndProvenance": true,
+    "excludeStates": [
+      "rejected",
+      "deleted"
+    ],
+    "historicalStatesOptIn": [
+      "superseded",
+      "expired",
+      "archived"
+    ],
+    "importantIsNotTrusted": true
+  },
+  "stellarMapping": {
+    "thresholdsAreProvisional": true,
+    "importanceRange": [
+      0,
+      1
+    ],
+    "confidenceRange": [
+      0,
+      1
+    ],
+    "precedence": [
+      {
+        "if": {
+          "authorized": false
+        },
+        "render": "omit"
+      },
+      {
+        "if": {
+          "state": [
+            "deleted",
+            "rejected"
+          ]
+        },
+        "render": "omit"
+      },
+      {
+        "if": {
+          "state": [
+            "superseded",
+            "expired",
+            "archived"
+          ]
+        },
+        "render": "white_dwarf",
+        "requiresHistoryLayer": true
+      },
+      {
+        "if": {
+          "state": "candidate"
+        },
+        "render": "nebula_member"
+      },
+      {
+        "if": {
+          "layer": "working"
+        },
+        "render": "comet"
+      },
+      {
+        "if": {
+          "explicitParent": true
+        },
+        "render": "satellite"
+      },
+      {
+        "if": {
+          "state": "active",
+          "importanceAtLeast": 0.8,
+          "confidenceAtLeast": 0.8,
+          "crossTaskValue": true,
+          "supportedByEvidence": true
+        },
+        "render": "star"
+      },
+      {
+        "otherwise": true,
+        "render": "planet"
+      }
+    ],
+    "decorations": {
+      "authorizedPinnedCoreRule": "navigation_beacon",
+      "conflicted": "conflict_indicator",
+      "selected": "focus_ring"
+    },
+    "containers": [
+      "star_cluster",
+      "galaxy"
+    ],
+    "sameMemoryAppearsOnce": true,
+    "backgroundDustIsNotMemory": true
+  }
+}

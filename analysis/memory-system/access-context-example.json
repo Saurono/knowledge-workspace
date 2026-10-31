@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0-draft",
+  "exampleOnly": true,
+  "contextId": "ctx-example-review",
+  "actorPrincipalId": "agent-atlas",
+  "effectivePrincipalId": "delegated-project-reviewer",
+  "identityGrantId": "grant-example-01",
+  "workRoleId": "reviewer",
+  "projectId": "project-example",
+  "allowedMemoryScopes": [
+    "project_and_role"
+  ],
+  "privateMemoryAccess": "explicit-object-grants-only",
+  "capabilities": [
+    "memory.search",
+    "memory.read",
+    "memory.propose_revision"
+  ],
+  "expiresAt": "2026-10-31T12:00:00Z",
+  "permissionVersion": 7,
+  "audit": {
+    "preserveActorAndEffectiveIdentity": true,
+    "requestIdRequired": true
+  }
+}

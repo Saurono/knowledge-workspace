@@ -1,0 +1,15 @@
+flowchart TB
+  HUMAN["人员登录 · user/admin"] --> AUTH["身份 / Token / 身份委托 / 角色授予"]
+  AGENTS["多个 Agent · 独立 Token"] --> AUTH
+  AUTH --> CTX["每任务访问上下文 · 真实操作者 / 有效身份 × 工作角色 × 项目范围"]
+  CTX --> POLICY["服务端策略 / ACL / 有效期"]
+  POLICY --> READ["分层检索 / 规则装载 / readSet"]
+  POLICY --> WRITE["候选 / 修订提案 / 审核"]
+  WRITE --> DB["事务记忆库 / 版本 / 关系 / 审计 / outbox"]
+  DB --> INDEX["关键词 / 向量 / 授权图投影"]
+  INDEX --> READ
+  DB --> CURATE["去重 / 冲突 / 摘要 / 过期整理任务"]
+  CURATE --> WRITE
+  INDEX --> STAR["星体映射策略 / 稳定坐标 / 分级星图"]
+  STAR --> UI["统一深空工作台 · 本地 / Web"]
+  READ --> UI
