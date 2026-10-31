@@ -1,4 +1,4 @@
-import { fileExists, readFile, writeFileAtomic } from "@/commands/fs"
+import { wikiStorage } from "./storage"
 import { normalizePath } from "@/lib/path-utils"
 import { withProjectLock } from "@/lib/project-mutex"
 import { createWikiPageService, type WikiPageRepository } from "@/modules/wiki/application"
@@ -6,13 +6,13 @@ import { hashContentRevision } from "@/modules/documents/application"
 const fullPath = (projectPath: string, path: string) =>
   `${normalizePath(projectPath).replace(/\/+$/, "")}/${path}`
 export const localWikiPages: WikiPageRepository = {
-  read: (projectPath, path) => readFile(fullPath(projectPath, path)),
+  read: (projectPath, path) => wikiStorage.read(fullPath(projectPath, path)),
   update: (projectPath, path, change) =>
     withProjectLock(normalizePath(projectPath), async () => {
       const file = fullPath(projectPath, path)
-      const previous = (await fileExists(file)) ? await readFile(file) : null
+      const previous = (await wikiStorage.exists(file)) ? await wikiStorage.read(file) : null
       const page = await change(previous)
-      if (page.content !== previous) await writeFileAtomic(file, page.content)
+      if (page.content !== previous) await wikiStorage.writeAtomic(file, page.content)
       return page
     }),
 }

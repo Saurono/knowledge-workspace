@@ -11,6 +11,6 @@
 
 `app/wiki` 装配原生仓储、合并、历史和提交锁。生成提交适配保留原生 writer/history 行为；`withWikiProjectCommit` 为旧绝对路径 helper 提供上下文，不重复加锁。入库、对话/审阅、研究、去重和链接增强已接入。sidecar 与备份继续由各自适配写入。审阅保持稳定文件名优先，对话同秒保存不会互相覆盖。
 
-B08c4 尚待元数据归属、版本统一和编辑器冲突 UI/平台解耦。词法路径规则不替代授权或 symlink 检查，当前锁不提供跨进程排他；原生历史格式保留，生产 Web 后端仍未实现。
+B08c4：页面元数据归属 domain/provenance，来源身份仍归 documents，应用层保持 v1 聚合文件。application/editor-session 将连续保存串行化并检查基线修订，冲突后停止自动保存；ui/editor-status 是受控冲突/错误提示，支持保留和复制草稿、显式放弃后重载。app/wiki/use-preview-document 管理读取/节流/作用域，storage 统一既有本地版本历史和写入适配。选择编辑/历史恢复后重载修订基线。词法路径规则不替代授权或 symlink 检查，当前锁不提供跨进程排他；原生历史格式保留，生产 Web 后端仍未实现。
 
 验证：`npm run check:modules`、`npm run typecheck`、`npm run test:mocks`。并发测试覆盖旧编辑器共享锁、部分写入、上下文关闭、迟到 I/O、文件名碰撞、过期模型快照及保留最新正文/目录。

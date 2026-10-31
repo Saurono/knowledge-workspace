@@ -9,10 +9,12 @@ export function FileHistoryButton({
   filePath,
   currentContent,
   buttonClassName,
+  onRestored,
 }: {
   filePath: string
   currentContent: string
   buttonClassName?: string
+  onRestored?: () => void
 }) {
   const project = useWikiStore((state) => state.project)
   const [open, setOpen] = useState(false),
@@ -80,6 +82,7 @@ export function FileHistoryButton({
       if (current(version)) {
         useWikiStore.getState().openFileInPreview(filePath, content)
         setOpen(false)
+        onRestored?.()
       }
     } catch (failure) {
       if (current(version)) setError(String(failure))

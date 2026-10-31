@@ -1,10 +1,8 @@
 import type { SourceProvenance } from "@/modules/documents/domain"
 export const RECEIPT_DIRECTORY = "kb-ingest-records"
 export type { SourceProvenance } from "@/modules/documents/domain"
-export interface WikiProvenance {
-  createdAt: string | null
-  sources: string[]
-}
+import type { WikiProvenance } from "@/modules/wiki/domain"
+export type { WikiProvenance } from "@/modules/wiki/domain"
 export interface IngestReceipt {
   schemaVersion: 1
   id: string

@@ -8,7 +8,7 @@ import { useWikiStore } from "@/stores/wiki-store"
 import { PageLinksPanel } from "@/components/editor/page-links-panel"
 import { useTranslation } from "react-i18next"
 import { buildWordDiff, findDomTextSelection, findUniqueTextSelection, normalizeEditableMarkdown, normalizeSelectionReplacement } from "@/lib/selection-edit"
-import { applyTextSelectionEdit, readFile } from "@/commands/fs"
+import { applyEditorSelection, readEditorReference } from "@/app/wiki/editor-actions"
 import { streamChat } from "@/lib/llm-client"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { searchWiki, type SearchResult } from "@/lib/search"
@@ -35,6 +35,7 @@ interface WikiEditorProps {
   /** Absolute path of the file, threaded to WikiReader so relative
    *  image references resolve against the file's own directory. */
   filePath?: string
+  onExternalWrite?: () => void
 }
 
 // Selection actions update the parent editor state. Keeping the rendered body
@@ -43,7 +44,7 @@ interface WikiEditorProps {
 const StableWikiReader = memo(WikiReader)
 const StableFrontmatterPanel = memo(FrontmatterPanel)
 
-export function WikiEditor({ content, onSave, filePath }: WikiEditorProps) {
+export function WikiEditor({ content, onSave, filePath, onExternalWrite }: WikiEditorProps) {
   const { t } = useTranslation()
   // Default to read mode (ReactMarkdown render). Edit mode is a raw Markdown
   // textarea so metadata/frontmatter can be edited without a WYSIWYG serializer
@@ -262,7 +263,7 @@ export function WikiEditor({ content, onSave, filePath }: WikiEditorProps) {
     const replacement = normalizeSelectionReplacement(selectionResult.content)
     try {
       setSelectionError("")
-      const updated = await applyTextSelectionEdit({
+      const updated = await applyEditorSelection({
         projectPath: project.path,
         filePath: selectionRequest.filePath,
         prefix: selectionRequest.prefix,
@@ -270,8 +271,11 @@ export function WikiEditor({ content, onSave, filePath }: WikiEditorProps) {
         suffix: selectionRequest.suffix,
         replacement,
       })
-      if (useWikiStore.getState().selectedFile === selectionRequest.filePath) {
+      if (useWikiStore.getState().selectedFile === selectionRequest.filePath
+        && useWikiStore.getState().project?.id === project.id
+        && useWikiStore.getState().project?.path === project.path) {
         useWikiStore.getState().setFileContent(updated)
+        onExternalWrite?.()
       }
       setSelectionRequest(null)
       setSelectionResult(null)
@@ -285,7 +289,7 @@ export function WikiEditor({ content, onSave, filePath }: WikiEditorProps) {
           : t("editor.selection.applyFailed"),
       )
     }
-  }, [project, selectionRequest, selectionResult, t])
+  }, [project, selectionRequest, selectionResult, onExternalWrite, t])
 
   const closeSelectionPanel = useCallback(() => {
     selectionRunIdRef.current += 1
@@ -312,7 +316,7 @@ export function WikiEditor({ content, onSave, filePath }: WikiEditorProps) {
   const openCitation = useCallback(async (reference: SearchResult) => {
     try {
       setSelectionError("")
-      const content = await readFile(reference.path)
+      const content = await readEditorReference(reference.path)
       setCitationPreview({ path: reference.path, title: reference.title, content })
     } catch (error) {
       console.error("Failed to open selection reference", error)

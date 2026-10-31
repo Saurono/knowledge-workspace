@@ -1,3 +1,4 @@
+import { moveWikiProvenance } from "@/modules/wiki/domain"
 import { moveSourceKey } from "@/modules/documents/domain"
 import { normalizePath, isAbsolutePath } from "@/lib/path-utils"
 import { loadIngestRecords, saveRecords, withRecordsLock } from "./repository"
@@ -33,18 +34,7 @@ export async function migrateSourceMetadata(
     const catalog = moveSourceKey(records.sources, oldKey, newKey)
     if (catalog === records.sources) return false
     records.sources = catalog
-    for (const page of Object.values(records.pages))
-      page.sources = [...new Set(page.sources.map((key) => (key === oldKey ? newKey : key)))]
-    for (const [oldPath, newPath] of pageMoves) {
-      const old = records.pages[oldPath],
-        next = records.pages[newPath]
-      if (!old) continue
-      records.pages[newPath] = {
-        createdAt: old.createdAt ?? next?.createdAt ?? null,
-        sources: [...new Set([...old.sources, ...(next?.sources ?? [])])],
-      }
-      delete records.pages[oldPath]
-    }
+    records.pages = moveWikiProvenance(records.pages, oldKey, newKey, pageMoves)
     // Receipts describe historical deliveries; never rewrite those payloads.
     await saveRecords(projectPath, records)
     return true

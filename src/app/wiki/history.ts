@@ -1,14 +1,14 @@
-import { listFileHistory, restoreFileHistory } from "@/commands/fs"
+import { wikiStorage } from "./storage"
 import { normalizePath } from "@/lib/path-utils"
 import { withProjectLock } from "@/lib/project-mutex"
 import { createFileHistoryService } from "@/modules/documents/application"
 const full = (projectPath: string, path: string) =>
   `${normalizePath(projectPath).replace(/\/+$/, "")}/${path}`
 const history = createFileHistoryService({
-  list: (projectPath, path) => listFileHistory(projectPath, full(projectPath, path)),
+  list: (projectPath, path) => wikiStorage.listHistory(projectPath, full(projectPath, path)),
   restore: (projectPath, path, id) =>
     withProjectLock(normalizePath(projectPath), () =>
-      restoreFileHistory(projectPath, full(projectPath, path), id),
+      wikiStorage.restoreHistory(projectPath, full(projectPath, path), id),
     ),
 })
 const relative = (projectPath: string, path: string) => {

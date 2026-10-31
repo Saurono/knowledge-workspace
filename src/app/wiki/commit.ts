@@ -1,4 +1,4 @@
-import { readFile, writeFile, fileExists } from "@/commands/fs"
+import { wikiStorage } from "./storage"
 import { normalizePath } from "@/lib/path-utils"
 import { withProjectLock } from "@/lib/project-mutex"
 import { createWikiCommitService, type WikiCommitRepository } from "@/modules/wiki/application"
@@ -9,11 +9,11 @@ export const localWikiCommits: WikiCommitRepository = {
   run: (projectPath, operation) =>
     withProjectLock(normalizePath(projectPath), () =>
       operation({
-        read: (path) => readFile(full(projectPath, path)),
-        exists: (path) => fileExists(full(projectPath, path)),
+        read: (path) => wikiStorage.read(full(projectPath, path)),
+        exists: (path) => wikiStorage.exists(full(projectPath, path)),
         // Preserve the existing native generation/history behavior. The module
         // controls scope/locking; the platform adapter chooses its write primitive.
-        write: (path, content) => writeFile(full(projectPath, path), content),
+        write: (path, content) => wikiStorage.write(full(projectPath, path), content),
       }),
     ),
 }

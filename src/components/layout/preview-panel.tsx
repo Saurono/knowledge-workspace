@@ -1,11 +1,10 @@
 import { FileHistoryButton } from "@/components/editor/file-history-panel"
-import { isWikiTextPath, readWikiEditorPage, writeWikiEditorPage } from "@/app/wiki/pages"
-import { useEffect, useCallback, useRef } from "react"
+import { usePreviewDocument } from "@/app/wiki/use-preview-document"
+import { WikiEditorStatus } from "@/modules/wiki/ui"
 import { ArrowLeft, ArrowRight, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { useWikiStore } from "@/stores/wiki-store"
-import { readFile, writeFile } from "@/commands/fs"
-import { getFileCategory, isBinary, isExtractedTextPreviewFile } from "@/lib/file-types"
+import { getFileCategory } from "@/lib/file-types"
 import { SelectedTaskIndicator } from "@/components/workspace/selected-task-indicator"
 import { WikiProvenance } from "@/components/workspace/wiki-provenance"
 import { WikiReader } from "@/components/editor/wiki-reader"
@@ -22,109 +21,13 @@ export function PreviewPanel() {
   const project = useWikiStore((s) => s.project)
   const selectedFile = useWikiStore((s) => s.selectedFile)
   const fileContent = useWikiStore((s) => s.fileContent)
-  const previewContentPath = useWikiStore((s) => s.previewContentPath)
   const externalPreview = useWikiStore((s) => s.externalPreview)
-  const setFileContent = useWikiStore((s) => s.setFileContent)
   const closePreview = useWikiStore((s) => s.closePreview)
   const previewBackStack = useWikiStore((s) => s.previewBackStack)
   const previewForwardStack = useWikiStore((s) => s.previewForwardStack)
   const navigatePreviewBack = useWikiStore((s) => s.navigatePreviewBack)
   const navigatePreviewForward = useWikiStore((s) => s.navigatePreviewForward)
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Snapshot of what was most recently loaded from disk. Milkdown re-emits
-  // `markdownUpdated` on initial parse (before the user types anything),
-  // which used to trigger an auto-save that could write back a placeholder
-  // marker if read_file had returned one for a missing/locked file. We
-  // skip save when the incoming markdown equals the last-loaded content.
-  const lastLoadedRef = useRef<string>("")
-
-  useEffect(() => {
-    let cancelled = false
-    if (!selectedFile) {
-      setFileContent("")
-      lastLoadedRef.current = ""
-      return
-    }
-    if (previewContentPath === selectedFile) {
-      lastLoadedRef.current = fileContent
-      return
-    }
-    if (externalPreview?.path === selectedFile) {
-      lastLoadedRef.current = fileContent
-      return
-    }
-
-    const category = getFileCategory(selectedFile)
-
-    if (isBinary(category) && !isExtractedTextPreviewFile(selectedFile)) {
-      setFileContent("")
-      lastLoadedRef.current = ""
-      return
-    }
-
-    const reading =
-      project && isWikiTextPath(project.path, selectedFile)
-        ? readWikiEditorPage(project.path, selectedFile)
-        : readFile(selectedFile)
-    reading
-      .then((content) => {
-        if (cancelled) return
-        lastLoadedRef.current = content
-        setFileContent(content)
-      })
-      .catch((err) => {
-        if (cancelled) return
-        lastLoadedRef.current = ""
-        setFileContent(`Error loading file: ${err}`)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [selectedFile, previewContentPath, externalPreview, setFileContent, project?.path])
-
-  const writeNow = useCallback(
-    (path: string, markdown: string, syncStore = false) => {
-      const writing =
-        project && isWikiTextPath(project.path, path)
-          ? writeWikiEditorPage(project.path, path, markdown)
-          : writeFile(path, markdown)
-      writing
-        .then(() => {
-          const current = useWikiStore.getState()
-          if (current.selectedFile !== path || current.project?.path !== project?.path) return
-          lastLoadedRef.current = markdown
-          if (syncStore) setFileContent(markdown)
-        })
-        .catch((err) => console.error("Failed to save:", err))
-    },
-    [setFileContent, project?.path],
-  )
-
-  const handleSave = useCallback(
-    (markdown: string, options?: { immediate?: boolean }) => {
-      if (!selectedFile) return
-      // Ignore no-op saves from the editor's initial re-emit. Only write
-      // when the user has actually changed the content relative to the
-      // last disk read.
-      if (markdown === lastLoadedRef.current) return
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-      if (options?.immediate) {
-        setFileContent(markdown)
-        writeNow(selectedFile, markdown, true)
-        return
-      }
-      saveTimerRef.current = setTimeout(() => {
-        writeNow(selectedFile, markdown, true)
-      }, 1000)
-    },
-    [selectedFile, setFileContent, writeNow],
-  )
-
-  useEffect(() => {
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    }
-  }, [])
+  const document = usePreviewDocument()
 
   if (!selectedFile) {
     return (
@@ -176,6 +79,7 @@ export function PreviewPanel() {
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
+      {!externalPreview && <WikiEditorStatus {...document.state} onReload={document.reload} onRetry={document.retry} onCopy={(draft) => { void navigator.clipboard.writeText(draft) }} />}
       {!externalPreview && <WikiProvenance filePath={selectedFile} />}
       {project && !externalPreview && (
         <DomainTags
@@ -183,7 +87,7 @@ export function PreviewPanel() {
         />
       )}
       <div className="relative flex-1 min-w-0 overflow-auto">
-        {category==="markdown"&&!externalPreview&&<FileHistoryButton key={selectedFile} filePath={selectedFile} currentContent={fileContent} buttonClassName="right-3 top-12"/>}
+        {category==="markdown"&&!externalPreview&&<FileHistoryButton key={selectedFile} filePath={selectedFile} currentContent={fileContent} onRestored={document.reload} buttonClassName="right-3 top-12"/>}
         {externalPreview?.path === selectedFile ? (
           <ExternalReferencePreview
             source={externalPreview.source}
@@ -197,9 +101,10 @@ export function PreviewPanel() {
           </div>
         ) : category === "markdown" ? (
           <WikiEditor
-            key={selectedFile}
+            key={`${selectedFile}:${document.reloadVersion}`}
             content={fileContent}
-            onSave={handleSave}
+            onSave={document.save}
+            onExternalWrite={document.reload}
             filePath={selectedFile}
           />
         ) : (

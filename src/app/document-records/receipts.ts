@@ -1,3 +1,4 @@
+import { recordWikiProvenance } from "@/modules/wiki/domain"
 import { createDirectory, fileExists, writeFileAtomic } from "@/commands/fs"
 import { normalizePath, isAbsolutePath } from "@/lib/path-utils"
 import { recordSourceIngested } from "@/modules/documents/domain"
@@ -43,14 +44,7 @@ export async function recordSuccessfulIngest(input: {
     const source = updated.source
     const id = `${source.id}-${input.revision}`
     const previous = records.receipts[id]
-    for (const path of input.writtenPaths) {
-      const normalized = normalizePath(path)
-      const page = (records.pages[normalized] ??= {
-        createdAt: input.createdPages[normalized] ?? null,
-        sources: [],
-      })
-      if (!page.sources.includes(key)) page.sources.push(key)
-    }
+    records.pages = recordWikiProvenance(records.pages, input.writtenPaths, key, input.createdPages)
     const underVault = records.vaultPath && source.originalPath?.startsWith(`${records.vaultPath}/`)
     records.receipts[id] = {
       schemaVersion: 1,

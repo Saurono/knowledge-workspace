@@ -1,6 +1,6 @@
 # 新会话交接
 
-> 当前状态：B08c3 已完成。用户最新要求完成到 B09 后暂停，继续 B08c4 与 B09。
+> 当前状态：B08c4 已完成。用户最新要求完成到 B09 后暂停，继续 B09。
 
 ## 先读与工作约定
 
@@ -45,7 +45,11 @@ B08c3 已完成：Wiki application 提供有生命周期的提交上下文，app
 - 去重提交前验证模型输入快照，正文变动则要求重试；目录独立处理并保留模型准备期间新增条目。链接增强基于最新正文应用结果。
 - 这不是跨文件回滚事务；失败保留已完成写入。保留原生写入与历史格式，不代表身份授权、跨进程锁或生产 Web 后端完成。
 
-下一项 B08c4：Wiki 元数据归属、版本历史统一与编辑器冲突 UI/平台解耦，**下一项，用户已授权继续**。B08/B08c 保持未完成；B07c 仍依赖 C02/I02。
+B08c4 已完成：Wiki 领域拥有页面创建时间/来源关联及移动规则，现有 ingest-records v1 文件仍由应用层聚合。Wiki 页面、生成写入和历史共用桌面存储适配，保留原生 before/after 历史记录和格式。编辑会话串行条件保存，冲突后阻止队列/后续自动覆盖；界面保留草稿、提供复制和显式放弃后重载，读取/保存失败显示错误。预览读写编排迁入 app/wiki hook，编辑组件不直接导入文件命令；原文选择编辑与历史恢复后重新加载基线。
+
+B08/B08c 的现有本地链路迁移完成；生产 Web 存储/权限和跨进程排他仍在后续任务。本地 native writer 仍按上游记录 human，真实身份归因待账号/Agent 链路，不把它称为安全审计。B07c 仍依赖 C02/I02。
+
+下一项 B09：抽离检索服务、索引端口与模型适配；关键词/向量/证据检索职责清晰。用户已授权继续，**完成 B09 后暂停，不开始 B10**。
 
 ## 验证与启动
 
@@ -58,10 +62,10 @@ npm run build
 npm run build:preview
 ```
 
-最新完整模拟回归：164 文件 / 2192 项通过。十二模块边界、类型、正式/预览构建通过。新增提交/发布/并发防丢失测试通过。Chromium 验证对话保存、审阅保存/建页、目录/日志和审阅完成状态，页面异常及外部请求均为 0；先前历史/项目 ABA 浏览器验证保留。
+最新完整模拟回归：166 文件 / 2198 项通过。十二模块边界、类型、正式/预览构建通过。新增提交/发布/并发防丢失测试通过。Chromium 验证对话保存、审阅保存/建页、目录/日志和审阅完成状态，页面异常及外部请求均为 0；先前历史/项目 ABA 浏览器验证保留。
 
 - 真实模型、真实 Vault、原生 Rust/watcher/桌面安装包尚未验收；本环境此前没有 cargo，新环境重新检查。
 - `npm run dev` 是前端；桌面需 `npm run tauri dev` 与 Rust/Tauri 依赖。
 - 显式沙箱入口 preview.html / src/preview，构建为 dist-preview/preview.html，使用模拟文件系统和合成数据。
-- 可复现浏览器脚本在 analysis/implementation：smoke-task-ui.mjs、smoke-wiki-repository.mjs、smoke-file-history.mjs、smoke-generated-pages.mjs；需要 PLAYWRIGHT_MODULE、CHROMIUM_PATH 与 Vite。禁止将夹具脚本指向真实知识库。
+- 可复现浏览器脚本在 analysis/implementation：smoke-task-ui.mjs、smoke-wiki-repository.mjs、smoke-file-history.mjs、smoke-generated-pages.mjs、smoke-wiki-conflict.mjs；需要 PLAYWRIGHT_MODULE、CHROMIUM_PATH 与 Vite。禁止将夹具脚本指向真实知识库。
 - `/tmp` 工具、端口与 `/workspace/artifacts` 预览是环境临时产物，不保证新会话存在。新增测试避免放进被忽略的 tests/ 目录。
