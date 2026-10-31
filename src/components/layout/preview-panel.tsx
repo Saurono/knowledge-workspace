@@ -1,3 +1,4 @@
+import { FileHistoryButton } from "@/components/editor/file-history-panel"
 import { isWikiTextPath, readWikiEditorPage, writeWikiEditorPage } from "@/app/wiki/pages"
 import { useEffect, useCallback, useRef } from "react"
 import { ArrowLeft, ArrowRight, X } from "lucide-react"
@@ -181,7 +182,8 @@ export function PreviewPanel() {
           resourcePath={normalizePath(selectedFile).replace(`${normalizePath(project.path)}/`, "")}
         />
       )}
-      <div className="flex-1 min-w-0 overflow-auto">
+      <div className="relative flex-1 min-w-0 overflow-auto">
+        {category==="markdown"&&!externalPreview&&<FileHistoryButton key={selectedFile} filePath={selectedFile} currentContent={fileContent} buttonClassName="right-3 top-12"/>}
         {externalPreview?.path === selectedFile ? (
           <ExternalReferencePreview
             source={externalPreview.source}

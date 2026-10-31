@@ -11,3 +11,5 @@ domain/ 提供来源数组合并、页面类型和 Wiki 链接转换。
 B08a：domain/page 定义 Wiki 页面与修订冲突，application/pages 提供仓储/修订函数端口，app/wiki 装配项目锁和原子写入。现有 Wiki 编辑/预览经该接口读写；expectedRevision 可用于新调用者，旧编辑器仍无条件保存。其余生成/纠错写入、历史存储和冲突 UI 尚待 B08c；词法路径规则不替代授权或平台 symlink 检查。
 
 B08b：application/merge 接收解析/规范化端口，模型/备份按原参数注入；domain/body-links 保护正文链接、代码和嵌入，app/wiki/merge 负责装配，lib/page-merge 兼容。全部合并保护规则保留。
+
+B08c1/c2：纠错读改写在项目锁内执行纯变换，占位页并发仅创建一次。ui/file-history-view 是受控历史面板，使用 documents 的通用文件历史模型；应用容器处理 native 查询/恢复、diff 和异步作用域。原生历史库保留，Web 历史后端与完整编辑冲突 UI 尚待实现。

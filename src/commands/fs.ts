@@ -1,3 +1,4 @@
+import type { FileHistoryEntry } from "@/modules/documents/domain"
 import { invoke } from "@tauri-apps/api/core"
 import type { FileNode, WikiProject } from "@/types/wiki"
 import { ensureProjectId, upsertProjectInfo } from "@/lib/project-identity"
@@ -141,14 +142,7 @@ export async function getFileMd5(path: string): Promise<string> {
   return invoke<string>("get_file_md5", { path })
 }
 
-export interface FileHistoryEntry {
-  id: string
-  path: string
-  timestamp: number
-  author: string
-  tool: string
-  content: string
-}
+export type { FileHistoryEntry } from "@/modules/documents/domain"
 
 export interface FileHistoryStats {
   bytes: number

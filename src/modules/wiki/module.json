@@ -3,9 +3,16 @@
   "publicEntrypoints": [
     "index.ts",
     "domain/index.ts",
-    "application/index.ts"
+    "application/index.ts",
+    "ui/index.ts"
   ],
-  "allowedModuleDependencies": [],
-  "allowedExternalImports": [],
+  "allowedModuleDependencies": [
+    "documents"
+  ],
+  "allowedExternalImports": [
+    "react",
+    "react-i18next",
+    "lucide-react"
+  ],
   "allowedLegacyImports": []
 }
