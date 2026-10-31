@@ -518,7 +518,7 @@ describe("ingest-queue — retry & failure", () => {
     mockAutoIngest.mockRejectedValue(new Error("always fails"))
 
     await enqueueIngest(TEST_ID, "x.md")
-    await flushMicrotasks(20)
+    await waitFor(() => getQueue()[0]?.status === "failed")
     expect(getQueue()[0].status).toBe("failed")
 
     const taskId = getQueue()[0].id
@@ -849,7 +849,7 @@ describe("ingest-queue — clearCompletedTasks & summary", () => {
   it("getQueueSummary returns accurate counts", async () => {
     mockAutoIngest.mockRejectedValue(new Error("fail"))
     await enqueueIngest(TEST_ID, "fail.md")
-    await flushMicrotasks(20)
+    await waitFor(() => getQueueSummary().failed === 1)
 
     const summary = getQueueSummary()
     expect(summary.failed).toBe(1)
@@ -877,7 +877,7 @@ describe("ingest-queue — clearCompletedTasks & summary", () => {
   it("clearCompletedTasks drops failed tasks", async () => {
     mockAutoIngest.mockRejectedValue(new Error("fail"))
     await enqueueIngest(TEST_ID, "f.md")
-    await flushMicrotasks(20)
+    await waitFor(() => getQueue()[0]?.status === "failed")
 
     expect(getQueue()).toHaveLength(1)
     await clearCompletedTasks()
@@ -1192,7 +1192,7 @@ describe("ingest-queue — restoreQueue", () => {
     expect(getQueue().filter((task) => task.status === "pending")).toHaveLength(1)
 
     firstRun.resolve(["wiki/sources/same.md"])
-    await flushMicrotasks(10)
+    await waitFor(() => getQueue().length === 0)
 
     expect(mockAutoIngest).toHaveBeenCalledTimes(2)
     expect(mockAutoIngest.mock.calls[0][1]).toBe(`${TEST_PATH}/same.md`)
@@ -1412,7 +1412,7 @@ describe("ingest-queue — pause/resume processing", () => {
     expect(mockAutoIngest).toHaveBeenCalledTimes(1)
 
     rejectFirst(new Error("aborted"))
-    await flushMicrotasks(10)
+    await waitFor(() => getQueue().length === 0)
     expect(isQueuePaused()).toBe(false)
     expect(mockAutoIngest).toHaveBeenCalledTimes(2)
     expect(getQueue()).toHaveLength(0)

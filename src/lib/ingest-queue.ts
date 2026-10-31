@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "@/commands/fs"
-import { autoIngest } from "./ingest"
+import { runQueuedIngest } from "@/app/tasks/ingestion"
 import { normalizePath, isAbsolutePath } from "@/lib/path-utils"
 import { getProjectPathById } from "@/lib/project-identity"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
@@ -1091,14 +1091,16 @@ async function runTask(
   }
 
   try {
-    const writtenFiles = await autoIngest(
-      projectPath,
-      fullSourcePath,
-      getTaskLlmConfig("ingest"),
-      run.controller.signal,
-      task.folderContext,
-      trackWrittenFile,
-      { runCommit, taskId: task.id },
+    const writtenFiles = await runQueuedIngest(
+      {
+        projectPath,
+        sourcePath: fullSourcePath,
+        model: getTaskLlmConfig("ingest"),
+        folderContext: task.folderContext,
+        onFileWritten: trackWrittenFile,
+        runCommit,
+      },
+      { id: task.id, scopeId: projectId, signal: run.controller.signal },
     )
     if (currentProjectId !== projectId || run.epoch !== queueEpoch) return
     run.writtenFiles = writtenFiles
@@ -1111,7 +1113,6 @@ async function runTask(
       await saveQueue(projectPath)
       return
     }
-    if (writtenFiles.length === 0) throw new Error("Ingest produced no output files")
 
     cancelledInFlightTaskIds.delete(task.id)
     queue = queue.filter((candidate) => candidate.id !== task.id)

@@ -1,3 +1,4 @@
+import type { IngestCommitRunner } from "@/modules/ingestion/application"
 import {
   createDirectory,
   deleteFile,
@@ -615,7 +616,7 @@ export function languageRule(sourceContent: string = ""): string {
  * overlap. Wiki-page and aggregate-file mutations run through a per-project
  * commit boundary. Queue callers can add stricter ordering around that boundary.
  */
-export type IngestCommitRunner = <T>(operation: () => Promise<T>) => Promise<T>
+export type { IngestCommitRunner } from "@/modules/ingestion/application"
 
 export interface AutoIngestOptions {
   /**

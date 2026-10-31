@@ -29,10 +29,12 @@
 
 ## 当前执行点
 
-- 本批已建清单；B01（任务外部取消信号）已完成并通过 13 项相关测试。当前开始 B02（入库执行器/真实队列接入）。
-- 主要入口：`modules/tasks/application/runtime.ts`、`lib/ingest-queue.ts` 的 runTask、`lib/ingest.ts` 的 autoIngest。
-- 迁移时保留队列 epoch、暂停/重试、并发提交顺序、部分写入保护和回执；不能因添加执行器绕过旧安全边界。
-- 随后 B03（队列端口化）/B04（研究执行器），再逐步迁移 Wiki/Obsidian。
+- 本批完成 A10（任务与交接入口）、B01（外部取消契约，`227da96`）、B02（真实队列通过入库执行器运行；提交与本文件同批，查 Git 最新日志）。
+- 下一项 B03：`lib/ingest-queue.ts` 仍包含调度与持久化，优先将其拆为可注入端口的应用服务，保留旧格式/兼容入口与现有竞态测试；不要一次改写全部状态机。
+- 继而 B04：`lib/deep-research.ts`/`stores/research-store.ts` 的研究模型、证据规则与执行器；现有研究尚未接入 tasks。
+- 当前入库入口：`modules/ingestion/application/execute-ingest.ts` → `app/tasks/ingestion.ts` → 旧 autoIngest，队列保留 epoch、并发提交顺序、部分写入和回执链路。
+- 入库每次尝试独立运行时，以隔离同逻辑 ID 的恢复；它不提供持久状态或跨尝试历史。恢复/重试的排他仍由队列/锁负责。
+- 最新验证：模拟回归 152 文件/2114 项、九模块边界、类型、正式/预览构建通过；详情 L006/L007。B03/B04 尚未开始，不误标完成。
 
 ## 验证与启动
 

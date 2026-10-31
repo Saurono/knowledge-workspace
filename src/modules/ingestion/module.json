@@ -1,7 +1,13 @@
 {
   "id": "ingestion",
-  "publicEntrypoints": ["index.ts", "domain/index.ts"],
-  "allowedModuleDependencies": [],
+  "publicEntrypoints": [
+    "index.ts",
+    "domain/index.ts",
+    "application/index.ts"
+  ],
+  "allowedModuleDependencies": [
+    "tasks"
+  ],
   "allowedExternalImports": [],
   "allowedLegacyImports": []
 }
