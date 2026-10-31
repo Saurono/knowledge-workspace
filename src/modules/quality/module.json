@@ -1,0 +1,7 @@
+{
+  "id": "quality",
+  "publicEntrypoints": ["index.ts", "domain/index.ts"],
+  "allowedModuleDependencies": ["tasks"],
+  "allowedExternalImports": [],
+  "allowedLegacyImports": []
+}

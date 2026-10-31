@@ -1,0 +1,7 @@
+{
+  "id": "tasks",
+  "publicEntrypoints": ["index.ts"],
+  "allowedModuleDependencies": [],
+  "allowedExternalImports": [],
+  "allowedLegacyImports": []
+}

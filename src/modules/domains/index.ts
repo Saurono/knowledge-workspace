@@ -1,0 +1,4 @@
+export { createDomainService } from "./application/service"
+export type { DomainRepository, DomainService } from "./application/service"
+export type { DomainTag, DomainState } from "./domain/model"
+export { DomainTagEditor } from "./ui/domain-tag-editor"

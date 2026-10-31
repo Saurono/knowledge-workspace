@@ -6,32 +6,15 @@
  * over stdin, and emits each JSONL stdout line back as `codex-cli:{streamId}`.
  */
 
+import { parseCodexCliLine } from "@/modules/cli/domain"
+export { parseCodexCliLine } from "@/modules/cli/domain"
+
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import type { LlmConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import type { ChatMessage, ContentBlock, RequestOverrides } from "./llm-providers"
 import type { StreamCallbacks } from "./llm-client"
-
-export function parseCodexCliLine(rawLine: string): string | null {
-  const line = rawLine.trim()
-  if (!line) return null
-
-  let evt: unknown
-  try {
-    evt = JSON.parse(line)
-  } catch {
-    return null
-  }
-
-  if (!evt || typeof evt !== "object") return null
-  const obj = evt as Record<string, unknown>
-  if (obj.type !== "item.completed") return null
-
-  const item = obj.item as Record<string, unknown> | undefined
-  if (item?.type !== "agent_message") return null
-  return typeof item.text === "string" && item.text.length > 0 ? item.text : null
-}
 
 function contentToText(content: string | ContentBlock[]): string {
   if (typeof content === "string") return content
@@ -80,7 +63,9 @@ export async function streamCodexCli(
     for (const key of ["temperature", "top_p", "top_k", "max_tokens", "stop"] as const) {
       if (overrides[key] !== undefined) {
         // eslint-disable-next-line no-console
-        console.warn(`[codex-cli] ignoring unsupported override "${key}": CLI has no equivalent flag`)
+        console.warn(
+          `[codex-cli] ignoring unsupported override "${key}": CLI has no equivalent flag`,
+        )
       }
     }
   }
@@ -163,62 +148,67 @@ export async function streamCodexCli(
       stdout?: string
       timedOut?: boolean
       timeoutMinutes?: number
-    }>(
-      `codex-cli:${streamId}:done`,
-      (event) => {
-        const code = event.payload?.code
-        const stderr = event.payload?.stderr?.trim() ?? ""
-        const stdout = event.payload?.stdout ?? ""
-        // Checked before `code`, and before the agent_message branch below.
-        // The timeout task takes the child handle away in order to kill it, so
-        // `code` is null here regardless of how the process ended. The
-        // exit-code branch skips null outright, and the branch after it calls
-        // onDone once any agent message has arrived, so a timeout that had
-        // already produced partial output would be reported as a success.
-        if (event.payload?.timedOut) {
-          const minutes = event.payload.timeoutMinutes
-          const limit = typeof minutes === "number" ? `${minutes} minute` : "configured"
-          const details = stderr || stdout.trim()
-          // Only stderr was consulted first; say which stream this actually is.
-          const label = stderr ? "stderr" : "stdout"
-          finishWith(() =>
-            onError(new Error(
+    }>(`codex-cli:${streamId}:done`, (event) => {
+      const code = event.payload?.code
+      const stderr = event.payload?.stderr?.trim() ?? ""
+      const stdout = event.payload?.stdout ?? ""
+      // Checked before `code`, and before the agent_message branch below.
+      // The timeout task takes the child handle away in order to kill it, so
+      // `code` is null here regardless of how the process ended. The
+      // exit-code branch skips null outright, and the branch after it calls
+      // onDone once any agent message has arrived, so a timeout that had
+      // already produced partial output would be reported as a success.
+      if (event.payload?.timedOut) {
+        const minutes = event.payload.timeoutMinutes
+        const limit = typeof minutes === "number" ? `${minutes} minute` : "configured"
+        const details = stderr || stdout.trim()
+        // Only stderr was consulted first; say which stream this actually is.
+        const label = stderr ? "stderr" : "stdout"
+        finishWith(() =>
+          onError(
+            new Error(
               [
                 `Codex CLI did not report completion within the ${limit} timeout, so LLM Wiki stopped waiting.`,
                 "Raise the Codex CLI timeout for this preset in Settings",
                 "(1-240 minutes), or shorten the prompt.",
                 details ? `\n\n— ${label} —\n${details}` : "",
-              ].join(" ").trim(),
-            )),
-          )
-          return
-        }
-        if (code !== null && code !== undefined && code !== 0) {
-          const details = stderr || stdout.trim() || unparsedLines.join("\n")
-          finishWith(() =>
-            onError(new Error(
+              ]
+                .join(" ")
+                .trim(),
+            ),
+          ),
+        )
+        return
+      }
+      if (code !== null && code !== undefined && code !== 0) {
+        const details = stderr || stdout.trim() || unparsedLines.join("\n")
+        finishWith(() =>
+          onError(
+            new Error(
               details
                 ? `Codex CLI exited with code ${code}:\n${details}`
                 : `Codex CLI exited with code ${code}. Run \`codex\` in a terminal to inspect the problem.`,
-            )),
-          )
-        } else {
-          if (!emittedAgentMessage) replayAgentMessagesFromStdout(stdout)
-          if (!emittedAgentMessage) {
-            const details = stdout.trim() || unparsedLines.join("\n").trim()
-            finishWith(() =>
-              onError(new Error(
+            ),
+          ),
+        )
+      } else {
+        if (!emittedAgentMessage) replayAgentMessagesFromStdout(stdout)
+        if (!emittedAgentMessage) {
+          const details = stdout.trim() || unparsedLines.join("\n").trim()
+          finishWith(() =>
+            onError(
+              new Error(
                 details
                   ? `Codex CLI completed but did not emit an agent_message. Raw output:\n${details}`
                   : "Codex CLI completed but did not emit an agent_message. Run `codex exec --json` in a terminal to inspect the provider output.",
-              )),
-            )
-          } else {
-            finishWith(onDone)
-          }
+              ),
+            ),
+          )
+        } else {
+          finishWith(onDone)
         }
-      },
-    )
+      }
+    })
     if (aborted || finished) {
       cleanup()
       return
@@ -251,9 +241,11 @@ export async function streamCodexCli(
     finishWith(() => {
       const message = err instanceof Error ? err.message : String(err)
       if (/not found|No such file|executable file not found/i.test(message)) {
-        onError(new Error(
-          "Codex CLI not found. Install `codex` with `npm install -g @openai/codex` or pick a different provider.",
-        ))
+        onError(
+          new Error(
+            "Codex CLI not found. Install `codex` with `npm install -g @openai/codex` or pick a different provider.",
+          ),
+        )
       } else {
         onError(err instanceof Error ? err : new Error(message))
       }

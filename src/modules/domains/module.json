@@ -1,0 +1,7 @@
+{
+  "id": "domains",
+  "publicEntrypoints": ["index.ts", "domain/index.ts", "application/index.ts"],
+  "allowedModuleDependencies": [],
+  "allowedExternalImports": ["react", "react-i18next"],
+  "allowedLegacyImports": []
+}

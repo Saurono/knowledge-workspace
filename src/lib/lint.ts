@@ -13,16 +13,8 @@ import {
 } from "@/lib/lint-structural-core"
 import type { LintConfig } from "@/lib/lint-config"
 
-export interface LintResult {
-  type: "orphan" | "broken-link" | "no-outlinks" | "semantic"
-  severity: "warning" | "info"
-  page: string
-  detail: string
-  affectedPages?: string[]
-  brokenTarget?: string
-  suggestedTarget?: string
-  suggestedSource?: string
-}
+import type { QualityFinding as LintResult } from "@/modules/quality/domain"
+export type { QualityFinding as LintResult } from "@/modules/quality/domain"
 
 const SUGGESTION_TOKEN_WINDOW = 4000
 
