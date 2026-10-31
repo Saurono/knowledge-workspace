@@ -1,0 +1,26 @@
+/** Vite explicit sandbox smoke; never point this at a production workspace. */
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright-core')
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']})
+try {
+ const page=await browser.newPage({viewport:{width:1440,height:1000}})
+ const errors=[];page.on('pageerror',error=>errors.push(error.message))
+ await page.goto(process.env.WORKSPACE_BASE_URL||'http://127.0.0.1:1420/preview.html')
+ await page.getByText('交互预览',{exact:true}).waitFor()
+ await page.getByRole('button',{name:'Wiki',exact:true}).click()
+ await page.getByRole('tab',{name:'编辑模式',exact:true}).click()
+ const labels=await page.evaluate(async()=>{const {default:i18n}=await import('/src/i18n/index.ts');return {editRaw:i18n.t('editor.editRaw'),raw:i18n.t('editor.rawMarkdownEditor')}})
+ await page.getByTitle(labels.editRaw,{exact:true}).click()
+ const editor=page.getByRole('textbox',{name:labels.raw,exact:true})
+ await editor.waitFor()
+ await editor.fill((await editor.inputValue())+'\n\nWiki repository browser save verification')
+ await page.waitForFunction(async()=>{
+  const {useWikiStore}=await import('/src/stores/wiki-store.ts')
+  const {readWikiEditorPage}=await import('/src/app/wiki/pages.ts')
+  const state=useWikiStore.getState()
+  return (await readWikiEditorPage(state.project.path,state.selectedFile)).includes('Wiki repository browser save verification')
+ },null,{timeout:15000})
+ await page.getByRole('tab',{name:'预览模式',exact:true}).click()
+ await page.getByText('Wiki repository browser save verification',{exact:true}).first().waitFor()
+ if(errors.length)throw new Error(errors.join('\n'))
+ console.log(JSON.stringify({result:'passed',pageErrors:errors,checks:['native editor callback','Wiki repository persistence','preview reflects saved content']}))
+} finally {await browser.close()}

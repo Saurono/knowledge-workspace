@@ -7,8 +7,4 @@ export interface FileNode {
   children?: FileNode[]
 }
 
-export interface WikiPage {
-  path: string
-  content: string
-  frontmatter: Record<string, unknown>
-}
+export type { WikiPage } from "@/modules/wiki/domain"

@@ -1,3 +1,4 @@
+import { isWikiTextPath, readWikiEditorPage, writeWikiEditorPage } from "@/app/wiki/pages"
 import { useEffect, useCallback, useRef } from "react"
 import { ArrowLeft, ArrowRight, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
@@ -60,7 +61,11 @@ export function PreviewPanel() {
       return
     }
 
-    readFile(selectedFile)
+    const reading =
+      project && isWikiTextPath(project.path, selectedFile)
+        ? readWikiEditorPage(project.path, selectedFile)
+        : readFile(selectedFile)
+    reading
       .then((content) => {
         if (cancelled) return
         lastLoadedRef.current = content
@@ -74,16 +79,25 @@ export function PreviewPanel() {
     return () => {
       cancelled = true
     }
-  }, [selectedFile, previewContentPath, externalPreview, setFileContent])
+  }, [selectedFile, previewContentPath, externalPreview, setFileContent, project?.path])
 
-  const writeNow = useCallback((path: string, markdown: string, syncStore = false) => {
-    writeFile(path, markdown)
-      .then(() => {
-        lastLoadedRef.current = markdown
-        if (syncStore) setFileContent(markdown)
-      })
-      .catch((err) => console.error("Failed to save:", err))
-  }, [setFileContent])
+  const writeNow = useCallback(
+    (path: string, markdown: string, syncStore = false) => {
+      const writing =
+        project && isWikiTextPath(project.path, path)
+          ? writeWikiEditorPage(project.path, path, markdown)
+          : writeFile(path, markdown)
+      writing
+        .then(() => {
+          const current = useWikiStore.getState()
+          if (current.selectedFile !== path || current.project?.path !== project?.path) return
+          lastLoadedRef.current = markdown
+          if (syncStore) setFileContent(markdown)
+        })
+        .catch((err) => console.error("Failed to save:", err))
+    },
+    [setFileContent, project?.path],
+  )
 
   const handleSave = useCallback(
     (markdown: string, options?: { immediate?: boolean }) => {
@@ -102,7 +116,7 @@ export function PreviewPanel() {
         writeNow(selectedFile, markdown, true)
       }, 1000)
     },
-    [selectedFile, setFileContent, writeNow]
+    [selectedFile, setFileContent, writeNow],
   )
 
   useEffect(() => {
@@ -120,29 +134,53 @@ export function PreviewPanel() {
   }
 
   const category = getFileCategory(selectedFile)
-  const fileName = externalPreview?.path === selectedFile
-    ? externalPreview.title
-    : getFileName(selectedFile)
+  const fileName =
+    externalPreview?.path === selectedFile ? externalPreview.title : getFileName(selectedFile)
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-3 py-1.5">
         <div className="flex min-w-0 items-center gap-1">
-          <button type="button" onClick={navigatePreviewBack} disabled={previewBackStack.length === 0} className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent disabled:opacity-30" title={t("preview.back")} aria-label={t("preview.back")}>
+          <button
+            type="button"
+            onClick={navigatePreviewBack}
+            disabled={previewBackStack.length === 0}
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent disabled:opacity-30"
+            title={t("preview.back")}
+            aria-label={t("preview.back")}
+          >
             <ArrowLeft className="h-3.5 w-3.5" />
           </button>
-          <button type="button" onClick={navigatePreviewForward} disabled={previewForwardStack.length === 0} className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent disabled:opacity-30" title={t("preview.forward")} aria-label={t("preview.forward")}>
+          <button
+            type="button"
+            onClick={navigatePreviewForward}
+            disabled={previewForwardStack.length === 0}
+            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent disabled:opacity-30"
+            title={t("preview.forward")}
+            aria-label={t("preview.forward")}
+          >
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
-          <span className="truncate text-xs text-muted-foreground" title={selectedFile}>{fileName}</span>
+          <span className="truncate text-xs text-muted-foreground" title={selectedFile}>
+            {fileName}
+          </span>
           <SelectedTaskIndicator path={selectedFile} />
         </div>
-        <button onClick={closePreview} className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent" title={t("common.close")} aria-label={t("common.close")}>
+        <button
+          onClick={closePreview}
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent"
+          title={t("common.close")}
+          aria-label={t("common.close")}
+        >
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
       {!externalPreview && <WikiProvenance filePath={selectedFile} />}
-      {project && !externalPreview && <DomainTags resourcePath={normalizePath(selectedFile).replace(`${normalizePath(project.path)}/`, "")} />}
+      {project && !externalPreview && (
+        <DomainTags
+          resourcePath={normalizePath(selectedFile).replace(`${normalizePath(project.path)}/`, "")}
+        />
+      )}
       <div className="flex-1 min-w-0 overflow-auto">
         {externalPreview?.path === selectedFile ? (
           <ExternalReferencePreview
@@ -152,7 +190,9 @@ export function PreviewPanel() {
             snippet={externalPreview.snippet || fileContent}
           />
         ) : category === "markdown" && wikiMode === "preview" ? (
-          <div className="mx-auto max-w-4xl p-6"><WikiReader body={fileContent} filePath={selectedFile} /></div>
+          <div className="mx-auto max-w-4xl p-6">
+            <WikiReader body={fileContent} filePath={selectedFile} />
+          </div>
         ) : category === "markdown" ? (
           <WikiEditor
             key={selectedFile}
@@ -161,11 +201,7 @@ export function PreviewPanel() {
             filePath={selectedFile}
           />
         ) : (
-          <FilePreview
-            key={selectedFile}
-            filePath={selectedFile}
-            textContent={fileContent}
-          />
+          <FilePreview key={selectedFile} filePath={selectedFile} textContent={fileContent} />
         )}
       </div>
     </div>
@@ -190,7 +226,9 @@ function ExternalReferencePreview({
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground">
             {source}
           </span>
-          <h3 className="truncate text-sm font-medium" title={title}>{title}</h3>
+          <h3 className="truncate text-sm font-medium" title={title}>
+            {title}
+          </h3>
         </div>
         <div className="break-all rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
           {path}
