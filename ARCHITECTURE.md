@@ -35,3 +35,7 @@ tasks, quality, wiki, ingestion, retrieval and cli. See the
 and remaining legacy orchestration.
 The complete module inventory, dependency rules, storage ownership and migration
 sequence are in [the architecture design](analysis/architecture/modular-design-v1.md).
+
+Task completion must update [TASKS](TASKS.md), append implementation and validation
+in [WORKLOG](WORKLOG.md), and refresh the next step in [HANDOFF](HANDOFF.md).
+Start a new session by reading those files and checking the actual Git state.
