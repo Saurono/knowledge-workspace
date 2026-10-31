@@ -11,7 +11,7 @@ import { buildWordDiff, findDomTextSelection, findUniqueTextSelection, normalize
 import { applyEditorSelection, readEditorReference } from "@/app/wiki/editor-actions"
 import { streamChat } from "@/lib/llm-client"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
-import { searchWiki, type SearchResult } from "@/lib/search"
+import { retrieveWikiEvidence, type SearchResult } from "@/lib/search"
 import { normalizePath } from "@/lib/path-utils"
 
 interface EditorSelectionRequest {
@@ -182,13 +182,12 @@ export function WikiEditor({ content, onSave, filePath, onExternalWrite }: WikiE
       ? normalizePath(selectionRequest.filePath).slice(projectRoot.length + 1)
       : selectionRequest.filePath
     const references = intent === "ask" && project
-      ? await searchWiki(project.path, `${instruction} ${selectionRequest.selectedText.slice(0, 500)}`)
-        .then((results) => results.slice(0, 5))
+      ? await retrieveWikiEvidence(project.path, `${instruction} ${selectionRequest.selectedText.slice(0, 500)}`)
         .catch(() => [])
       : []
     if (runId !== selectionRunIdRef.current) return
     const retrievedContext = references.length > 0
-      ? references.map((reference, index) => `[${index + 1}] ${reference.title}\nPath: ${projectRelativePath(projectRoot, reference.path)}\n${reference.snippet}`).join("\n\n")
+      ? references.map((reference, index) => `[${index + 1}] ${reference.title}\nPath: ${projectRelativePath(projectRoot, reference.path)}\n${reference.text}`).join("\n\n")
       : "No additional knowledge-base results were retrieved."
     const prompt = [
       intent === "edit"

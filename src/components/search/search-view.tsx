@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react"
+import { useState, useCallback, useMemo, useEffect, useRef } from "react"
 import { Search, FileText, ImageIcon, X, ArrowUpRight } from "lucide-react"
 import { useWorkspaceStore } from "@/stores/workspace-store"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -50,22 +50,44 @@ export function SearchView({ localOnly = false }: { localOnly?: boolean }) {
   // closes naturally when the user navigates away from search.
   const [lightbox, setLightbox] = useState<ImageHit | null>(null)
 
+  const activeRequest = useRef<AbortController | null>(null)
+  useEffect(() => {
+    const clear = () => {
+      activeRequest.current?.abort()
+      activeRequest.current = null
+      setResults([])
+      setSearching(false)
+      setHasSearched(false)
+      setLightbox(null)
+    }
+    clear()
+    const unsubscribe = useWikiStore.subscribe((next, previous) => {
+      if (next.project?.id !== previous.project?.id || next.project?.path !== previous.project?.path) clear()
+    })
+    return () => { activeRequest.current?.abort(); unsubscribe() }
+  }, [project?.id, project?.path, localOnly])
   const doSearch = useCallback(
     async (q: string) => {
+      activeRequest.current?.abort()
+      const request = new AbortController()
+      activeRequest.current = request
       if (!project || !q.trim()) {
         setResults([])
+        setSearching(false)
+        setHasSearched(false)
         return
       }
       setSearching(true)
       setHasSearched(true)
       try {
-        const found = await searchWiki(normalizePath(project.path), q, { localOnly })
-        setResults(found)
+        const found = await searchWiki(normalizePath(project.path), q, { localOnly, signal: request.signal })
+        if (!request.signal.aborted) setResults(found)
       } catch (err) {
+        if (request.signal.aborted) return
         console.error("Search failed:", err)
         setResults([])
       } finally {
-        setSearching(false)
+        if (activeRequest.current === request) setSearching(false)
       }
     },
     [project, localOnly],
