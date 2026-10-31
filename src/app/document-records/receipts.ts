@@ -1,26 +1,13 @@
 import { recordWikiProvenance } from "@/modules/wiki/domain"
-import { createDirectory, fileExists, writeFileAtomic } from "@/commands/fs"
-import { normalizePath, isAbsolutePath } from "@/lib/path-utils"
+import { normalizePath } from "@/lib/path-utils"
 import { recordSourceIngested } from "@/modules/documents/domain"
 import { loadIngestRecords, saveRecords, withRecordsLock } from "./repository"
-import { RECEIPT_DIRECTORY } from "./snapshot"
+import { makeIngestReceipt } from "@/modules/obsidian/domain"
 export { loadIngestRecords } from "./repository"
 export * from "./snapshot"
 export { registerImportedSource } from "./documents"
 export { hashContentRevision as hashReceiptRevision } from "@/modules/documents/application"
-export async function configureObsidianVault(
-  projectPath: string,
-  vaultPath: string | null,
-): Promise<void> {
-  const normalized = vaultPath ? normalizePath(vaultPath).replace(/\/+$/, "") : null
-  if (normalized && (!isAbsolutePath(normalized) || !(await fileExists(`${normalized}/.obsidian`))))
-    throw new Error("Select an Obsidian Vault containing .obsidian")
-  await withRecordsLock(projectPath, async () => {
-    const records = await loadIngestRecords(projectPath)
-    records.vaultPath = normalized
-    await saveRecords(projectPath, records)
-  })
-}
+export { configureObsidianVault, deliverObsidianReceipt } from "@/app/obsidian/service"
 export async function recordSuccessfulIngest(input: {
   projectPath: string
   taskId: string
@@ -45,56 +32,13 @@ export async function recordSuccessfulIngest(input: {
     const id = `${source.id}-${input.revision}`
     const previous = records.receipts[id]
     records.pages = recordWikiProvenance(records.pages, input.writtenPaths, key, input.createdPages)
-    const underVault = records.vaultPath && source.originalPath?.startsWith(`${records.vaultPath}/`)
-    records.receipts[id] = {
-      schemaVersion: 1,
-      id,
-      taskId: input.taskId,
-      sourceId: source.id,
-      sourcePath: key,
-      originalPath: source.originalPath,
-      sourceRevision: input.revision,
-      sourceIngestedAt: source.ingestedAt,
-      revisionIngestedAt: previous?.revisionIngestedAt ?? (input.cacheHit ? null : now),
-      wikiResults: input.writtenPaths.map((path) => ({
-        path,
-        wikiCreatedAt: records.pages[normalizePath(path)]?.createdAt ?? null,
-      })),
-      status: "content_ingested",
-      indexStatus: "unknown",
-      recordedAt: now,
-      delivery:
-        previous?.delivery === "delivered" ? "delivered" : underVault ? "pending" : "not_connected",
-      error: null,
-    }
+    records.receipts[id] = makeIngestReceipt({
+      id, taskId: input.taskId, source, sourcePath: key, revision: input.revision,
+      cacheHit: input.cacheHit, previous, recordedAt: now, vaultPath: records.vaultPath,
+      wikiResults: input.writtenPaths.map(path => ({ path, wikiCreatedAt: records.pages[normalizePath(path)]?.createdAt ?? null })),
+    })
     await saveRecords(input.projectPath, records)
     return id
-  })
-}
-export async function deliverObsidianReceipt(projectPath: string, id: string): Promise<void> {
-  await withRecordsLock(projectPath, async () => {
-    const records = await loadIngestRecords(projectPath)
-    const receipt = records.receipts[id]
-    if (!receipt || !records.vaultPath || receipt.delivery === "delivered") return
-    // A connection change must never deliver another Vault's source paths.
-    if (!receipt.originalPath?.startsWith(`${records.vaultPath}/`)) return
-    try {
-      if (!(await fileExists(`${records.vaultPath}/.obsidian`)))
-        throw new Error("Obsidian Vault is unavailable")
-      const directory = `${records.vaultPath}/${RECEIPT_DIRECTORY}`
-      await createDirectory(directory)
-      const { delivery: _delivery, error: _error, ...payload } = receipt
-      await writeFileAtomic(
-        `${directory}/${encodeURIComponent(receipt.id)}.json`,
-        JSON.stringify(payload, null, 2),
-      )
-      receipt.delivery = "delivered"
-      receipt.error = null
-    } catch (error) {
-      receipt.delivery = "pending"
-      receipt.error = String(error)
-    }
-    await saveRecords(projectPath, records)
   })
 }
 export { registerObservedSourcePaths, migrateSourceMetadata } from "./source-paths"

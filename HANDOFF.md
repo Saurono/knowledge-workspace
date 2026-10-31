@@ -1,6 +1,6 @@
 # 新会话交接
 
-> 当前状态：用户已恢复 B 系列，B12 已完成，继续 B13–B16。
+> 当前状态：用户已恢复 B 系列，B13 已完成，继续 B14–B16。
 
 ## 先读与工作约定
 
@@ -23,7 +23,7 @@
 
 ## 实现边界与完成点
 
-现有十三个模块：star-map、memory、domains、tasks、quality、wiki、ingestion、retrieval、cli、research、projects、documents、agent。部分模块仅迁出核心规则，不能将目录存在当作完整能力已交付。
+现有十四个模块：star-map、memory、domains、tasks、quality、wiki、ingestion、retrieval、cli、research、projects、documents、agent、obsidian。部分模块仅迁出核心规则，不能将目录存在当作完整能力已交付。
 
 - B01–B03：任务外部取消、入库执行器、独立队列服务/恢复/快照端口。有序提交、epoch、部分写入、暂停/重试保留。队列活动快照仍 best-effort、读取失败视空，未升级为统一强持久化任务服务。
 - B04/B05：research 模型/正文引用校验/执行器；tasks/ui 与 research/ui 受控页面。app/research 注入搜索/模型/文件。新研究任务绑定项目，项目切换取消旧执行；部分搜索 I/O 本身还不能取消，但迟到结果丢弃。
@@ -57,7 +57,9 @@ B11 已完成：quality 拥有语义/结构检查与审阅清理服务、纠错/
 
 B12 已完成：cli/application 拥有 Claude/Codex 进程/事件/会话 transport 和能力查询端口；app/cli 注入 Tauri 与调用时 CWD，lib 兼容。设置页不直接 invoke 检测命令。保留协议/超时/隔离与取消启动竞态再次 kill；新增调用目录绑定与完成后迟到 token 契约。
 
-下一项 B13：Obsidian 连接/回执/投递端口，再继续 B14–B16。最新 CLI 相关 3 文件/49 项通过，类型/边界和正式构建通过；尚未运行真实本机 CLI。
+B13 已完成：obsidian 拥有回执模型/生成/Vault 归属和连接/投递服务；app/obsidian 复用 ingest-records 聚合锁与文件适配。来源和 Wiki 元数据仍各归其模块，app/document-records 组合。只写独立 JSON 回执，源笔记不改；失败 pending、稳定文件重试和重连校验保留。相关 3 文件/17 项通过；十四模块边界/类型/正式构建通过，无真实 Vault 验收。
+
+下一项 B14：类型化设置、模型路由和平台能力，再继续 B15–B16。
 
 ## 验证与启动
 
