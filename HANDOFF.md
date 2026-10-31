@@ -29,7 +29,7 @@
 
 ## 当前执行点
 
-- 本批已建清单，准备 B01（任务外部取消信号）→ B02（入库执行器/真实队列接入）。
+- 本批已建清单；B01（任务外部取消信号）已完成并通过 13 项相关测试。当前开始 B02（入库执行器/真实队列接入）。
 - 主要入口：`modules/tasks/application/runtime.ts`、`lib/ingest-queue.ts` 的 runTask、`lib/ingest.ts` 的 autoIngest。
 - 迁移时保留队列 epoch、暂停/重试、并发提交顺序、部分写入保护和回执；不能因添加执行器绕过旧安全边界。
 - 随后 B03（队列端口化）/B04（研究执行器），再逐步迁移 Wiki/Obsidian。

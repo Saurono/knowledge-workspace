@@ -9,6 +9,12 @@ export interface TaskExecutionContext {
 export interface TaskExecutor<Input, Output> {
   execute(input: Input, context: TaskExecutionContext): Promise<Output>
 }
+export interface TaskRunRequest {
+  id: string
+  scopeId: string
+  /** The owner keeps cancellation authority (queue, session, or request). */
+  signal?: AbortSignal
+}
 export interface TaskRuntimeOptions {
   isScopeCurrent?: (scopeId: string) => boolean
   onEvent?: (record: TaskRecord) => void
@@ -54,14 +60,20 @@ export function createTaskRuntime(options: TaskRuntimeOptions = {}) {
     async execute<Input, Output>(
       executorId: string,
       input: Input,
-      request: { id: string; scopeId: string },
+      request: TaskRunRequest,
     ): Promise<{ status: "succeeded"; value: Output } | { status: "cancelled" }> {
       const executor = executors.get(executorId)
       if (!executor) throw new Error(`Unknown executor: ${executorId}`)
       if (!request.id || !request.scopeId || active.has(request.id))
         throw new Error("Invalid or already active task")
       const controller = new AbortController()
-      const record: TaskRecord = { ...request, executorId, status: "running", detail: "" }
+      const record: TaskRecord = {
+        id: request.id,
+        scopeId: request.scopeId,
+        executorId,
+        status: "running",
+        detail: "",
+      }
       const isCurrent = () =>
         active.get(request.id)?.controller === controller &&
         !controller.signal.aborted &&
@@ -78,6 +90,10 @@ export function createTaskRuntime(options: TaskRuntimeOptions = {}) {
         },
       }
       active.set(request.id, { controller, executorId })
+      const abortFromOwner = () => controller.abort(request.signal?.reason)
+      request.signal?.addEventListener("abort", abortFromOwner, { once: true })
+      // Also handle cancellation before listener registration.
+      if (request.signal?.aborted) abortFromOwner()
       try {
         emit(record)
         context.assertCurrent()
@@ -93,6 +109,7 @@ export function createTaskRuntime(options: TaskRuntimeOptions = {}) {
         emit({ ...record, status: "failed", detail: String(error) })
         throw error
       } finally {
+        request.signal?.removeEventListener("abort", abortFromOwner)
         active.delete(request.id)
       }
     },
