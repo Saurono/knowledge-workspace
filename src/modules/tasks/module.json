@@ -1,7 +1,13 @@
 {
   "id": "tasks",
-  "publicEntrypoints": ["index.ts"],
+  "publicEntrypoints": [
+    "index.ts",
+    "ui/index.ts"
+  ],
   "allowedModuleDependencies": [],
-  "allowedExternalImports": [],
+  "allowedExternalImports": [
+    "react",
+    "react-i18next"
+  ],
   "allowedLegacyImports": []
 }

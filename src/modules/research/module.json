@@ -1,7 +1,18 @@
 {
   "id": "research",
-  "publicEntrypoints": ["index.ts", "domain/index.ts", "application/index.ts"],
-  "allowedModuleDependencies": ["tasks"],
-  "allowedExternalImports": [],
+  "publicEntrypoints": [
+    "index.ts",
+    "domain/index.ts",
+    "application/index.ts",
+    "ui/index.ts"
+  ],
+  "allowedModuleDependencies": [
+    "tasks"
+  ],
+  "allowedExternalImports": [
+    "react",
+    "react-i18next",
+    "lucide-react"
+  ],
   "allowedLegacyImports": []
 }

@@ -23,19 +23,19 @@
 
 ## 实际实现边界
 
-已完成九个模块的部分实际代码：star-map、memory、domains、tasks、quality、wiki、ingestion、retrieval、cli；详见 `analysis/architecture/migration-progress.md`。后五项包含部分纯规则，不能称为对应完整功能已模块化。
+已完成十个模块的部分实际代码：star-map、memory、domains、tasks、quality、wiki、ingestion、retrieval、cli、research；详见 `analysis/architecture/migration-progress.md`。后五项包含部分纯规则，不能称为对应完整功能已模块化。
 
 数据仍为本地 `.llm-wiki/workspace.json` v1、`ingest-records.json` 和旧入库队列。应用层保持项目锁、原子更新和损坏文件保护。已有界面/预览不代表账号、共享后端、生产 Web 已完成。
 
 ## 当前执行点
 
 - 已完成 A10（任务与交接入口）、B01（外部取消，`227da96`）、B02（入库执行器接入，`a4c2641`）、B03（本批队列服务迁移；提交与本文件同批，查最新 Git 日志）。
-- B04 已完成：research/domain 定义模型和证据规则，application 执行器已接入 tasks，app/research 适配模型/搜索/文件/状态；旧 lib/deep-research 兼容。相关 52 项测试、类型与十模块边界通过。当前自动继续 B05 受控任务 UI，随后 B06。
+- B04/B05 已完成：research 模型/证据/执行器（ef25e89）；tasks/ui 和 research/ui 为受控页面，应用容器注入数据与操作。当前自动继续 B06 项目模型、身份与仓储，随后 B07。
 - 队列入口已变更：`modules/ingestion/application/queue.ts` 的 `createIngestQueue(ports)` 拥有完整调度/恢复/串行快照写入；`app/ingestion/queue.ts` 装配桌面实例，`queue-repository.ts` 适配旧文件路径；旧 `lib/ingest-queue.ts` 仅兼容重导出。
 - 入库执行入口：`modules/ingestion/application/execute-ingest.ts` → `app/tasks/ingestion.ts` → 旧 autoIngest。每次尝试独立运行时，逻辑 taskId 继续用于回执；恢复/重试排他仍由队列和源文件/项目锁负责。
 - 保持 `pauseQueue()` 项目切换握手、队列 epoch、并发提交顺序、部分写入记账、重试/限额自动恢复与回执链路。restore 的异步边界现有版本校验，不能删掉。
 - 原快照数组和存储路径不变。活动写入 best-effort、读取失败视空的旧语义没有升级为强持久化；损坏恢复和统一任务服务仍是 H03/J01。
-- 最新验证：针对性 7 文件/101 项；完整模拟回归 154 文件/2124 项；九模块边界、类型、正式/预览构建通过。记录见 L008；Rust/真实 Vault/真实模型仍未验收。
+- 最新验证：完整模拟回归 156 文件/2133 项；十模块边界、类型、正式/预览构建与受控任务 UI 浏览器交互通过。记录见 L009/L010；Rust/真实 Vault/真实模型仍未验收。
 
 ## 验证与启动
 
