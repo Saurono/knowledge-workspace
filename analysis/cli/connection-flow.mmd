@@ -1,0 +1,13 @@
+flowchart LR
+  DESKTOP["桌面端"] --> RUNNER["本机 Runner / CLI 适配器"]
+  WEB["Web 端"] --> BRIDGE["获授权 Companion 连接"]
+  BRIDGE --> RUNNER
+  RUNNER --> CLI["Claude Code / Codex / 可扩展 CLI"]
+  TERMINAL["用户终端中的外部 CLI Agent"] --> MCP["MCP / HTTP API"]
+  CLI --> MCP
+  MCP --> CONTEXT["独立身份 / 有效权限身份 / 工作角色 / 项目"]
+  CONTEXT --> SERVICE["授权 Wiki / 记忆 / 任务服务"]
+  RUNNER --> EVENTS["工具结果 / 产出 / 验证事件"]
+  EVENTS --> SERVICE
+  SERVICE --> WRITEBACK["问题方案 / 手册 / 记忆回流"]
+  WRITEBACK --> GRAPH["Wiki 图 / 记忆星图"]
