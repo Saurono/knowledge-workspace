@@ -1,18 +1,8 @@
 import { create } from "zustand"
 import type { LintResult } from "@/lib/lint"
 
-export interface LintItem {
-  id: string
-  type: LintResult["type"]
-  severity: LintResult["severity"]
-  page: string
-  detail: string
-  affectedPages?: string[]
-  brokenTarget?: string
-  suggestedTarget?: string
-  suggestedSource?: string
-  createdAt: number
-}
+import type { QualityItem as LintItem } from "@/modules/quality/domain"
+export type { QualityItem as LintItem } from "@/modules/quality/domain"
 
 function lintResultToItem(result: LintResult): LintItem {
   return {

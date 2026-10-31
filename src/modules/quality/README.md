@@ -1,9 +1,14 @@
-# Wiki 检查
+# Wiki 检查与审阅
 
-domain/ 提供结构检查、配置规范化、检查结果类型；application/ 提供 Wiki 检查执行器和平台/模型端口。
+领域层拥有结构检查、规则配置、检查/审阅模型、稳定审阅 ID/去重、动作识别和纠错文本变换。领域不依赖 Store、文件系统或其他模块。
 
-src/app/tasks/maintenance.ts 注入文件、模型和活动记录适配。语义检查的现有 I/O 实现保留在旧 lib/lint.ts。
+应用层经端口执行结构/语义检查、审阅清理、占位页创建、单条/批量修复和审阅文件操作。文件读取、模型、语言策略、worker、活动记录、当前项目作用域均由 `app/quality` 注入；已有 Wiki 检查执行器继续由 `app/tasks/maintenance` 装配。
 
-公开入口和依赖见 `module.json`。调用者只使用声明的公开入口；领域层不依赖 React、Tauri、store 或文件系统。
+- 批量修复按页面分组，在 Wiki 仓储锁内对最新内容组合变换、每页写一次；完成一页才移除对应 finding。后续失败不撤销此前已完成结果，已创建占位页也会触发刷新。
+- 审阅稳定 ID/标题归一化、规则优先/模型保守判断、批次上限和错误回退均保留。应用作用域跟踪项目世代，切走再返回也不能把迟到结果套用到新状态。
+- 断链占位页通过 Wiki 的 create-only 修订契约避免并发覆盖；页面命名/类型通过 Wiki 公开应用依赖使用，旧数据格式不变。
+- 审阅打开文件仅查看，不自动标为已解决；删除先校验项目内路径并复用项目锁。原生文件操作保留在应用适配，检查/审阅组件不再直接调用文件命令。
 
-验证：`npm run check:modules`、`npm run typecheck`、`npm run test:mocks`。现有算法的回归测试暂保留在旧入口路径，以同时验证兼容性。
+兼容入口 `lib/lint`、`sweep-reviews`、`review-utils`、`lint-fixes` 保留重导出；旧回归继续验证真实组合。领域与应用仍未提供生产 Web 后端/账号授权；词法路径保护不替代 symlink/服务端授权。真实模型与 Rust 原生操作未在当前环境验收。
+
+运行 `npm run check:modules`、`npm run typecheck`、`npm run test:mocks`；端口契约另覆盖同页组合、部分失败、项目切换及非法文件路径。

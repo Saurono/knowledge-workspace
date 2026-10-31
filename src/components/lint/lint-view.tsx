@@ -1,3 +1,4 @@
+import { repairLintItems } from "@/app/quality/repairs"
 import { useState, useCallback, useEffect, useMemo } from "react"
 import {
   Link2Off,
@@ -19,14 +20,9 @@ import { useReviewStore } from "@/stores/review-store"
 import { useLintStore, type LintItem } from "@/stores/lint-store"
 import { runMaintenanceCheck } from "@/lib/maintenance-tasks"
 import { useActivityStore } from "@/stores/activity-store"
-import { transformWikiPage, readWikiEditorPage } from "@/app/wiki/pages"
+import { readWikiEditorPage } from "@/app/wiki/pages"
 import { normalizePath } from "@/lib/path-utils"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
-import {
-  appendWikilink,
-  ensureBrokenLinkStub,
-  rewriteWikilinkTarget,
-} from "@/lib/lint-fixes"
 import { useTranslation } from "react-i18next"
 import { useAppDialog } from "@/stores/app-dialog-store"
 import {
@@ -235,50 +231,11 @@ export function LintView() {
     const activity = useActivityStore.getState()
     const taskId = activity.addItem({ type: "lint", title: `Wiki fix: ${item.page}`, status: "running", detail: item.detail, filesWritten: [] })
     try {
-      switch (item.type) {
-        case "orphan": {
-          if (item.suggestedSource) {
-            const sourcePath = `${pp}/wiki/${item.suggestedSource}`
-            await transformWikiPage(pp,sourcePath,content=>appendWikilink(content,item.page))
-          } else {
-            addLintItemToReview(item)
-          }
-          useLintStore.getState().removeItem(item.id)
-          break
-        }
-
-        case "broken-link": {
-          const pagePath = `${pp}/wiki/${item.page}`
-          if (item.brokenTarget && item.suggestedTarget) {
-            await transformWikiPage(pp,pagePath,content=>rewriteWikilinkTarget(content,item.brokenTarget!,item.suggestedTarget!))
-          } else if (item.brokenTarget) {
-            const stub = await ensureBrokenLinkStub(pp, item.brokenTarget)
-            await transformWikiPage(pp,pagePath,content=>rewriteWikilinkTarget(content,item.brokenTarget!,stub.relativePath))
-          } else {
-            addLintItemToReview(item)
-          }
-          useLintStore.getState().removeItem(item.id)
-          break
-        }
-
-        case "no-outlinks": {
-          if (item.suggestedTarget) {
-            const pagePath = `${pp}/wiki/${item.page}`
-            await transformWikiPage(pp,pagePath,content=>appendWikilink(content,item.suggestedTarget!))
-          } else {
-            addLintItemToReview(item)
-          }
-          useLintStore.getState().removeItem(item.id)
-          break
-        }
-
-        default: {
-          // Semantic issues → send to Review for manual resolution
-          addLintItemToReview(item)
-          useLintStore.getState().removeItem(item.id)
-          break
-        }
-      }
+      await repairLintItems(pp, [item], {
+        review: addLintItemToReview,
+        remove: ids => ids.forEach(id => useLintStore.getState().removeItem(id)),
+        changed: () => {},
+      })
 
       if (refreshTree) {
         await refreshProjectFileTree(pp, {
@@ -381,37 +338,10 @@ export function LintView() {
     const pp = normalizePath(project.path)
     let filesystemChanged = false
     try {
-      const edits = new Map<string, Array<{ id: string; apply: (content: string) => string }>>()
-      const queueEdit = (path: string, id: string, apply: (content: string) => string) => {
-        const pending = edits.get(path) ?? []
-        pending.push({ id, apply })
-        edits.set(path, pending)
-      }
-
-      for (const item of selectedLintItems) {
-        if (item.type === "orphan" && item.suggestedSource) {
-          queueEdit(`${pp}/wiki/${item.suggestedSource}`, item.id, (content) => appendWikilink(content, item.page))
-        } else if (item.type === "no-outlinks" && item.suggestedTarget) {
-          queueEdit(`${pp}/wiki/${item.page}`, item.id, (content) => appendWikilink(content, item.suggestedTarget!))
-        } else if (item.type === "broken-link" && item.brokenTarget) {
-          const stub = item.suggestedTarget ? null : await ensureBrokenLinkStub(pp, item.brokenTarget)
-          if (stub) filesystemChanged = true
-          const target = item.suggestedTarget ?? stub!.relativePath
-          queueEdit(`${pp}/wiki/${item.page}`, item.id, (content) =>
-            rewriteWikilinkTarget(content, item.brokenTarget!, target))
-        } else {
-          addLintItemToReview(item)
-          removeLintItems([item.id])
-        }
-      }
-
-      // Multiple findings can target the same page. Apply their transforms in
-      // memory and write that page once, avoiding lost updates and N full reads.
-      for (const [path, pending] of edits) {
-        const result=await transformWikiPage(pp,path,original=>pending.reduce((content,edit)=>edit.apply(content),original))
-        if(result.changed)filesystemChanged=true
-        removeLintItems(pending.map((edit) => edit.id))
-      }
+      await repairLintItems(pp, selectedLintItems, {
+        review: addLintItemToReview, remove: removeLintItems,
+        changed: () => { filesystemChanged = true },
+      })
       setSelectedLintIds(new Set())
     } catch (err) {
       console.error("Batch fix failed:", err)

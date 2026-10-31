@@ -13,3 +13,13 @@ export interface QualityFinding {
   suggestedTarget?: string
   suggestedSource?: string
 }
+export interface QualityFileNode {
+  name: string
+  path: string
+  is_dir: boolean
+  children?: QualityFileNode[]
+}
+export interface QualityItem extends QualityFinding {
+  id: string
+  createdAt: number
+}

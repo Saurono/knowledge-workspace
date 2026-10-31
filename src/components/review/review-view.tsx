@@ -1,3 +1,4 @@
+import { actionLooksLikeResearch, actionLooksLikeOpen, actionLooksLikeCreate } from "@/modules/quality/domain"
 import { saveGeneratedQuery, saveGeneratedReviewPages } from "@/app/wiki/generated-pages"
 import { useCallback, useMemo, useState } from "react"
 import { queueResearch, queueResearchBatch } from "@/lib/deep-research"
@@ -16,7 +17,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
 import { useWikiStore } from "@/stores/wiki-store"
-import { readFile, deleteFile } from "@/commands/fs"
+import { reviewFiles, deleteReviewedFile } from "@/app/quality/review-files"
+import { qualityScope } from "@/app/quality/scope"
 import { normalizePath } from "@/lib/path-utils"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { hasConfiguredDeepResearchSources } from "@/lib/web-search"
@@ -146,33 +148,24 @@ export function ReviewView() {
         ? action.slice(5)
         : item?.affectedPages?.[0] ?? item?.sourcePath ?? ""
       if (!page) return
-      const normalizedPage = normalizePath(page)
-      const candidates = normalizedPage.startsWith(pp)
-        ? [normalizedPage]
-        : normalizedPage.startsWith("wiki/") || normalizedPage.startsWith("raw/")
-          ? [`${pp}/${normalizedPage}`, `${pp}/${normalizedPage}.md`]
-          : [`${pp}/wiki/${normalizedPage}`, `${pp}/wiki/${normalizedPage}.md`]
-      for (const path of candidates) {
-        try {
-          const content = await readFile(path)
-          useWikiStore.getState().openFileInPreview(path, content)
-          return
-        } catch {
-          // try next
-        }
-      }
+      const isCurrent = qualityScope(pp)
+      try {
+        const result = await reviewFiles.open(pp, page)
+        if (result && isCurrent()) useWikiStore.getState().openFileInPreview(result.path, result.content)
+      } catch (error) { setReviewError(id, error) }
     } else if (action.startsWith("delete:") && project) {
       // Delete a file
       const filePath = action.slice(7)
       try {
         setReviewWorking(id, true)
         setReviewError(id, null)
-        await deleteFile(filePath)
+        const isCurrent = qualityScope(pp)
+        await deleteReviewedFile(pp, filePath)
         await refreshProjectFileTree(pp, {
           projectId: project.id,
           bumpDataVersion: true,
         })
-        resolveItem(id, "Deleted")
+        if (isCurrent()) resolveItem(id, "Deleted")
       } catch (err) {
         console.error("Failed to delete:", err)
         setReviewError(id, err)
@@ -563,51 +556,3 @@ function ReviewCard({
 }
 
 /** Detect if an action implies deep research (web search + LLM synthesis) */
-function actionLooksLikeResearch(action: string): boolean {
-  // Skip internal action identifiers
-  if (action.startsWith("__")) return false
-  const lower = action.toLowerCase()
-  return (
-    lower.includes("research") ||
-    lower.includes("investigate") ||
-    lower.includes("explore") ||
-    lower.includes("look into") ||
-    lower.includes("研究") ||
-    lower.includes("调研") ||
-    lower.includes("探索")
-  )
-}
-
-function actionLooksLikeOpen(action: string): boolean {
-  const lower = action.trim().toLowerCase()
-  return (
-    lower === "open" ||
-    lower === "view" ||
-    lower === "open page" ||
-    lower === "view page" ||
-    lower === "打开" ||
-    lower === "查看" ||
-    lower === "打开页面" ||
-    lower === "查看页面"
-  )
-}
-
-/** Detect if an action is a dismissal (no-op) or should create a page */
-function actionIsDismissal(action: string): boolean {
-  const lower = action.toLowerCase()
-  return (
-    lower === "skip" ||
-    lower === "dismiss" ||
-    lower === "ignore" ||
-    lower === "跳过" ||
-    lower === "忽略" ||
-    lower === "approve" ||
-    lower === "keep existing" ||
-    lower === "no"
-  )
-}
-
-function actionLooksLikeCreate(action: string): boolean {
-  // Anything that isn't a dismissal should create a page
-  return !actionIsDismissal(action)
-}

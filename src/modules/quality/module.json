@@ -1,7 +1,14 @@
 {
   "id": "quality",
-  "publicEntrypoints": ["index.ts", "domain/index.ts"],
-  "allowedModuleDependencies": ["tasks"],
+  "publicEntrypoints": [
+    "index.ts",
+    "domain/index.ts",
+    "application/index.ts"
+  ],
+  "allowedModuleDependencies": [
+    "tasks",
+    "wiki"
+  ],
   "allowedExternalImports": [],
   "allowedLegacyImports": []
 }
