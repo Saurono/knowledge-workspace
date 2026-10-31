@@ -1,6 +1,6 @@
 # 新会话交接
 
-> 当前状态：用户已恢复 B 系列，B13 已完成，继续 B14–B16。
+> 当前状态：用户已恢复 B 系列，B14 已完成，继续 B15–B16。
 
 ## 先读与工作约定
 
@@ -23,7 +23,7 @@
 
 ## 实现边界与完成点
 
-现有十四个模块：star-map、memory、domains、tasks、quality、wiki、ingestion、retrieval、cli、research、projects、documents、agent、obsidian。部分模块仅迁出核心规则，不能将目录存在当作完整能力已交付。
+现有十五个模块：star-map、memory、domains、tasks、quality、wiki、ingestion、retrieval、cli、research、projects、documents、agent、obsidian、settings。部分模块仅迁出核心规则，不能将目录存在当作完整能力已交付。
 
 - B01–B03：任务外部取消、入库执行器、独立队列服务/恢复/快照端口。有序提交、epoch、部分写入、暂停/重试保留。队列活动快照仍 best-effort、读取失败视空，未升级为统一强持久化任务服务。
 - B04/B05：research 模型/正文引用校验/执行器；tasks/ui 与 research/ui 受控页面。app/research 注入搜索/模型/文件。新研究任务绑定项目，项目切换取消旧执行；部分搜索 I/O 本身还不能取消，但迟到结果丢弃。
@@ -59,7 +59,9 @@ B12 已完成：cli/application 拥有 Claude/Codex 进程/事件/会话 transpo
 
 B13 已完成：obsidian 拥有回执模型/生成/Vault 归属和连接/投递服务；app/obsidian 复用 ingest-records 聚合锁与文件适配。来源和 Wiki 元数据仍各归其模块，app/document-records 组合。只写独立 JSON 回执，源笔记不改；失败 pending、稳定文件重试和重连校验保留。相关 3 文件/17 项通过；十四模块边界/类型/正式构建通过，无真实 Vault 验收。
 
-下一项 B14：类型化设置、模型路由和平台能力，再继续 B15–B16。
+B14 已完成：settings 拥有配置类型、预设/路由/推理/Azure 策略、键值仓储与平台能力服务，app/settings 注入 Tauri/路径/监听/缩放适配；Store/旧入口重导出兼容。保持 app-state.json 键和模型覆盖串行更新，凭据存储未改变。关于页区分模拟/桌面/Web，能力状态不代表授权或实际 CLI/Vault 健康。设置相关 7 文件/40 项、十五模块边界/类型/正式构建通过。
+
+下一项 B15：清理旧 Store 的业务规则，迁移 Wiki/记忆星图查询并审计兼容入口，然后 B16 全树依赖审计。
 
 ## 验证与启动
 

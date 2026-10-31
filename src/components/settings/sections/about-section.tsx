@@ -1,3 +1,4 @@
+import { platformCapabilities } from "@/app/settings/capabilities"
 import { useEffect, useState, useCallback } from "react"
 import { Download, RefreshCw, CheckCircle2, Sparkles } from "lucide-react"
 import { useTranslation } from "react-i18next"
@@ -22,6 +23,7 @@ export function AboutSection() {
   const [apiStatus, setApiStatus] = useState<string>("...")
   const [apiHealth, setApiHealth] = useState<ApiHealth | null>(null)
   const updateStore = useUpdateStore()
+  const capabilities = platformCapabilities.read()
 
   useEffect(() => {
     let alive = true
@@ -132,6 +134,11 @@ export function AboutSection() {
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">{t("settings.sections.about.title")}</h2>
+        <p className="text-xs text-muted-foreground" role="status">
+          {capabilities.runtime === "preview" ? "交互预览：文件、Vault 与本机工具使用模拟环境。"
+            : capabilities.runtime === "desktop" ? "本地客户端：本机工具的安装与连接状态请查看对应设置。"
+              : "Web 前端：本机文件、Vault 与 CLI 需要受支持的连接服务。"}
+        </p>
         <p className="mt-1 text-sm text-muted-foreground">
           {t("settings.sections.about.description")}
         </p>

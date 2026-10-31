@@ -29,8 +29,8 @@ undeclared dependencies, UI/platform coupling in domain code, non-literal module
 imports and module dependency cycles. It currently governs the new modules tree;
 legacy code is being migrated, with explicit compatibility entry points.
 
-Fourteen modules now contain extracted implementation: star-map, memory, domains,
-tasks, quality, wiki, ingestion, retrieval, cli, research, projects, documents, agent and obsidian. See the
+Fifteen modules now contain extracted implementation: star-map, memory, domains,
+tasks, quality, wiki, ingestion, retrieval, cli, research, projects, documents, agent, obsidian and settings. See the
 [migration status](analysis/architecture/migration-progress.md) for the exact scope
 and remaining legacy orchestration.
 The complete module inventory, dependency rules, storage ownership and migration
