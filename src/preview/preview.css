@@ -1,0 +1,57 @@
+.preview-banner {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 44px;
+  flex-wrap: wrap;
+  padding: 8px 16px;
+  background: #152943;
+  color: #c6dcff;
+  font:
+    12px/1.5 system-ui,
+    sans-serif;
+}
+.preview-banner strong {
+  color: white;
+  letter-spacing: 0.08em;
+}
+.preview-banner > span {
+  color: #9db6d5;
+}
+.preview-banner nav {
+  display: flex;
+  gap: 4px;
+}
+.preview-banner button {
+  border: 1px solid #ffffff26;
+  border-radius: 5px;
+  padding: 3px 9px;
+  background: #ffffff08;
+  color: #d3e4ff;
+  cursor: pointer;
+}
+.preview-banner button:hover {
+  background: #ffffff20;
+}
+.preview-banner .preview-reset {
+  margin-left: auto;
+}
+.preview-app {
+  height: calc(100vh - 44px);
+  min-height: 400px;
+}
+@media (max-width: 850px) {
+  .preview-banner > span {
+    display: none;
+  }
+  .preview-banner {
+    gap: 6px;
+  }
+  .preview-banner nav {
+    flex-wrap: wrap;
+  }
+  .preview-app {
+    height: calc(100vh - 80px);
+  }
+}

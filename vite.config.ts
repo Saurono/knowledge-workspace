@@ -2,6 +2,7 @@ import path from "path"
 import { readFileSync } from "fs"
 import { defineConfig } from "vite"
 import react from "@vitejs/plugin-react"
+import { viteSingleFile } from "vite-plugin-singlefile"
 import tailwindcss from "@tailwindcss/vite"
 
 const host = process.env.TAURI_DEV_HOST
@@ -11,8 +12,15 @@ const host = process.env.TAURI_DEV_HOST
 const pkgJson = JSON.parse(readFileSync(path.resolve(__dirname, "package.json"), "utf-8"))
 
 // https://vitejs.dev/config/
-export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
+export default defineConfig(async ({ mode }) => ({
+  plugins: [react(), tailwindcss(), ...(mode === "demo" ? [viteSingleFile()] : [])],
+
+  build: mode === "demo"
+    ? {
+        outDir: "dist-preview",
+        rolldownOptions: { input: path.resolve(__dirname, "preview.html") },
+      }
+    : undefined,
 
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
