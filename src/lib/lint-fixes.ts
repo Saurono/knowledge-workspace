@@ -1,4 +1,6 @@
-import { createDirectory, fileExists, writeFile } from "@/commands/fs"
+import { wikiPages } from "@/app/wiki/pages"
+import { WikiRevisionConflict } from "@/modules/wiki/domain"
+import { createDirectory, fileExists } from "@/commands/fs"
 import { getFileName, normalizePath } from "@/lib/path-utils"
 import { makeQuerySlug } from "@/lib/wiki-filename"
 import { inferWikiTypeFromPath } from "@/lib/wiki-page-types"
@@ -97,6 +99,11 @@ export async function ensureBrokenLinkStub(
     "Created by Wiki Lint as a placeholder for a missing wikilink target.",
     "",
   ].join("\n")
-  await writeFile(fullPath, content)
-  return { fullPath, relativePath, created: true }
+  try {
+    await wikiPages.save({projectPath,path:`wiki/${relativePath}`,content,expectedRevision:null})
+    return {fullPath,relativePath,created:true}
+  } catch(error) {
+    if(error instanceof WikiRevisionConflict)return {fullPath,relativePath,created:false}
+    throw error
+  }
 }

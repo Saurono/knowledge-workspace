@@ -19,7 +19,7 @@ import { useReviewStore } from "@/stores/review-store"
 import { useLintStore, type LintItem } from "@/stores/lint-store"
 import { runMaintenanceCheck } from "@/lib/maintenance-tasks"
 import { useActivityStore } from "@/stores/activity-store"
-import { readFile, writeFile } from "@/commands/fs"
+import { transformWikiPage, readWikiEditorPage } from "@/app/wiki/pages"
 import { normalizePath } from "@/lib/path-utils"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import {
@@ -170,7 +170,8 @@ export function LintView() {
     ]
     for (const path of candidates) {
       try {
-        const content = await readFile(path)
+        const content = await readWikiEditorPage(pp,path)
+        if(useWikiStore.getState().project?.path!==project.path)return
         openFileInPreview(path, content)
         return
       } catch {
@@ -238,8 +239,7 @@ export function LintView() {
         case "orphan": {
           if (item.suggestedSource) {
             const sourcePath = `${pp}/wiki/${item.suggestedSource}`
-            const content = await readFile(sourcePath)
-            await writeFile(sourcePath, appendWikilink(content, item.page))
+            await transformWikiPage(pp,sourcePath,content=>appendWikilink(content,item.page))
           } else {
             addLintItemToReview(item)
           }
@@ -250,12 +250,10 @@ export function LintView() {
         case "broken-link": {
           const pagePath = `${pp}/wiki/${item.page}`
           if (item.brokenTarget && item.suggestedTarget) {
-            const content = await readFile(pagePath)
-            await writeFile(pagePath, rewriteWikilinkTarget(content, item.brokenTarget, item.suggestedTarget))
+            await transformWikiPage(pp,pagePath,content=>rewriteWikilinkTarget(content,item.brokenTarget!,item.suggestedTarget!))
           } else if (item.brokenTarget) {
-            const content = await readFile(pagePath)
             const stub = await ensureBrokenLinkStub(pp, item.brokenTarget)
-            await writeFile(pagePath, rewriteWikilinkTarget(content, item.brokenTarget, stub.relativePath))
+            await transformWikiPage(pp,pagePath,content=>rewriteWikilinkTarget(content,item.brokenTarget!,stub.relativePath))
           } else {
             addLintItemToReview(item)
           }
@@ -266,8 +264,7 @@ export function LintView() {
         case "no-outlinks": {
           if (item.suggestedTarget) {
             const pagePath = `${pp}/wiki/${item.page}`
-            const content = await readFile(pagePath)
-            await writeFile(pagePath, appendWikilink(content, item.suggestedTarget))
+            await transformWikiPage(pp,pagePath,content=>appendWikilink(content,item.suggestedTarget!))
           } else {
             addLintItemToReview(item)
           }
@@ -411,12 +408,8 @@ export function LintView() {
       // Multiple findings can target the same page. Apply their transforms in
       // memory and write that page once, avoiding lost updates and N full reads.
       for (const [path, pending] of edits) {
-        const original = await readFile(path)
-        const updated = pending.reduce((content, edit) => edit.apply(content), original)
-        if (updated !== original) {
-          await writeFile(path, updated)
-          filesystemChanged = true
-        }
+        const result=await transformWikiPage(pp,path,original=>pending.reduce((content,edit)=>edit.apply(content),original))
+        if(result.changed)filesystemChanged=true
         removeLintItems(pending.map((edit) => edit.id))
       }
       setSelectedLintIds(new Set())

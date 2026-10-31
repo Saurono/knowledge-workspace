@@ -6,7 +6,7 @@ const fsMocks = vi.hoisted(() => ({
   writeFile: vi.fn(),
 }))
 
-vi.mock("@/commands/fs", () => fsMocks)
+vi.mock("@/commands/fs", () => ({...fsMocks,readFile:vi.fn(),writeFileAtomic:fsMocks.writeFile}))
 
 import {
   appendWikilink,

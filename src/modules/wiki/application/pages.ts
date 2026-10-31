@@ -18,6 +18,17 @@ export function createWikiPageService(
       const content = await repository.read(projectPath, canonical)
       return { path: canonical, content, revision: await revision(content) }
     },
+    transform: async (projectPath: string, path: string, change: (previous: string) => string) => {
+      const canonical = canonicalWikiPagePath(path)
+      let changed = false
+      const page = await repository.update(projectPath, canonical, async (previous) => {
+        if (previous === null) throw new Error(`Wiki page is missing: ${canonical}`)
+        const content = change(previous)
+        changed = content !== previous
+        return { path: canonical, content, revision: await revision(content) }
+      })
+      return { page, changed }
+    },
     save: async (input: {
       projectPath: string
       path: string

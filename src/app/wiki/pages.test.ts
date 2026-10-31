@@ -5,6 +5,7 @@ vi.mock("@/commands/fs", () => ({
   readFile: io.read,
   writeFileAtomic: io.write,
   fileExists: io.exists,
+  createDirectory: async () => {},
 }))
 import { wikiPages, isWikiTextPath, readWikiEditorPage, writeWikiEditorPage } from "./pages"
 import { WikiRevisionConflict } from "@/modules/wiki/domain"
@@ -97,4 +98,25 @@ describe("Wiki page repository and revision contracts", () => {
     expect(isWikiTextPath("/p", "/other/wiki/a.md")).toBe(false)
     await expect(writeWikiEditorPage("/p", "/other/wiki/a.md", "x")).rejects.toThrow("outside")
   })
+})
+
+it("serializes concurrent pure repairs and skips unchanged writes", async () => {
+  files.set("/p/wiki/a.md", "initial")
+  await Promise.all([
+    wikiPages.transform("/p", "wiki/a.md", (text) => text + " A"),
+    wikiPages.transform("/p", "wiki/a.md", (text) => text + " B"),
+  ])
+  expect(files.get("/p/wiki/a.md")).toBe("initial A B")
+  expect(io.write).toHaveBeenCalledTimes(2)
+  expect((await wikiPages.transform("/p", "wiki/a.md", (text) => text)).changed).toBe(false)
+  expect(io.write).toHaveBeenCalledTimes(2)
+})
+it("creates only one placeholder under concurrent repair requests", async () => {
+  const { ensureBrokenLinkStub } = await import("@/lib/lint-fixes")
+  const results = await Promise.all([
+    ensureBrokenLinkStub("/p", "missing"),
+    ensureBrokenLinkStub("/p", "missing"),
+  ])
+  expect(results.filter((result) => result.created)).toHaveLength(1)
+  expect(io.write).toHaveBeenCalledTimes(1)
 })

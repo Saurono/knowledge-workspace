@@ -12,7 +12,7 @@ export const localWikiPages: WikiPageRepository = {
       const file = fullPath(projectPath, path)
       const previous = (await fileExists(file)) ? await readFile(file) : null
       const page = await change(previous)
-      await writeFileAtomic(file, page.content)
+      if (page.content !== previous) await writeFileAtomic(file, page.content)
       return page
     }),
 }
@@ -40,4 +40,14 @@ export async function writeWikiEditorPage(
   const relative = relativePath(projectPath, path)
   if (!relative) throw new Error("Wiki page is outside the selected project")
   await wikiPages.save({ projectPath, path: relative, content })
+}
+
+export async function transformWikiPage(
+  projectPath: string,
+  path: string,
+  change: (previous: string) => string,
+) {
+  const relative = relativePath(projectPath, path)
+  if (!relative) throw new Error("Wiki page is outside the selected project")
+  return wikiPages.transform(projectPath, relative, change)
 }
