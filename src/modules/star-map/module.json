@@ -1,7 +1,18 @@
 {
   "id": "star-map",
-  "publicEntrypoints": ["index.ts", "domain/index.ts"],
-  "allowedModuleDependencies": [],
-  "allowedExternalImports": ["react", "react-i18next"],
+  "publicEntrypoints": [
+    "index.ts",
+    "domain/index.ts",
+    "application/index.ts"
+  ],
+  "allowedModuleDependencies": [
+    "retrieval",
+    "memory",
+    "domains"
+  ],
+  "allowedExternalImports": [
+    "react",
+    "react-i18next"
+  ],
   "allowedLegacyImports": []
 }

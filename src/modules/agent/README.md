@@ -10,3 +10,5 @@
 旧 chat-agent-types、agent-file-activity 保留重导出；聊天历史格式不变，运行时回滚快照仍不落盘。此模块不新增用户授权，也不改变 Rust 的工具策略；本环境无 cargo，原生执行及外部真实模型未验收。
 
 端口测试覆盖监听/启动顺序、跨运行事件、取消注册竞态、原生启动悬挂、超时清理及未知文件快照。执行 `npm run check:modules`、`npm run typecheck` 和 `npm run test:mocks`。
+
+B15：聊天会话更新规则与消息到模型输入转换也归模块；`createChatSessionState` 经状态/时钟/ID/文案端口组合，Zustand Store 只作为 React 投影。会话所属消息、流式完成、删除/切换后的隔离和选定技能/上下文保持旧行为。

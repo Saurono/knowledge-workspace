@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { GraphView } from "@/components/graph/graph-view"
 import { useWorkspaceUiStore } from "@/stores/workspace-ui-store"
@@ -6,11 +6,9 @@ import { useWorkspaceStore } from "@/stores/workspace-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { buildWikiGraph, type GraphNode, type GraphEdge } from "@/lib/wiki-graph"
 import { normalizePath } from "@/lib/path-utils"
-import { seaColor, visibleSeaEdges, type SeaPoint, type SeaEdge } from "@/modules/star-map/domain"
+import { buildWorkspaceScene, MAX_SCENE_POINTS as MAX_POINTS, MAX_SCENE_EDGES as MAX_EDGES } from "@/modules/star-map/application"
 import { MemorySeaCanvas } from "@/modules/star-map"
 
-const MAX_POINTS = 4000
-const MAX_EDGES = 12000
 export function MemoryStarMap() {
   const { t } = useTranslation()
   const project = useWikiStore((s) => s.project)
@@ -29,21 +27,31 @@ export function MemoryStarMap() {
   const [error, setError] = useState<string | null>(null)
   const [refresh, setRefresh] = useState(0)
   const [analysis, setAnalysis] = useState(false)
+  const projectGeneration = useRef(0)
+  useEffect(() => useWikiStore.subscribe((next, previous) => {
+    if (next.project?.id !== previous.project?.id || next.project?.path !== previous.project?.path) {
+      ++projectGeneration.current
+      setWikiNodes([]); setWikiEdges([])
+      setSelectedByMode({ wiki: null, memory: null })
+      setRefresh(value => value + 1)
+    }
+  }), [])
   useEffect(() => {
     let active = true
+    const version = projectGeneration.current
     if (!project || mode !== "wiki") return
     setLoading(true)
     setError(null)
     void buildWikiGraph(normalizePath(project.path), dataVersion)
       .then((graph) => {
-        if (active) {
+        if (active && version === projectGeneration.current) {
           setWikiNodes(graph.nodes)
           setWikiEdges(graph.edges)
           setLoading(false)
         }
       })
       .catch((e) => {
-        if (active) {
+        if (active && version === projectGeneration.current) {
           setError(String(e))
           setLoading(false)
         }
@@ -52,82 +60,10 @@ export function MemoryStarMap() {
       active = false
     }
   }, [project, dataVersion, mode, refresh])
-  const scene = useMemo(() => {
-    const domainNames = new Map(data.domains.map((d) => [d.id, d.name]))
-    const matches = (text: string) =>
-      text.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
-    let points: SeaPoint[]
-    let edges: SeaEdge[]
-    if (mode === "memory") {
-      points = [...data.memories]
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-        .filter(
-          (m) =>
-            (!domain || m.domainIds.includes(domain)) &&
-            matches(`${m.title} ${m.content} ${m.category}`),
-        )
-        .map((m) => {
-          const group =
-            m.category ||
-            m.domainIds
-              .map((id) => domainNames.get(id))
-              .filter(Boolean)
-              .sort()[0] ||
-            t("workspace.uncategorized")
-          return {
-            id: m.id,
-            title: m.title,
-            text: m.content,
-            group,
-            color: seaColor(group),
-            weight: 1 + Math.min(4, m.relatedIds.length * 0.3),
-            createdAt: m.createdAt,
-          }
-        })
-      edges = data.memories.flatMap((m) =>
-        m.relatedIds.map((id) => ({ source: m.id, target: id, weight: 1 })),
-      )
-    } else {
-      points = [...wikiNodes]
-        .sort((a, b) => b.linkCount - a.linkCount || a.id.localeCompare(b.id))
-        .filter((node) => {
-          const relative = normalizePath(node.path).replace(
-            `${normalizePath(project?.path ?? "")}/`,
-            "",
-          )
-          return (
-            (!domain || data.resourceDomains[relative]?.includes(domain)) &&
-            matches(`${node.label} ${node.type}`)
-          )
-        })
-        .map((node) => {
-          const group = t(`graph.nodeTypeLabels.${node.type}`, { defaultValue: node.type })
-          return {
-            id: node.id,
-            title: node.label,
-            text: node.path,
-            group,
-            color: seaColor(node.type),
-            weight: 1 + Math.min(4, Math.sqrt(node.linkCount) * 0.3),
-            path: node.path,
-          }
-        })
-      edges = wikiEdges.map((edge) => ({
-        source: edge.source,
-        target: edge.target,
-        weight: edge.weight,
-      }))
-    }
-    const total = points.length
-    const displayed = points.slice(0, MAX_POINTS)
-    const allEdges = visibleSeaEdges(displayed, edges)
-    return {
-      points: displayed,
-      edges: allEdges.slice(0, MAX_EDGES),
-      total,
-      totalEdges: allEdges.length,
-    }
-  }, [mode, data, wikiNodes, wikiEdges, domain, query, project, t])
+  const scene = useMemo(() => buildWorkspaceScene({
+    mode, domain, query, projectPath: project?.path ?? "", data, wikiNodes, wikiEdges,
+    labels: { uncategorized: t("workspace.uncategorized"), type: type => t(`graph.nodeTypeLabels.${type}`, { defaultValue: type }) },
+  }), [mode, data, wikiNodes, wikiEdges, domain, query, project, t])
   const selected = selectedByMode[mode]
   const current = scene.points.find((point) => point.id === selected)
   const select = (id: string | null) => setSelectedByMode((state) => ({ ...state, [mode]: id }))

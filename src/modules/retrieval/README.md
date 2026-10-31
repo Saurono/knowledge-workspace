@@ -24,3 +24,5 @@
 旧入口回归覆盖原生命令参数、批处理回退、并发、部分失败、全量重建与旧向量兼容；新端口测试覆盖独立实例、重建失败保留索引、本地模型隔离、取消迟到结果、证据预算/引用及结果路径校验。运行 `npm run check:modules`、`npm run typecheck`、`npm run test:mocks`。
 
 浏览器复现：`analysis/implementation/smoke-retrieval.mjs`，仅指向显式沙箱。未在当前无 cargo 环境重新验收 Rust 排序、真实模型服务或真实向量数据库。
+
+B15：旧图关联读取/权重服务也迁入 `application/graph`，文件/解析经端口注入，缓存按服务实例隔离；Wiki 星图通过应用适配调用，不再临时读取当前 Store 版本。图关联规则和旧兼容入口保持。

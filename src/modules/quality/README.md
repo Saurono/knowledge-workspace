@@ -12,3 +12,5 @@
 兼容入口 `lib/lint`、`sweep-reviews`、`review-utils`、`lint-fixes` 保留重导出；旧回归继续验证真实组合。领域与应用仍未提供生产 Web 后端/账号授权；词法路径保护不替代 symlink/服务端授权。真实模型与 Rust 原生操作未在当前环境验收。
 
 运行 `npm run check:modules`、`npm run typecheck`、`npm run test:mocks`；端口契约另覆盖同页组合、部分失败、项目切换及非法文件路径。
+
+B15：审阅和检查状态更新器通过 `createReviewState`、`createLintState` 注入状态投影/时钟，Store 不再定义去重、合并或 ID 恢复规则。恢复 finding 时同步编号，独立实例不共享编号状态。

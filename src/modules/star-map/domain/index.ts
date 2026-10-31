@@ -9,3 +9,4 @@ export {
   visibleSeaEdges,
 } from "./scene"
 export type { SeaPoint, SeaEdge, SeaPosition, SeaCamera } from "./scene"
+export * from "./wiki-graph"
