@@ -6,7 +6,7 @@
 2. 在 `/workspace/llm_wiki` 检查 `git status`、分支和最新日志；路径随环境变化时定位仓库，不假设旧后台进程仍运行。
 3. 以 TASKS 为任务状态唯一入口：完成一项就勾选、追加 WORKLOG（实现/验证/限制）、更新本文件的执行点并提交。不能仅更新复选框。
 4. 保持可回归的小批次迁移，旧调用者迁移完才删除兼容入口。业务规则放模块，通过公开 API 与依赖注入组合，禁止新模块依赖旧 store/Tauri/文件系统。
-5. 用户要求继续工作时直接推进已授权的实现与验证。后续仓库默认公开，代码推送到用户 origin；不把机密、真实笔记或凭据加入仓库。
+5. 用户已明确要求任务完成后自动继续：完成、验证、记账与提交后直接推进下一项；仅遇到必要用户信息或权限阻塞时暂停。后续仓库默认公开，代码推送到用户 origin；不把机密、真实笔记或凭据加入仓库。
 
 ## 仓库与已确认选择
 
@@ -30,7 +30,7 @@
 ## 当前执行点
 
 - 已完成 A10（任务与交接入口）、B01（外部取消，`227da96`）、B02（入库执行器接入，`a4c2641`）、B03（本批队列服务迁移；提交与本文件同批，查最新 Git 日志）。
-- 下一项 B04：拆 `lib/deep-research.ts`/`stores/research-store.ts` 的研究业务模型、证据规则与执行器；研究仍未接入 tasks，勿误标完成。随后 B05 受控任务 UI。
+- B04 已完成：research/domain 定义模型和证据规则，application 执行器已接入 tasks，app/research 适配模型/搜索/文件/状态；旧 lib/deep-research 兼容。相关 52 项测试、类型与十模块边界通过。当前自动继续 B05 受控任务 UI，随后 B06。
 - 队列入口已变更：`modules/ingestion/application/queue.ts` 的 `createIngestQueue(ports)` 拥有完整调度/恢复/串行快照写入；`app/ingestion/queue.ts` 装配桌面实例，`queue-repository.ts` 适配旧文件路径；旧 `lib/ingest-queue.ts` 仅兼容重导出。
 - 入库执行入口：`modules/ingestion/application/execute-ingest.ts` → `app/tasks/ingestion.ts` → 旧 autoIngest。每次尝试独立运行时，逻辑 taskId 继续用于回执；恢复/重试排他仍由队列和源文件/项目锁负责。
 - 保持 `pauseQueue()` 项目切换握手、队列 epoch、并发提交顺序、部分写入记账、重试/限额自动恢复与回执链路。restore 的异步边界现有版本校验，不能删掉。

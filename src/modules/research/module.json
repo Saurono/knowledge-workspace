@@ -1,0 +1,7 @@
+{
+  "id": "research",
+  "publicEntrypoints": ["index.ts", "domain/index.ts", "application/index.ts"],
+  "allowedModuleDependencies": ["tasks"],
+  "allowedExternalImports": [],
+  "allowedLegacyImports": []
+}
