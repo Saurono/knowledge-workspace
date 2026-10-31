@@ -1,0 +1,7 @@
+{
+  "id": "projects",
+  "publicEntrypoints": ["index.ts", "domain/index.ts", "application/index.ts"],
+  "allowedModuleDependencies": [],
+  "allowedExternalImports": [],
+  "allowedLegacyImports": []
+}

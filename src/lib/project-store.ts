@@ -1,45 +1,16 @@
 import { load } from "@tauri-apps/plugin-store"
-import type { WikiProject } from "@/types/wiki"
 import type { ApiConfig, CustomLlmPreset, GeneralConfig, LlmConfig, SearchApiConfig, EmbeddingConfig, MineruConfig, MultimodalConfig, OutputLanguage, ProjectLlmOverride, ProviderConfigs, ProxyConfig, ScheduledImportConfig, SourceWatchConfig, TaskModelRoutingConfig } from "@/stores/wiki-store"
 import { normalizeSourceWatchConfig } from "@/lib/source-watch-config"
 import { normalizePath } from "@/lib/path-utils"
 import { DEFAULT_ZOOM_LEVEL, clampZoomLevel } from "@/stores/zoom-store"
 
 const STORE_NAME = "app-state.json"
-const RECENT_PROJECTS_KEY = "recentProjects"
-const LAST_PROJECT_KEY = "lastProject"
 
 async function getStore() {
   return load(STORE_NAME, { autoSave: true, defaults: {} })
 }
 
-export async function getRecentProjects(): Promise<WikiProject[]> {
-  const store = await getStore()
-  const projects = await store.get<WikiProject[]>(RECENT_PROJECTS_KEY)
-  return projects ?? []
-}
-
-export async function getLastProject(): Promise<WikiProject | null> {
-  const store = await getStore()
-  const project = await store.get<WikiProject>(LAST_PROJECT_KEY)
-  return project ?? null
-}
-
-export async function saveLastProject(project: WikiProject): Promise<void> {
-  const store = await getStore()
-  await store.set(LAST_PROJECT_KEY, project)
-  await addToRecentProjects(project)
-}
-
-export async function addToRecentProjects(
-  project: WikiProject
-): Promise<void> {
-  const store = await getStore()
-  const existing = (await store.get<WikiProject[]>(RECENT_PROJECTS_KEY)) ?? []
-  const filtered = existing.filter((p) => p.path !== project.path)
-  const updated = [project, ...filtered].slice(0, 10)
-  await store.set(RECENT_PROJECTS_KEY, updated)
-}
+export { getRecentProjects, getLastProject, saveLastProject, addToRecentProjects, removeFromRecentProjects } from "@/app/projects/service"
 
 const LLM_CONFIG_KEY = "llmConfig"
 const PROVIDER_CONFIGS_KEY = "providerConfigs"
@@ -359,25 +330,6 @@ export async function loadScheduledImportConfig(projectPath: string): Promise<Sc
     return legacy
   }
   return null
-}
-
-export async function removeFromRecentProjects(
-  path: string
-): Promise<void> {
-  const store = await getStore()
-  const existing = (await store.get<WikiProject[]>(RECENT_PROJECTS_KEY)) ?? []
-  const updated = existing.filter((p) => p.path !== path)
-  await store.set(RECENT_PROJECTS_KEY, updated)
-  // ALSO clear the last-project pointer if it points at the project
-  // we just removed. Without this, App.tsx's startup auto-open
-  // (`getLastProject()` → `openProject()` → `saveLastProject()`)
-  // re-adds the removed entry back to recents on the next launch,
-  // making the delete look like it didn't take. Reported by user
-  // as "deleted project comes back after restart."
-  const last = await store.get<WikiProject>(LAST_PROJECT_KEY)
-  if (last && last.path === path) {
-    await store.delete(LAST_PROJECT_KEY)
-  }
 }
 
 const LANGUAGE_KEY = "language"

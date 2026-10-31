@@ -1,10 +1,4 @@
-export interface WikiProject {
-  /** Stable UUID, persisted inside the project at .llm-wiki/project.json.
-   *  Survives the user moving or renaming the project folder. */
-  id: string
-  name: string
-  path: string
-}
+export type { WikiProject } from "@/modules/projects/domain"
 
 export interface FileNode {
   name: string
