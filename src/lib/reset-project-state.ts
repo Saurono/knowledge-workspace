@@ -8,6 +8,9 @@
  * cleanup.
  */
 
+import { useWorkspaceStore } from "@/stores/workspace-store"
+import { useWorkspaceUiStore } from "@/stores/workspace-ui-store"
+import { cancelAllMaintenanceTasks } from "@/lib/maintenance-tasks"
 import { useChatStore } from "@/stores/chat-store"
 import { useReviewStore } from "@/stores/review-store"
 import { useLintStore } from "@/stores/lint-store"
@@ -16,6 +19,9 @@ import { useResearchStore } from "@/stores/research-store"
 import { useWikiStore } from "@/stores/wiki-store"
 
 export async function resetProjectState(): Promise<void> {
+  cancelAllMaintenanceTasks()
+  useWorkspaceStore.getState().reset()
+  useWorkspaceUiStore.setState({ selectedMemoryId: null, taskTab: "import", chatMode: "llm", wikiMode: "preview" })
   // Zustand stores — clear all per-project data (synchronous)
   const globalLlmConfig = useWikiStore.getState().globalLlmConfig
   useWikiStore.setState({

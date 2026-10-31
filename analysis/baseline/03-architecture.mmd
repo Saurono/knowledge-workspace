@@ -1,0 +1,44 @@
+flowchart TB
+  subgraph ENTRY["入口"]
+    UI["Tauri 桌面 UI"]
+    EXT["Chrome Web Clipper"]
+    CLIENT["外部脚本 / AI 客户端"]
+    MCP["Node MCP Server"]
+  end
+  subgraph FRONT["React / TypeScript / Zustand"]
+    VIEW["导航 / 阅读编辑 / 图谱 / 设置"]
+    PIPE["Ingest / Review / Lint / Deep Research / 同步调度"]
+  end
+  subgraph BACK["Rust / Tauri"]
+    IPC["Tauri commands · 文件 / 解析 / 同步 / 版本"]
+    AGENT["Agent runtime · 工具 / 路由 / Skill / 权限"]
+    RET["统一检索 / Embedding / LanceDB"]
+    API["HTTP API :19828 · JSON / SSE"]
+    CLIP["剪藏服务 :19827"]
+  end
+  subgraph DATA["本地项目数据"]
+    FILES["purpose / schema / raw / wiki / agent-workspace"]
+    STATE[".llm-wiki · 聊天 / 审阅 / 队列 / 历史 / 向量"]
+  end
+  SERVICE["外部依赖 · LLM / CLI / 搜索 / MinerU / AnyTXT"]
+  UI --> VIEW
+  VIEW --> PIPE
+  VIEW --> IPC
+  VIEW --> AGENT
+  PIPE --> IPC
+  PIPE --> SERVICE
+  PIPE --> RET
+  EXT --> CLIP
+  CLIP --> FILES
+  CLIENT --> API
+  CLIENT --> MCP
+  MCP --> API
+  API --> AGENT
+  API --> RET
+  API --> FILES
+  AGENT --> RET
+  AGENT --> FILES
+  AGENT --> SERVICE
+  IPC --> FILES
+  IPC --> STATE
+  RET --> STATE

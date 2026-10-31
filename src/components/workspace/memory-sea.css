@@ -1,0 +1,277 @@
+.memory-sea-workspace {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  background: #05060b;
+  color: #cfd6e4;
+  font:
+    13px/1.5 system-ui,
+    "Microsoft YaHei",
+    sans-serif;
+}
+.memory-sea-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  border-bottom: 1px solid #789fff24;
+  padding: 16px 22px;
+  background: #080b13;
+}
+.memory-sea-header h1 {
+  margin: 0;
+  color: #b9d1ff;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+.memory-sea-header p {
+  margin: 3px 0 0;
+  color: #697891;
+  font-size: 11px;
+}
+.memory-sea-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid #789fff25;
+  border-radius: 10px;
+  background: #0b1120;
+}
+.memory-sea-workspace button {
+  cursor: pointer;
+}
+.memory-sea-tabs button,
+.memory-sea-analysis {
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #91a3c5;
+  padding: 7px 13px;
+  font-size: 12px;
+}
+.memory-sea-tabs button[aria-selected="true"] {
+  border-color: #8ab6ff33;
+  background: #78a0ff22;
+  color: #dfebff;
+}
+.memory-sea-analysis {
+  margin-left: auto;
+  border-color: #789fff30 !important;
+}
+.memory-sea-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.memory-sea-canvas {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 55%, #0b1122 0%, #05060b 70%);
+}
+.memory-sea-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+.memory-sea-hud,
+.memory-sea-tools {
+  position: absolute;
+  z-index: 2;
+  background: #0a0d16c4;
+  border: 1px solid #78a0ff2e;
+  border-radius: 12px;
+  backdrop-filter: blur(8px);
+}
+.memory-sea-overview {
+  left: 18px;
+  top: 18px;
+  width: 260px;
+  padding: 14px 16px;
+}
+.memory-sea-hud-title {
+  color: #9fc1ff;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.memory-sea-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 8px 0 12px;
+  color: #7e8ca8;
+  font-size: 11px;
+}
+.memory-sea-stats b {
+  margin-left: 3px;
+  color: #dbe6ff;
+  font-weight: 500;
+}
+.memory-sea-overview input,
+.memory-sea-overview select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #789fff26;
+  border-radius: 7px;
+  background: #0d1423;
+  color: #bbc9e4;
+  padding: 6px 8px;
+  margin: 4px 0;
+  font-size: 11px;
+  color-scheme: dark;
+}
+.memory-sea-overview input::placeholder {
+  color: #677590;
+}
+.memory-sea-hud button,
+.memory-sea-tools button {
+  border: 1px solid #78a0ff38;
+  border-radius: 7px;
+  background: #78a0ff19;
+  color: #b8c9ee;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+.memory-sea-workspace button:hover {
+  background: #78a0ff30;
+}
+.memory-sea-workspace button:focus-visible,
+.memory-sea-workspace input:focus-visible,
+.memory-sea-workspace select:focus-visible {
+  outline: 2px solid #9fc1ff;
+  outline-offset: 2px;
+}
+.memory-sea-tools {
+  bottom: 18px;
+  left: 18px;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+}
+.memory-sea-tools button[aria-pressed="true"] {
+  background: #78a0ff38;
+  color: #e4edff;
+}
+.memory-sea-hint {
+  position: absolute;
+  pointer-events: none;
+  bottom: 23px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 42%;
+  text-align: center;
+  color: #56617a;
+  font-size: 11px;
+}
+.memory-sea-legend {
+  right: 18px;
+  top: 18px;
+  display: flex;
+  max-width: 250px;
+  max-height: 180px;
+  overflow: auto;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 12px;
+  font-size: 11px;
+  color: #93a4c2;
+}
+.memory-sea-legend span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.memory-sea-legend i {
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 7px currentColor;
+}
+.memory-sea-detail {
+  right: 18px;
+  bottom: 18px;
+  width: min(340px, calc(100% - 36px));
+  max-height: 55%;
+  overflow: auto;
+  padding: 16px 18px;
+}
+.memory-sea-detail h2 {
+  margin: 6px 0 10px;
+  color: #e8eeff;
+  font-size: 15px;
+  font-weight: 500;
+}
+.memory-sea-detail-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #aebcda;
+  font-size: 12px;
+  line-height: 1.8;
+  max-height: 220px;
+  overflow: auto;
+}
+.memory-sea-caption {
+  color: #7485a4;
+  font-size: 10px;
+  margin: 8px 0;
+}
+.memory-sea-close {
+  float: right;
+  border: 0 !important;
+  padding: 0 5px !important;
+  background: transparent !important;
+  color: #8c9cb8 !important;
+}
+.memory-sea-empty,
+.memory-sea-fallback {
+  position: absolute;
+  left: 50%;
+  top: 53%;
+  transform: translate(-50%, -50%);
+  max-width: 60%;
+  padding: 16px;
+  text-align: center;
+  color: #93a3c1;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .memory-sea-header {
+    gap: 10px;
+    padding: 10px;
+  }
+  .memory-sea-header p,
+  .memory-sea-hint,
+  .memory-sea-legend {
+    display: none;
+  }
+  .memory-sea-overview {
+    width: 210px;
+    left: 10px;
+    top: 10px;
+    padding: 10px;
+  }
+  .memory-sea-tools {
+    left: 10px;
+    bottom: 10px;
+    gap: 4px;
+  }
+  .memory-sea-detail {
+    bottom: 60px;
+    right: 10px;
+    max-height: 35%;
+  }
+  .memory-sea-analysis {
+    margin-left: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .memory-sea-workspace * {
+    scroll-behavior: auto;
+  }
+}

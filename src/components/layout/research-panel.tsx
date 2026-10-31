@@ -27,7 +27,6 @@ export function ResearchPanel() {
   const appDialog = useAppDialog()
   const tasks = useResearchStore((s) => s.tasks)
   const removeTask = useResearchStore((s) => s.removeTask)
-  const setPanelOpen = useResearchStore((s) => s.setPanelOpen)
   const project = useWikiStore((s) => s.project)
   const llmConfig = useWikiStore((s) => s.llmConfig)
   const searchApiConfig = useWikiStore((s) => s.searchApiConfig)
@@ -81,7 +80,7 @@ export function ResearchPanel() {
           )}
         </div>
         <button
-          onClick={() => setPanelOpen(false)}
+          onClick={() => useWikiStore.getState().setActiveView("wiki")}
           className="rounded p-1 text-muted-foreground hover:bg-accent"
         >
           <X className="h-3.5 w-3.5" />

@@ -26,6 +26,11 @@ beforeEach(() => {
 })
 
 describe("searchWiki backend wrapper", () => {
+  it("keeps local search from invoking the configured remote embedding endpoint", async () => {
+    mockInvoke.mockResolvedValueOnce({ mode: "keyword", results: [], tokenHits: 0, vectorHits: 0 })
+    await searchWiki("/project", "question", { localOnly: true })
+    expect(mockInvoke).toHaveBeenCalledWith("search_project", expect.objectContaining({ queryEmbedding: null, embeddingConfig: null }))
+  })
   it("passes embeddingConfig to the shared backend search command and absolutizes paths", async () => {
     mockInvoke.mockResolvedValueOnce({
       mode: "hybrid",

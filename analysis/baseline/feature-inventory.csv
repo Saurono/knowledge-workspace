@@ -1,0 +1,94 @@
+id,domain,feature,behavior,source,status
+P01,项目与知识结构,新建项目与场景模板,科研、阅读、个人成长、商业、通用模板，初始化 purpose/schema 和目录,src/lib/templates.ts,源码确认；未运行验收
+P02,项目与知识结构,打开、切换与最近项目,恢复上次项目；项目 UUID 随目录迁移保持稳定,src/App.tsx,源码确认；未运行验收
+P03,项目与知识结构,知识目标与结构规则,purpose.md 描述目标；schema.md 定义类型、目录、命名和引用规则,src/lib/wiki-schema.ts,源码确认；未运行验收
+P04,项目与知识结构,Markdown 知识模型,实体、概念、来源摘要、问答、综合、对比、总览及模板扩展类型,src/lib/wiki-page-types.ts,源码确认；未运行验收
+P05,项目与知识结构,知识树与文件树,按知识类型或文件目录浏览，搜索、折叠、选择文件,src/components/layout/knowledge-tree.tsx,源码确认；未运行验收
+P06,项目与知识结构,项目迁移与索引重建,ZIP 导入导出完整项目；从现有页面重建 index.md,src/components/settings/sections/maintenance-section.tsx,源码确认；未运行验收
+S01,资料采集与同步,多文件导入,复制到 raw/sources，预解析，再进入入库队列,src/components/sources/sources-view.tsx,源码确认；未运行验收
+S02,资料采集与同步,递归文件夹导入,保留目录结构，目录作为分类上下文，处理目标文件重名,src/lib/source-lifecycle.ts,源码确认；未运行验收
+S03,资料采集与同步,批量 URL 导入,抓取 URL 内容并保存资料；限制重定向和体积,src/lib/url-source-import.ts,源码确认；未运行验收
+S04,资料采集与同步,Chrome 网页剪藏,Readability 提取、Turndown 转 Markdown、选择目标项目、快捷键,extension/popup.js,源码确认；未运行验收
+S05,资料采集与同步,剪藏接收服务,19827 端口接收剪藏；前端 watcher 发现新资料并入库,src-tauri/src/clip_server.rs,源码确认；未运行验收
+S06,资料采集与同步,项目来源目录监听,感知 raw/sources 的新增、修改、重命名、删除；同步生命周期,src-tauri/src/commands/file_sync.rs,源码确认；未运行验收
+S07,资料采集与同步,定时外部目录导入,每项目一个监控目录；周期扫描与哈希/mtime 缓存；涉及最近项目,src/lib/scheduled-import.ts,源码确认；未运行验收
+S08,资料采集与同步,同步规则与并发设置,扩展名、目录、glob、大小过滤；解析/入库并发；可监控多个最近项目,src/components/settings/sections/source-watch-section.tsx,源码确认；未运行验收
+S09,资料采集与同步,来源管理与级联删除,来源搜索、刷新、手动入库、外部打开、删文件/目录；清引用并保留共享页面,src/lib/source-lifecycle.ts,源码确认；未运行验收
+D01,解析与多模态,文本与结构化文本,Markdown、普通文本、Org 等；文本与代码分类预览,src-tauri/src/commands/fs.rs,源码确认；未运行验收
+D02,解析与多模态,Office 文档转 Markdown,AnyDoc 优先；部分格式兼容解析；Word/演示/表格/OpenDocument/RTF,src-tauri/src/commands/fs.rs,源码确认；未运行验收
+D03,解析与多模态,PDF 文字和图片提取,当前内建路径含 PDFium；缓存、图片提取与项目媒体存储,src-tauri/src/commands/extract_images.rs,源码确认；未运行验收
+D04,解析与多模态,MinerU 可选解析,Cloud、Local API、Local Pipeline；处理复杂版面/OCR，存在回退路径,src/lib/mineru.ts,源码确认；未运行验收
+D05,解析与多模态,电子书提取,EPUB/MOBI 元数据与正文提取,src-tauri/src/commands/ebook.rs,源码确认；未运行验收
+D06,解析与多模态,图片描述与图文入库,可配置视觉模型，生成事实性图注，图片随页面参与检索展示,src/lib/image-caption-pipeline.ts,源码确认；未运行验收
+D07,解析与多模态,解析预处理和缓存,有界并发预提取、解析缓存、可选保存提取 Markdown,src/lib/source-preprocess.ts,源码确认；未运行验收
+D08,解析与多模态,音视频与未知二进制边界,音视频播放器；read_file 返回媒体描述占位；不能据此认为支持转写,src/components/editor/file-preview.tsx,源码确认；未运行验收
+I01,知识编译与任务队列,两阶段入库,先分析实体/概念/冲突/联系，再生成 Wiki 页面,src/lib/ingest.ts,源码确认；未运行验收
+I02,知识编译与任务队列,增量跳过,SHA256 内容缓存；校验已生成文件是否仍存在；减少重复入库,src/lib/ingest-cache.ts,源码确认；未运行验收
+I03,知识编译与任务队列,长资料分块与上下文控制,超预算来源分块处理；利用 purpose/schema/现有 Wiki 引导生成,src/lib/ingest.ts,源码确认；未运行验收
+I04,知识编译与任务队列,生成与更新知识资产,来源摘要兜底；实体/概念等页面；index/log/overview；frontmatter sources 追溯,src/lib/ingest.ts,源码确认；未运行验收
+I05,知识编译与任务队列,已有页面内容合并,合并新旧信息并处理生成脚手架和链接,src/lib/page-merge.ts,源码确认；未运行验收
+I06,知识编译与任务队列,生成审阅项,入库提出需人判断的问题、受约束动作与搜索查询,src/lib/ingest.ts,源码确认；未运行验收
+I07,知识编译与任务队列,持久队列与恢复,重启恢复、失败重试、停止/取消/暂停/恢复、批量操作和任务排序,src/lib/ingest-queue.ts,源码确认；未运行验收
+I08,知识编译与任务队列,并发执行与提交协调,默认入库并发 1，可设置 1–64；提交协调保护共享 Wiki 写入,src/lib/ingest-commit-coordinator.ts,源码确认；未运行验收
+I09,知识编译与任务队列,任务进度与限额处理,Activity 进度、错误、写入文件；用量限制暂停与定时恢复,src/components/layout/activity-panel.tsx,源码确认；未运行验收
+I10,知识编译与任务队列,完成后的衍生维护,可选自动向量化；队列排空后重新检查已被知识变化解决的 Review,src/lib/ingest-queue.ts,源码确认；未运行验收
+R01,搜索与证据检索,关键词搜索,统一 search_project 扫描 Wiki Markdown；中文/英文处理、标题加权；原始资料由 Agent 的 source.search 单独检索,src-tauri/src/commands/search.rs,源码确认；未运行验收
+R02,搜索与证据检索,可选向量语义检索,Embedding API、LanceDB；分块向量、页面聚合与索引维护,src-tauri/src/commands/vectorstore.rs,源码确认；未运行验收
+R03,搜索与证据检索,混合排序与图扩展,关键词与向量用 RRF 融合；后端搜索用一跳邻居扩展及配额,src-tauri/src/commands/search.rs,源码确认；未运行验收
+R04,搜索与证据检索,搜索结果与图片证据,摘要、命中图、辅助图、灯箱缩放、跳回源页面,src/components/search/search-view.tsx,源码确认；未运行验收
+R05,搜索与证据检索,原文证据模式,faithful 只读原文，后端限制检索工具和生成 Wiki 背景的注入,src-tauri/src/agent/runtime.rs,源码确认；未运行验收
+R06,搜索与证据检索,外部本机全文检索,可配置 AnyTXT 服务、目录/扩展名/数量过滤，供聊天和研究使用,src/lib/anytxt-search.ts,源码确认；未运行验收
+C01,聊天与 Agent,多会话管理,新建、切换、重命名、删除和项目内持久化,src/stores/chat-store.ts,源码确认；未运行验收
+C02,聊天与 Agent,四种 Agent 模式,fast、standard、deep、local_first；与检索模式是两组设置,src/components/chat/chat-input.tsx,源码确认；未运行验收
+C03,聊天与 Agent,三种检索模式,standard、smart、faithful；智能收集证据或仅使用原文,src/lib/chat-agent-types.ts,源码确认；未运行验收
+C04,聊天与 Agent,Rust 工具调用运行时,Wiki/原文/图谱/网页/AnyTXT 检索，读取页面，选择工具并生成回答,src-tauri/src/agent/runtime.rs,源码确认；未运行验收
+C05,聊天与 Agent,流式过程与取消,回答/推理块、工具事件、停止、重新生成和错误反馈,src/components/chat/chat-panel.tsx,源码确认；未运行验收
+C06,聊天与 Agent,图像与上下文输入,支持的模型可接收图片；选择项目文件作为上下文,src/components/chat/chat-input.tsx,源码确认；未运行验收
+C07,聊天与 Agent,引用与证据预览,引用持久化、来源预览、关联知识图展示,src/components/chat/chat-panel.tsx,源码确认；未运行验收
+C08,聊天与 Agent,对话写入 Wiki,保存有价值的回答到 wiki/queries，再入库提取知识,src/lib/chat-save-to-wiki.ts,源码确认；未运行验收
+C09,聊天与 Agent,Agent 文件生成与变更展示,agent-workspace 文件创建/追加，预览输出、Diff；部分撤销仅当前运行有效,src/components/chat/agent-file-activity.tsx,源码确认；未运行验收
+C10,聊天与 Agent,Wiki 写入与 Shell 执行,受路径/覆盖/权限约束的页面写入；Shell 有专门审批与执行约束,src-tauri/src/agent/tools.rs,源码确认；未运行验收
+C11,聊天与 Agent,结构化用户交互,Agent 可请求单选、多选、文字、确认等输入并继续执行,src/components/chat/chat-panel.tsx,源码确认；未运行验收
+E01,阅读、编辑与版本,阅读与富文本编辑,Milkdown 编辑、Markdown/GFM、Wiki 链接与自动保存,src/components/editor/wiki-editor.tsx,源码确认；未运行验收
+E02,阅读、编辑与版本,数学与图表渲染,KaTeX、Mermaid 围栏及独立 .mmd/.mermaid 预览；图表错误卡片,src/components/editor/file-preview.tsx,源码确认；未运行验收
+E03,阅读、编辑与版本,文档与媒体预览,PDF 页码/缩放/提取文本、Office 提取文本、HTML、CSV/TSV、图片、音视频,src/components/editor/file-preview.tsx,源码确认；未运行验收
+E04,阅读、编辑与版本,元数据与链接导航,frontmatter、来源卡片、related、入链与出链面板,src/components/editor/page-links-panel.tsx,源码确认；未运行验收
+E05,阅读、编辑与版本,选中文本 AI 问答,对选区提出问题，可查看引用并多轮追问,src/components/editor/wiki-editor.tsx,源码确认；未运行验收
+E06,阅读、编辑与版本,选区 AI 修改与差异确认,生成替换文本、词级差异、修改候选、接受/拒绝/重生成,src/components/editor/wiki-editor.tsx,源码确认；未运行验收
+E07,阅读、编辑与版本,文件版本与恢复,作者/工具/时间、版本差异和恢复；保留数量、统计与清理,src-tauri/src/commands/file_history.rs,源码确认；未运行验收
+E08,阅读、编辑与版本,Wiki 页面删除,清理索引和关联链接等派生引用,src/lib/wiki-page-delete.ts,源码确认；未运行验收
+G01,知识图谱与洞察,图谱构建与交互,sigma/graphology/ForceAtlas2、节点类型、缩放、悬停、选择和布局缓存,src/components/graph/graph-view.tsx,源码确认；未运行验收
+G02,知识图谱与洞察,筛选与可见性控制,图谱搜索、类型等过滤，保存图谱 UI 状态,src/lib/graph-filters.ts,源码确认；未运行验收
+G03,知识图谱与洞察,四信号关联评分,直接链接、共享来源、共同邻居 Adamic-Adar、类型亲和,src/lib/graph-relevance.ts,源码确认；未运行验收
+G04,知识图谱与洞察,社区发现,Louvain 聚类、类型/社区着色、凝聚度,src/lib/wiki-graph-analysis.ts,源码确认；未运行验收
+G05,知识图谱与洞察,意外关联与知识缺口,跨社区关联、孤立/稀疏/桥接节点；忽略已读洞察,src/lib/graph-insights.ts,源码确认；未运行验收
+G06,知识图谱与洞察,洞察触发研究,生成领域相关研究主题/查询；用户可编辑后发起 Deep Research,src/lib/optimize-research-topic.ts,源码确认；未运行验收
+Q01,审阅与知识质量,异步审阅队列,冲突、缺页等需人判断项；处理/忽略、刷新、清理已解决项,src/components/review/review-view.tsx,源码确认；未运行验收
+Q02,审阅与知识质量,审阅动作与批处理,建页、打开、研究、跳过；批量研究/处理/忽略,src/components/review/review-view.tsx,源码确认；未运行验收
+Q03,审阅与知识质量,结构检查,孤立页、断链、无出链；规则忽略项；Web Worker 与进度取消,src/lib/lint-structural-core.ts,源码确认；未运行验收
+Q04,审阅与知识质量,语义检查,LLM 分析知识矛盾/缺漏等；转为审阅项,src/lib/lint.ts,源码确认；未运行验收
+Q05,审阅与知识质量,修复与批量处理,修正链接、补链接/占位页、删除孤立页、批量修复或送审,src/components/lint/lint-view.tsx,源码确认；未运行验收
+Q06,审阅与知识质量,实体去重检测,候选预筛与 LLM 分组；人工确认标准页或标记非重复,src/lib/dedup-runner.ts,源码确认；未运行验收
+Q07,审阅与知识质量,去重合并队列,合并内容并改写索引/交叉引用；持久化、取消和重试,src/lib/dedup-queue.ts,源码确认；未运行验收
+Q08,审阅与知识质量,审阅自动复核,入库队列完成后检查 Review 是否已由新增知识解决,src/lib/sweep-reviews.ts,源码确认；未运行验收
+W01,深度研究,多入口选题,手动、Review、图谱洞察；可编辑主题与多条查询,src/components/layout/research-panel.tsx,源码确认；未运行验收
+W02,深度研究,网页与本地联合采证,Web、AnyTXT 或两者；来源去重、相关性过滤,src/lib/deep-research.ts,源码确认；未运行验收
+W03,深度研究,搜索服务适配,Tavily、SerpApi、SearXNG、Ollama、Brave、Bocha、Firecrawl,src/lib/web-search.ts,源码确认；未运行验收
+W04,深度研究,报告综合与引用校验,LLM 流式综合，去思考脚手架，校验非空和来源引用,src/lib/deep-research.ts,源码确认；未运行验收
+W05,深度研究,研究落盘与再入库,保存研究页面并重新进入知识编译，联动解决对应 Review,src/lib/deep-research.ts,源码确认；未运行验收
+W06,深度研究,研究任务面板,队列、执行状态、输出/错误和重跑；独立于入库队列,src/stores/research-store.ts,源码确认；未运行验收
+X01,Skill 与外部接口,本地 Skill 扫描,项目 .llm-wiki/skills 和用户 .claude/.codex/.agents/skills,src-tauri/src/agent/skills.rs,源码确认；未运行验收
+X02,Skill 与外部接口,Skill 启停与会话选择,列表管理、/skill 选择、按需读取指令/附属文件,src/components/settings/sections/skills-section.tsx,源码确认；未运行验收
+X03,Skill 与外部接口,JSON HTTP API,19828 端口；健康、项目、文件、搜索、图谱、审阅、重扫、写页、嵌入,src-tauri/src/api_server.rs,源码确认；未运行验收
+X04,Skill 与外部接口,Agent API 与 SSE,共享 Rust Agent；非流式或 SSE，支持取消端点,src-tauri/src/api_server.rs,源码确认；未运行验收
+X05,Skill 与外部接口,API 访问配置,启停、Token、可选免认证及可选 LAN 访问；不是用户/角色体系,src/components/settings/sections/api-server-section.tsx,源码确认；未运行验收
+X06,Skill 与外部接口,MCP 适配服务,12 个工具：状态、项目/绑定、文件/读、Review、搜索、聊天、图谱、重扫、嵌入、写页,mcp-server/src/index.ts,源码确认；未运行验收
+X07,Skill 与外部接口,外部 Agent skill 文档,README 指向独立 llm_wiki_skill 仓库，连接运行中的应用；本次未审计该仓库,README.md,源码确认；未运行验收
+A01,模型、设置与桌面运行,多供应商与 CLI,OpenAI、Anthropic、Google、Azure、Ollama、Custom、MiniMax、Claude Code、Codex CLI,src/stores/wiki-store.ts,源码确认；未运行验收
+A02,模型、设置与桌面运行,任务和项目模型路由,Chat/Ingest 独立分配；项目覆盖全局；自定义预设、headers 和请求字段,src/lib/llm-task-routing.ts,源码确认；未运行验收
+A03,模型、设置与桌面运行,推理与上下文配置,聊天/入库推理分别配置；上下文、历史深度、流式、请求超时和 CLI 隔离,src/components/settings/sections/llm-provider-section.tsx,源码确认；未运行验收
+A04,模型、设置与桌面运行,独立处理服务设置,Embedding、视觉模型、MinerU、网页搜索分别配置和连接测试,src/components/settings/settings-view.tsx,源码确认；未运行验收
+A05,模型、设置与桌面运行,网络代理,应用层代理与相关网络请求配置,src/components/settings/sections/network-section.tsx,源码确认；未运行验收
+A06,模型、设置与桌面运行,语言与外观,当前加载中/英/意/俄四种 UI 资源；独立输出语言、主题、字号缩放,src/i18n/index.ts,源码确认；未运行验收
+A07,模型、设置与桌面运行,桌面生命周期,托盘、关闭行为、开机启动、快捷键、可调面板和项目状态恢复,src-tauri/src/tray.rs,源码确认；未运行验收
+A08,模型、设置与桌面运行,版本与分发,更新检查/更新横幅、变更日志；Tauri 跨平台构建和 GitHub Actions,src/lib/update-check.ts,源码确认；未运行验收

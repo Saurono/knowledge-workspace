@@ -39,6 +39,8 @@ import { isSensitiveConfigSourceFile } from "@/lib/source-filter"
 import { naturalCompare } from "@/lib/natural-sort"
 import type { SourceWatchConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
+import { useActivityStore } from "@/stores/activity-store"
+import { registerImportedSource } from "@/lib/ingest-receipts"
 import { preprocessSourceFiles } from "@/lib/source-preprocess"
 import { moveParsedMarkdown, removeParsedMarkdown } from "@/lib/parsed-source-output"
 
@@ -359,6 +361,8 @@ export async function importSourceFiles(
     const destPath = await getUniqueDestPath(`${pp}/raw/sources`, originalName)
     try {
       await copyFile(sourcePath, destPath)
+      try { await registerImportedSource(pp, destPath, sourcePath) }
+      catch (error) { useActivityStore.getState().addItem({ type: "ingest", title: "Source provenance", status: "error", detail: `${originalName}: ${String(error)}`, filesWritten: [] }) }
       importedPaths.push(destPath)
     } catch (err) {
       console.error(`Failed to import ${originalName}:`, err)
@@ -423,6 +427,8 @@ export async function importSourceFolder(
       const parent = parentPath(destPath)
       if (parent) await createDirectory(parent)
       await copyFile(file.path, destPath)
+      try { await registerImportedSource(pp, destPath, file.path) }
+      catch (error) { useActivityStore.getState().addItem({ type: "ingest", title: "Source provenance", status: "error", detail: `${displayName}: ${String(error)}`, filesWritten: [] }) }
       allowedFiles.push(destPath)
     } catch (err) {
       console.error(`Failed to import ${displayName}:`, err)

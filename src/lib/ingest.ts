@@ -9,6 +9,7 @@ import {
   writeFile,
   listDirectory,
 } from "@/commands/fs"
+import { deliverObsidianReceipt, hashReceiptRevision, recordSuccessfulIngest } from "@/lib/ingest-receipts"
 import { streamChat } from "@/lib/llm-client"
 import type { LlmConfig, ReasoningConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -622,6 +623,7 @@ export interface AutoIngestOptions {
    * the project mutex; autoIngest always acquires it inside this callback.
    */
   runCommit?: IngestCommitRunner
+  taskId?: string
 }
 
 export async function autoIngest(
@@ -637,15 +639,45 @@ export async function autoIngest(
   const sp = normalizePath(sourcePath)
   return withProjectLock(
     `ingest-source\0${pp}\0${sp}`,
-    () => autoIngestImpl(
-      projectPath,
-      sourcePath,
-      llmConfig,
-      signal,
-      folderContext,
-      onFileWritten,
-      options,
-    ),
+    async () => {
+      // Queued imports capture provenance inside the source lock. Legacy
+      // direct callers keep their existing behavior until given a task ID.
+      const existingPaths = new Set<string>()
+      let capturedExisting = false
+      let revision: string | null = null
+      let cacheHit = false
+      const createdPages: Record<string, string> = {}
+      if (options?.taskId) {
+        throwIfIngestAborted(signal)
+        try {
+          const walk = (nodes: FileNode[]) => {
+            for (const node of nodes) { if (node.is_dir) walk(node.children ?? []); else existingPaths.add(normalizePath(node.path)) }
+          }
+          walk(await listDirectory(`${pp}/wiki`))
+          capturedExisting = true
+          const content = await readFile(sp)
+          revision = await hashReceiptRevision(content)
+          cacheHit = (await checkIngestCache(pp, sourceIdentityForPath(pp, sp), content)) !== null
+        } catch { /* Failed provenance capture must not hide a source/ingest error. */ }
+        throwIfIngestAborted(signal)
+      }
+      const writtenPaths = await autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext,
+        (path) => {
+          onFileWritten?.(path)
+          if (capturedExisting && !existingPaths.has(normalizePath(`${pp}/${path}`))) createdPages[normalizePath(path)] ??= new Date().toISOString()
+        }, options)
+      if (options?.taskId && writtenPaths.length > 0 && !signal?.aborted) {
+        try {
+          if (!revision) throw new Error("Source revision unavailable; ingest receipt was not recorded")
+          const id = await recordSuccessfulIngest({ projectPath: pp, taskId: options.taskId, sourcePath: sp, revision, writtenPaths, createdPages, cacheHit })
+          await deliverObsidianReceipt(pp, id)
+          useWikiStore.getState().bumpDataVersion()
+        } catch (error) {
+          useActivityStore.getState().addItem({ type: "ingest", title: "Ingest receipt", status: "error", detail: String(error), filesWritten: writtenPaths })
+        }
+      }
+      return writtenPaths
+    },
   )
 }
 
@@ -728,6 +760,8 @@ async function autoIngestImpl(
   const activityId = activity.addItem({
     type: "ingest",
     title: fileName,
+    taskId: options?.taskId,
+    sourcePath: sp,
     status: "running",
     detail: "Reading source...",
     filesWritten: [],

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import {
   Link2Off,
   Unlink,
@@ -17,8 +17,8 @@ import { Button } from "@/components/ui/button"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
 import { useLintStore, type LintItem } from "@/stores/lint-store"
-import { runStructuralLint, runSemanticLint } from "@/lib/lint"
-import { hasUsableLlm } from "@/lib/has-usable-llm"
+import { runMaintenanceCheck } from "@/lib/maintenance-tasks"
+import { useActivityStore } from "@/stores/activity-store"
 import { readFile, writeFile } from "@/commands/fs"
 import { normalizePath } from "@/lib/path-utils"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
@@ -78,8 +78,7 @@ export function LintView() {
   const removeLintItems = useLintStore((s) => s.removeItems)
   const clearLintItems = useLintStore((s) => s.clearItems)
 
-  const [running, setRunning] = useState(false)
-  const [lintProgress, setLintProgress] = useState<{ completed: number; total: number } | null>(null)
+  const running = useActivityStore((s) => s.items.some((item) => item.type === "lint" && item.status === "running"))
   const [hasRun, setHasRun] = useState(false)
   const [runSemantic, setRunSemantic] = useState(false)
   const [showRuleSettings, setShowRuleSettings] = useState(false)
@@ -91,9 +90,6 @@ export function LintView() {
   const [batchFixing, setBatchFixing] = useState(false)
   const [fixError, setFixError] = useState<string | null>(null)
   const [selectedLintIds, setSelectedLintIds] = useState<Set<string>>(() => new Set())
-  const lintAbortRef = useRef<AbortController | null>(null)
-
-  useEffect(() => () => lintAbortRef.current?.abort(), [])
 
   useEffect(() => {
     let active = true
@@ -142,41 +138,18 @@ export function LintView() {
 
   const handleRunLint = useCallback(async () => {
     if (!project || running) return
-    const pp = normalizePath(project.path)
-    setRunning(true)
     setFixError(null)
-    setLintProgress(null)
     setSelectedLintIds(new Set())
     clearLintItems()
-    const controller = new AbortController()
-    lintAbortRef.current = controller
     try {
-      const structural = await runStructuralLint(pp, {
-        signal: controller.signal,
-        config: {
-          ...lintConfig,
-          ignorePages: ignoredPagesDraft.split(/[,，\n]/),
-        },
-        onProgress: (completed, total) => setLintProgress({ completed, total }),
-      })
-      let all = structural
-
-      if (runSemantic && hasUsableLlm(llmConfig)) {
-        const semantic = await runSemanticLint(pp, llmConfig, controller.signal)
-        all = [...structural, ...semantic]
+      const results = await runMaintenanceCheck(project.path, {
+        ...lintConfig, ignorePages: ignoredPagesDraft.split(/[,，\n]/),
+      }, runSemantic, llmConfig)
+      if (results && useWikiStore.getState().project?.path === project.path) {
+        addLintItems(results)
+        setHasRun(true)
       }
-
-      addLintItems(all)
-      setHasRun(true)
-    } catch (err) {
-      if (!(err instanceof DOMException && err.name === "AbortError")) {
-        console.error("Lint failed:", err)
-      }
-    } finally {
-      lintAbortRef.current = null
-      setRunning(false)
-      setLintProgress(null)
-    }
+    } catch (error) { setFixError(String(error)) }
   }, [
     project,
     llmConfig,
@@ -258,7 +231,8 @@ export function LintView() {
     const pp = normalizePath(project.path)
     setFixingId(item.id)
     setFixError(null)
-
+    const activity = useActivityStore.getState()
+    const taskId = activity.addItem({ type: "lint", title: `Wiki fix: ${item.page}`, status: "running", detail: item.detail, filesWritten: [] })
     try {
       switch (item.type) {
         case "orphan": {
@@ -315,7 +289,9 @@ export function LintView() {
           bumpDataVersion: true,
         })
       }
+      activity.updateItem(taskId, { status: "done", detail: "Completed" })
     } catch (err) {
+      activity.updateItem(taskId, { status: "error", detail: String(err) })
       console.error("Fix failed:", err)
       setFixError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -494,15 +470,11 @@ export function LintView() {
           <Button
             size="sm"
             variant={running ? "outline" : "default"}
-            onClick={running ? () => lintAbortRef.current?.abort() : handleRunLint}
-            disabled={!project}
+            onClick={handleRunLint}
+            disabled={running || !project}
           >
             <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${running ? "animate-spin" : ""}`} />
-            {running
-              ? lintProgress && lintProgress.total > 0
-                ? t("lint.cancelProgress", { completed: lintProgress.completed, total: lintProgress.total })
-                : t("lint.cancel")
-              : t("lint.runLint")}
+            {running ? t("workspace.processing") : t("lint.runLint")}
           </Button>
         </div>
       </div>

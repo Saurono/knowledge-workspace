@@ -25,8 +25,8 @@ describe("research panel nav state", () => {
       activeView: "search",
       researchPanelOpen: false,
     })
-    expect(nextResearchPanelNavState("graph", false)).toEqual({
-      activeView: "graph",
+    expect(nextResearchPanelNavState("sources", false)).toEqual({
+      activeView: "sources",
       researchPanelOpen: true,
     })
   })
@@ -35,6 +35,9 @@ describe("research panel nav state", () => {
     expect(isResearchPanelVisible("chat", true)).toBe(false)
     expect(isResearchPanelVisible("skills", true)).toBe(false)
     expect(isResearchPanelVisible("settings", true)).toBe(false)
+    expect(isResearchPanelVisible("graph", true)).toBe(false)
+    expect(isResearchPanelVisible("tasks", true)).toBe(false)
+    expect(isResearchPanelVisible("memories", true)).toBe(false)
     expect(isResearchPanelVisible("wiki", true)).toBe(true)
   })
 })

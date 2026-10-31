@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from "react"
 import { Search, FileText, ImageIcon, X, ArrowUpRight } from "lucide-react"
+import { useWorkspaceStore } from "@/stores/workspace-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { readFile } from "@/commands/fs"
 import { searchWiki, tokenizeQuery, type SearchResult, type ImageRef } from "@/lib/search"
@@ -25,14 +26,22 @@ interface ImageHit extends ImageRef {
   altMatchesQuery: boolean
 }
 
-export function SearchView() {
+export function SearchView({ localOnly = false }: { localOnly?: boolean }) {
   const { t } = useTranslation()
   const project = useWikiStore((s) => s.project)
   const openFileInPreview = useWikiStore((s) => s.openFileInPreview)
   const setPendingScrollImageSrc = useWikiStore((s) => s.setPendingScrollImageSrc)
 
   const [query, setQuery] = useState("")
-  const [results, setResults] = useState<SearchResult[]>([])
+  const [allResults, setResults] = useState<SearchResult[]>([])
+  const [domain, setDomain] = useState("")
+  const domains = useWorkspaceStore((s) => s.data.domains)
+  const resourceDomains = useWorkspaceStore((s) => s.data.resourceDomains)
+  const results = useMemo(() => allResults.filter((result) => {
+    if (!domain || !project) return true
+    const path = normalizePath(result.path).replace(`${normalizePath(project.path)}/`, "")
+    return resourceDomains[path]?.includes(domain) ?? false
+  }), [allResults, domain, project, resourceDomains])
   const [searching, setSearching] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   // Lightbox state — null when closed. Held inline rather than via
@@ -50,7 +59,7 @@ export function SearchView() {
       setSearching(true)
       setHasSearched(true)
       try {
-        const found = await searchWiki(normalizePath(project.path), q)
+        const found = await searchWiki(normalizePath(project.path), q, { localOnly })
         setResults(found)
       } catch (err) {
         console.error("Search failed:", err)
@@ -59,7 +68,7 @@ export function SearchView() {
         setSearching(false)
       }
     },
-    [project],
+    [project, localOnly],
   )
 
   // Flatten + dedupe images across results. Two results referencing
@@ -182,6 +191,7 @@ export function SearchView() {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 border-b px-4 py-3">
+        <select aria-label={t("workspace.domains")} className="mb-2 rounded border bg-background p-1 text-xs" value={domain} onChange={(event) => setDomain(event.target.value)}><option value="">{t("workspace.allDomains")}</option>{domains.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input

@@ -1,0 +1,17 @@
+flowchart TB
+  DESKTOP["本地前端 · Tauri + 共享 React UI"] --> CONTRACT["共享业务 API / 任务事件协议"]
+  WEB["Web 前端 · 共享 React UI"] --> CONTRACT
+  AGENT["agent 程序身份 · API Token"] --> CONTRACT
+  CONTRACT --> AUTH["账户 / 登录 / 角色与范围授权"]
+  AUTH --> KNOW["知识领域 / 文档 / Wiki 服务"]
+  AUTH --> CHAT["检索 / LLM Agent 服务"]
+  AUTH --> TASK["统一任务服务"]
+  TASK --> INGEST["文档导入执行器"]
+  TASK --> RESEARCH["深度研究执行器"]
+  TASK --> FIX["Wiki 检查与纠错执行器"]
+  INGEST --> STORE["内容 / 领域关系 / 向量 / 任务持久化"]
+  RESEARCH --> STORE
+  FIX --> STORE
+  KNOW --> STORE
+  CHAT --> STORE
+  NOTE["设计建议 · 本地独立部署或中心服务拓扑待定"] -.-> CONTRACT

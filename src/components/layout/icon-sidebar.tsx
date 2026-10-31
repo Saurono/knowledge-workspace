@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
 import {
-  FileText, FolderOpen, Search, Network, ClipboardCheck, Settings, ArrowLeftRight, ClipboardList, Globe, MessageSquare, Sparkles,
+  FileText, FolderOpen, Network, Settings, ArrowLeftRight, ClipboardList, Globe, MessageSquare, Sparkles, Brain, ListTodo,
 } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -10,10 +10,7 @@ import { useUpdateStore, hasAvailableUpdate } from "@/stores/update-store"
 import { useTranslation } from "react-i18next"
 import logoImg from "@/assets/logo.jpg"
 import type { WikiState } from "@/stores/wiki-store"
-import {
-  isResearchPanelVisible,
-  nextResearchPanelNavState,
-} from "./research-panel-nav"
+import { useWorkspaceUiStore } from "@/stores/workspace-ui-store"
 
 type NavView = WikiState["activeView"]
 
@@ -21,9 +18,9 @@ const NAV_ITEMS: { view: NavView; icon: typeof FileText; labelKey: string }[] = 
   { view: "chat", icon: MessageSquare, labelKey: "nav.chat" },
   { view: "wiki", icon: FileText, labelKey: "nav.wiki" },
   { view: "sources", icon: FolderOpen, labelKey: "nav.sources" },
-  { view: "search", icon: Search, labelKey: "nav.search" },
-  { view: "graph", icon: Network, labelKey: "nav.graph" },
-  { view: "lint", icon: ClipboardCheck, labelKey: "nav.lint" },
+  { view: "graph", icon: Network, labelKey: "workspace.starMap" },
+  { view: "memories", icon: Brain, labelKey: "workspace.memories" },
+  { view: "tasks", icon: ListTodo, labelKey: "workspace.tasks" },
   { view: "review", icon: ClipboardList, labelKey: "nav.review" },
 ]
 
@@ -36,9 +33,7 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
   const activeView = useWikiStore((s) => s.activeView)
   const setActiveView = useWikiStore((s) => s.setActiveView)
   const pendingCount = useReviewStore((s) => s.items.filter((i) => !i.resolved).length)
-  const researchPanelOpen = useResearchStore((s) => s.panelOpen)
   const researchActiveCount = useResearchStore((s) => s.tasks.filter((t) => t.status !== "done" && t.status !== "error").length)
-  const toggleResearchPanel = useResearchStore((s) => s.setPanelOpen)
   // Use `hasAvailableUpdate` (ignores dismiss state) rather than
   // `shouldShowUpdateBanner`. The dot is a passive signpost — it
   // should keep marking the gear as long as the update exists, even
@@ -66,9 +61,8 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
   }, [])
 
   function handleResearchPanelToggle() {
-    const next = nextResearchPanelNavState(activeView, researchPanelOpen)
-    if (next.activeView !== activeView) setActiveView(next.activeView)
-    toggleResearchPanel(next.researchPanelOpen)
+    useWorkspaceUiStore.getState().setTaskTab("research")
+    setActiveView("tasks")
   }
 
   return (
@@ -112,7 +106,7 @@ export function IconSidebar({ onSwitchProject }: IconSidebarProps) {
             <TooltipTrigger
               onClick={handleResearchPanelToggle}
               className={`relative flex h-10 w-10 items-center justify-center rounded-md transition-colors ${
-                isResearchPanelVisible(activeView, researchPanelOpen)
+                activeView === "tasks" && useWorkspaceUiStore.getState().taskTab === "research"
                   ? "bg-accent text-accent-foreground"
                   : "text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground"
               }`}

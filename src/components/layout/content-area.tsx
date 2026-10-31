@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react"
 import { useWikiStore } from "@/stores/wiki-store"
-import { ChatPanel } from "@/components/chat/chat-panel"
+import { ChatWorkspace } from "@/components/workspace/chat-workspace"
+import { WikiWorkspace } from "@/components/workspace/wiki-workspace"
+import { TaskManager } from "@/components/workspace/task-manager"
+import { MemoryView } from "@/components/workspace/memory-view"
+import { MemoryStarMap } from "@/components/workspace/memory-star-map"
 import { SettingsView } from "@/components/settings/settings-view"
 import { SkillsSection } from "@/components/settings/sections/skills-section"
 import { SourcesView } from "@/components/sources/sources-view"
 import { ReviewView } from "@/components/review/review-view"
 import { LintView } from "@/components/lint/lint-view"
 import { SearchView } from "@/components/search/search-view"
-import { GraphView } from "@/components/graph/graph-view"
-import { PreviewPanel } from "./preview-panel"
 
 export function ContentArea() {
   const activeView = useWikiStore((s) => s.activeView)
@@ -46,9 +48,13 @@ function ActiveContent({
 }) {
   switch (activeView) {
     case "chat":
-      return <ChatPanel />
+      return <ChatWorkspace />
     case "wiki":
-      return <PreviewPanel />
+      return <WikiWorkspace />
+    case "tasks":
+      return <TaskManager />
+    case "memories":
+      return <MemoryView />
     case "settings":
       return <SettingsView />
     case "skills":
@@ -62,9 +68,9 @@ function ActiveContent({
     case "search":
       return <SearchView />
     case "graph":
-      return <GraphView />
+      return <MemoryStarMap />
     default:
-      return <PreviewPanel />
+      return <WikiWorkspace />
   }
 }
 

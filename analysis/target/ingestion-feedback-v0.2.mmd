@@ -1,0 +1,14 @@
+flowchart LR
+  OBS["Obsidian / 本地文件 / Web 上传"] --> ACCEPT["校验并登记来源版本 / 返回 taskId"]
+  ACCEPT --> TASK["统一任务服务 / 持久队列"]
+  TASK --> PARSE["资料解析与定位"]
+  PARSE --> COMPILE["知识分析 / 生成 / 合并"]
+  COMPILE --> SAVE["知识持久化 / 来源映射"]
+  SAVE --> INDEX["配置要求的索引就绪"]
+  INDEX --> RESULT["结果清单 / 回执登记"]
+  RESULT --> DELIVERY["独立回传 / 失败可重试"]
+  DELIVERY --> OBS
+  TASK -.-> MANAGER["任务管理器 · 文档导入标签"]
+  DELIVERY -.-> MANAGER
+  GUARD["来源 ID / 内容版本 / 幂等 / 受管回执不参与内容哈希"] -.-> ACCEPT
+  GUARD -.-> DELIVERY

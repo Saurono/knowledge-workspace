@@ -119,6 +119,7 @@ export function isPathAllowedBySourceWatch(path: string, config: SourceWatchConf
   const cfg = normalizeSourceWatchConfig(config)
   const normalized = normalizePath(path)
   const parts = normalized.split("/").filter(Boolean)
+  if (parts.some((part) => part.toLowerCase() === "kb-ingest-records")) return false
   if (cfg.excludeDirs.some((dir) => pathMatchesExcludedDir(normalized, dir))) return false
   if (cfg.excludeGlobs.some((pattern) => matchesGlob(normalized, pattern))) return false
   const name = parts[parts.length - 1] ?? ""

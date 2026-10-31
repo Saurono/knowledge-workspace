@@ -1,0 +1,73 @@
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
+import fs from 'node:fs';
+const browser = await chromium.launch({executablePath:process.env.CHROMIUM_PATH || '/usr/bin/chromium',headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+const page = await browser.newPage({viewport:{width:1440,height:1000}});
+const errors=[]; page.on('pageerror',e=>errors.push(e.message));
+await page.addInitScript(()=>{
+  const files=new Map(); window.__testFiles=files;
+  files.set('/project/wiki/concepts/example.md','---\ntitle: Example\ntype: concept\n---\n# Example\nA page for preview.');
+  const callbacks=new Map();let next=1;
+  window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:"main"},currentWebview:{label:"main"}},transformCallback(fn){const id=next++;callbacks.set(id,fn);return id},unregisterCallback(id){callbacks.delete(id)},convertFileSrc(path){return path},async invoke(cmd,args={}){
+    if(cmd==='plugin:store|get')return [null,false];
+    if(cmd==='plugin:store|load')return 1;
+    if(cmd==='plugin:autostart|is_enabled')return false;
+    if(cmd==='plugin:event|listen')return next++;
+    if(cmd==='file_exists')return files.has(args.path);
+    if(cmd==='read_file'){if(!files.has(args.path))throw new Error('ENOENT');return files.get(args.path)}
+    if(cmd==='write_file'||cmd==='write_file_atomic'){files.set(args.path,args.contents);return}
+    if(cmd==='list_directory')return args.path==='/project/wiki'?[{name:'example.md',path:'/project/wiki/concepts/example.md',is_dir:false}]:[];
+    if(cmd==='clip_server_status')return 'running';
+    if(cmd==='search_project')return {mode:'keyword',results:[],tokenHits:0,vectorHits:0};
+    return null;
+  }};
+});
+await page.goto(process.env.WORKSPACE_BASE_URL || 'http://127.0.0.1:1420');
+await page.getByText('LLM Wiki',{exact:true}).first().waitFor();
+await page.evaluate(async()=>{
+  const {default:i18n}=await import('/src/i18n/index.ts');await i18n.changeLanguage('zh');
+  const {useWikiStore}=await import('/src/stores/wiki-store.ts');window.__wiki=useWikiStore;
+  useWikiStore.getState().setProject({id:'project-test',name:'测试知识库',path:'/project'});
+  useWikiStore.getState().setActiveView('chat');
+});
+await page.getByRole('tab',{name:'本地搜索',exact:true}).click();
+await page.getByRole('tab',{name:'LLM 对话检索',exact:true}).click();
+await page.evaluate(()=>window.__wiki.getState().setActiveView('memories'));
+await page.getByRole('textbox',{name:'新增领域标签',exact:true}).fill('研究');
+await page.getByRole('button',{name:'添加',exact:true}).click();
+await page.getByRole('button',{name:'新建记忆',exact:true}).click();
+await page.getByRole('textbox',{name:'标题',exact:true}).fill('测试记忆');
+await page.getByRole('textbox',{name:'内容',exact:true}).fill('持续保存的记忆内容');
+await page.getByRole('checkbox',{name:'研究',exact:true}).check();
+await page.getByRole('button',{name:'保存',exact:true}).click();
+await page.waitForFunction(()=>window.__testFiles.get('/project/.llm-wiki/workspace.json')?.includes('测试记忆'));
+fs.mkdirSync('/workspace/artifacts',{recursive:true});
+await page.screenshot({path:'/workspace/artifacts/memory-library.png'});
+await page.evaluate(async()=>{
+  const {useWorkspaceStore}=await import('/src/stores/workspace-store.ts');
+  await useWorkspaceStore.getState().update('/project',(data)=>({...data,memories:[...data.memories,...Array.from({length:72},(_,i)=>({id:`fixture-${i}`,title:`样式测试节点 ${i+1}`,content:'仅用于浏览器视觉验收的合成数据，不是产品预置记忆。',category:`测试分类 ${Math.floor(i/18)+1}`,domainIds:[],relatedIds:[`fixture-${(i+1)%72}`,`fixture-${(i+3)%72}`],createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}))]}));
+  window.__wiki.getState().setActiveView('graph');
+});
+await page.getByRole('tab',{name:'智能体记忆关系',exact:true}).click();
+await page.locator('canvas:visible').first().waitFor();
+console.log('scene options',await page.getByRole('combobox',{name:'选择节点',exact:true}).locator('option').count(),await page.evaluate(async()=>{const {useWorkspaceStore}=await import('/src/stores/workspace-store.ts');const s=useWorkspaceStore.getState();return {path:s.projectPath,loading:s.loading,saving:s.saving,error:s.error,count:s.data.memories.length}}));
+await page.getByRole('combobox',{name:'选择节点',exact:true}).selectOption('fixture-0');
+await page.getByRole('button',{name:'高亮焦点',exact:true}).click();
+await page.screenshot({path:'/workspace/artifacts/memory-star-map.png'});
+const sea=page.locator('canvas:visible').first();const before=await sea.screenshot();const bounds=await sea.boundingBox();
+await page.mouse.move(bounds.x+bounds.width*.6,bounds.y+bounds.height*.6);await page.mouse.down();await page.mouse.move(bounds.x+bounds.width*.7,bounds.y+bounds.height*.7,{steps:8});await page.mouse.up();
+const after=await sea.screenshot();if(before.equals(after))throw new Error('Orbit did not change the canvas');
+await page.getByRole('button',{name:'复位',exact:true}).click();
+await page.getByRole('tab',{name:'Wiki 关系',exact:true}).click();
+await page.getByRole('button',{name:'图谱分析',exact:true}).click();
+await page.getByRole('button',{name:'返回星海',exact:true}).waitFor();
+await page.evaluate(()=>window.__wiki.getState().setActiveView('tasks'));
+for(const name of ['文档导入任务','深度研究任务','Wiki 检查与纠错任务'])await page.getByRole('tab',{name,exact:true}).click();
+await page.screenshot({path:'/workspace/artifacts/task-manager.png'});
+await page.evaluate(()=>{const s=window.__wiki.getState();s.openFileInPreview('/project/wiki/concepts/example.md', '---\ntitle: Example\n---\n# Example\nPreview text.');s.setActiveView('wiki')});
+await page.getByRole('tab',{name:'编辑模式',exact:true}).click();
+await page.getByRole('tab',{name:'预览模式',exact:true}).click();
+await page.getByRole('button',{name:'检查与纠错',exact:true}).click();
+await page.screenshot({path:'/workspace/artifacts/wiki-checks.png'});
+console.log(JSON.stringify({pageErrors:errors,persistedMemories:await page.evaluate(()=>JSON.parse(window.__testFiles.get('/project/.llm-wiki/workspace.json')).memories.length)},null,2));
+await browser.close();
+if(errors.length)process.exit(1);

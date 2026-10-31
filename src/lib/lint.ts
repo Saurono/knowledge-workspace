@@ -206,12 +206,14 @@ export async function runSemanticLint(
   projectPath: string,
   llmConfig: LlmConfig,
   signal?: AbortSignal,
+  parentTaskId?: string,
 ): Promise<LintResult[]> {
   const pp = normalizePath(projectPath)
   const activity = useActivityStore.getState()
   const activityId = activity.addItem({
     type: "lint",
     title: "Semantic wiki lint",
+    parentTaskId,
     status: "running",
     detail: "Reading wiki pages...",
     filesWritten: [],
@@ -236,7 +238,10 @@ export async function runSemanticLint(
   const summaries: string[] = []
   const existingPageNames = new Set<string>()
   for (const f of wikiFiles) {
-    if (signal?.aborted) throw new DOMException("Semantic lint cancelled", "AbortError")
+    if (signal?.aborted) {
+    activity.updateItem(activityId, { status: "error", detail: "Semantic check cancelled" })
+    throw new DOMException("Semantic lint cancelled", "AbortError")
+  }
     const basename = f.name.replace(/\.md$/i, "")
     if (basename) existingPageNames.add(normalizeForExistence(basename))
     try {
@@ -312,7 +317,10 @@ export async function runSemanticLint(
     signal,
   )
 
-  if (signal?.aborted) throw new DOMException("Semantic lint cancelled", "AbortError")
+  if (signal?.aborted) {
+    activity.updateItem(activityId, { status: "error", detail: "Semantic check cancelled" })
+    throw new DOMException("Semantic lint cancelled", "AbortError")
+  }
   if (hadError) return []
 
   const results: LintResult[] = []

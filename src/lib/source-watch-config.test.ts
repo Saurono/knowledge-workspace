@@ -7,6 +7,12 @@ import {
 import sourceWatchDefaults from "@/lib/source-watch-defaults.json"
 
 describe("source watch config", () => {
+  it("never reimports Obsidian receipts, even with user exclusions disabled", () => {
+    const config = normalizeSourceWatchConfig({ includeExtensions: [], excludeDirs: [], excludeGlobs: [] })
+    expect(isPathAllowedBySourceWatch("raw/sources/vault/kb-ingest-records/receipt.json", config)).toBe(false)
+    expect(isPathAllowedBySourceWatch("C:\\vault\\KB-INGEST-RECORDS\\receipt.json", config)).toBe(false)
+    expect(isPathAllowedBySourceWatch("raw/sources/notes.md", config)).toBe(true)
+  })
   it("includes AnyDoc Office and RTF variants in the default watch set", () => {
     for (const extension of ["docm", "ppt", "ppsm", "xlsb", "rtf"]) {
       expect(DEFAULT_SOURCE_WATCH_CONFIG.includeExtensions).toContain(extension)

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "0.2-draft",
+  "receiptId": "receipt-example-001",
+  "eventVersion": 3,
+  "connectionId": "vault-connection-example",
+  "sourceId": "source-example-001",
+  "sourceRevision": "revision-example-001",
+  "source": {
+    "vaultRelativePath": "资料/示例笔记.md",
+    "contentHash": "<sha256-of-source-content>",
+    "receivedAt": "2026-10-31T02:00:00Z",
+    "sourceIngestedAt": "2026-10-31T02:01:00Z",
+    "revisionIngestedAt": "2026-10-31T02:01:00Z"
+  },
+  "knowledgeBaseId": "kb-example",
+  "taskId": "task-example-001",
+  "status": "succeeded",
+  "stage": "ready",
+  "indexStatus": "ready",
+  "wikiResults": [
+    {
+      "pageId": "wiki-example-001",
+      "path": "wiki/concepts/example.md",
+      "url": "<configured-knowledge-base-page-url>",
+      "wikiCreatedAt": "2026-10-31T02:00:50Z",
+      "wikiUpdatedAt": "2026-10-31T02:00:50Z",
+      "sources": [
+        {
+          "sourceId": "source-example-001",
+          "sourceIngestedAt": "2026-10-31T02:01:00Z"
+        }
+      ]
+    }
+  ],
+  "recordedAt": "2026-10-31T02:01:10Z",
+  "error": null
+}

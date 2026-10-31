@@ -1,0 +1,31 @@
+flowchart TB
+  LOGIN["人员登录 · user / admin"] --> APP["本地桌面前端 / Web 前端"]
+  APP --> CHAT["对话"]
+  APP --> WIKI["Wiki"]
+  APP --> SOURCES["资料"]
+  APP --> TASKS["任务管理器"]
+  APP --> MEMORY["记忆库"]
+  APP --> STAR["记忆星图"]
+  STAR --> WGRAPH["Wiki 关系"]
+  STAR --> MGRAPH["智能体记忆关系"]
+  APP --> OTHER["审阅 / Skill / 设置等原有入口"]
+  OBS["Obsidian Vault · 独立入库记录"] --> SOURCES
+  IMPORT --> RECEIPT["独立 JSON 回执 / Wiki 与来源入库时间"]
+  RECEIPT --> OBS
+  CHAT --> LOCAL["本地搜索"]
+  CHAT --> LLM["LLM 对话检索"]
+  WIKI --> EDIT["编辑模式"]
+  WIKI --> PREVIEW["预览模式"]
+  WIKI --> CHECK["原检查页全部功能 / 结果与纠错操作"]
+  TASKS --> IMPORT["顶栏标签 · 文档导入任务"]
+  TASKS --> RESEARCH["顶栏标签 · 深度研究任务"]
+  TASKS --> MAINTAIN["顶栏标签 · Wiki 检查与纠错任务"]
+  IMPORT --> DETAIL["统一任务列表 / 进度 / 日志 / 操作"]
+  RESEARCH --> DETAIL
+  MAINTAIN --> DETAIL
+  AGENT["agent 程序身份 · API Token"] --> API["共享服务 API"]
+  DOMAIN["知识领域 · 扁平标签 / 多选"] -.-> CHAT
+  DOMAIN -.-> WIKI
+  DOMAIN -.-> SOURCES
+  DOMAIN -.-> MEMORY
+  DOMAIN -.-> STAR

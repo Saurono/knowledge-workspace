@@ -1137,7 +1137,8 @@ fn should_watch_rel(rel: &str, rules: &SourceWatchRules) -> bool {
         return false;
     }
     let lower = rel.to_lowercase();
-    if lower.contains("/.llm-wiki/")
+    if lower.split('/').any(|part| part == "kb-ingest-records")
+        || lower.contains("/.llm-wiki/")
         || lower.starts_with(".llm-wiki/")
         // App-managed generated media is intentionally ignored here. The
         // source markdown references drive graph/index refresh; media bytes
@@ -1813,6 +1814,8 @@ mod tests {
         assert!(!should_watch_rel("raw/sources/download.crdownload", &rules));
         assert!(!should_watch_rel(".vscode/settings.json", &rules));
         assert!(!should_watch_rel("wiki/media/image.png", &rules));
+        assert!(!should_watch_rel("raw/sources/vault/kb-ingest-records/result.json", &rules));
+        assert!(!should_watch_rel("raw/sources/KB-INGEST-RECORDS/result.md", &rules));
     }
 
     #[test]

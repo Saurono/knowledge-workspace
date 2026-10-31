@@ -1,0 +1,19 @@
+flowchart LR
+  U["文件 / 文件夹 / URL / 网页剪藏"] --> RAW["raw/sources 原始资料"]
+  WATCH["来源监听 / 定时导入"] --> RAW
+  RAW --> PARSE["文档解析 / 图像提取与描述"]
+  PARSE --> QUEUE["持久入库队列 / 增量缓存"]
+  RULE["purpose.md + schema.md"] --> INGEST["LLM 分析 → 生成 / 合并"]
+  QUEUE --> INGEST
+  INGEST --> WIKI["wiki Markdown / 来源追溯 / 索引与总览"]
+  INGEST --> REVIEW["Review 人工审阅"]
+  WIKI --> SEARCH["关键词 + 可选向量 + 图扩展"]
+  WIKI --> GRAPH["图谱 / 社区 / 知识缺口"]
+  SEARCH --> CHAT["Rust Chat Agent / 引用回答 / 文件输出"]
+  CHAT -->|保存回答后入库| QUEUE
+  GRAPH --> RESEARCH["深度研究 / Web + AnyTXT / 综合报告"]
+  REVIEW --> RESEARCH
+  RESEARCH -->|保存研究并再入库| QUEUE
+  WIKI --> LINT["Lint / 去重合并 / 历史版本"]
+  LINT -->|修复| WIKI
+  REVIEW -->|建页或处理| WIKI

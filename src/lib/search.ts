@@ -62,6 +62,7 @@ export function tokenizeQuery(query: string): string[] {
 export async function searchWiki(
   projectPath: string,
   query: string,
+  options: { localOnly?: boolean } = {},
 ): Promise<SearchResult[]> {
   if (!query.trim()) return []
   const pp = normalizePath(projectPath)
@@ -73,7 +74,7 @@ export async function searchWiki(
     topK: 20,
     includeContent: false,
     queryEmbedding: null,
-    embeddingConfig: embCfg,
+    embeddingConfig: options.localOnly ? null : embCfg,
   })
 
   return response.results.map((result) => ({

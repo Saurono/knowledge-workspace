@@ -1098,7 +1098,7 @@ async function runTask(
       run.controller.signal,
       task.folderContext,
       trackWrittenFile,
-      { runCommit },
+      { runCommit, taskId: task.id },
     )
     if (currentProjectId !== projectId || run.epoch !== queueEpoch) return
     run.writtenFiles = writtenFiles

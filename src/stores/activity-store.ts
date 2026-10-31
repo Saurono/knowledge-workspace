@@ -2,6 +2,9 @@ import { create } from "zustand"
 
 export interface ActivityItem {
   id: string
+  taskId?: string
+  parentTaskId?: string
+  sourcePath?: string
   type: "ingest" | "lint" | "query"
   title: string
   status: "running" | "done" | "error"

@@ -4,12 +4,20 @@ import { useTranslation } from "react-i18next"
 import { useWikiStore } from "@/stores/wiki-store"
 import { readFile, writeFile } from "@/commands/fs"
 import { getFileCategory, isBinary, isExtractedTextPreviewFile } from "@/lib/file-types"
+import { SelectedTaskIndicator } from "@/components/workspace/selected-task-indicator"
+import { WikiProvenance } from "@/components/workspace/wiki-provenance"
+import { WikiReader } from "@/components/editor/wiki-reader"
+import { DomainTags } from "@/components/workspace/domain-tags"
+import { useWorkspaceUiStore } from "@/stores/workspace-ui-store"
+import { normalizePath } from "@/lib/path-utils"
 import { WikiEditor } from "@/components/editor/wiki-editor"
 import { FilePreview } from "@/components/editor/file-preview"
 import { getFileName } from "@/lib/path-utils"
 
 export function PreviewPanel() {
   const { t } = useTranslation()
+  const wikiMode = useWorkspaceUiStore((s) => s.wikiMode)
+  const project = useWikiStore((s) => s.project)
   const selectedFile = useWikiStore((s) => s.selectedFile)
   const fileContent = useWikiStore((s) => s.fileContent)
   const previewContentPath = useWikiStore((s) => s.previewContentPath)
@@ -127,11 +135,14 @@ export function PreviewPanel() {
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
           <span className="truncate text-xs text-muted-foreground" title={selectedFile}>{fileName}</span>
+          <SelectedTaskIndicator path={selectedFile} />
         </div>
         <button onClick={closePreview} className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent" title={t("common.close")} aria-label={t("common.close")}>
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
+      {!externalPreview && <WikiProvenance filePath={selectedFile} />}
+      {project && !externalPreview && <DomainTags resourcePath={normalizePath(selectedFile).replace(`${normalizePath(project.path)}/`, "")} />}
       <div className="flex-1 min-w-0 overflow-auto">
         {externalPreview?.path === selectedFile ? (
           <ExternalReferencePreview
@@ -140,6 +151,8 @@ export function PreviewPanel() {
             path={externalPreview.url}
             snippet={externalPreview.snippet || fileContent}
           />
+        ) : category === "markdown" && wikiMode === "preview" ? (
+          <div className="mx-auto max-w-4xl p-6"><WikiReader body={fileContent} filePath={selectedFile} /></div>
         ) : category === "markdown" ? (
           <WikiEditor
             key={selectedFile}
