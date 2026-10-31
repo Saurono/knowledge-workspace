@@ -1,0 +1,11 @@
+flowchart LR
+  RUN["Agent 执行 / 产出"] --> EVIDENCE["问题 / 尝试 / 验证 / 产出清单"]
+  EVIDENCE --> DRAFT["同范围检索 / 幂等草稿或修订"]
+  CONTEXT["真实操作者 / 有效身份 / 工作角色 / ACL"] --> DRAFT
+  DRAFT --> POLICY["沿用版本 / 发布 / 冲突策略"]
+  POLICY --> WIKI["问题方案 / 使用手册 / 可复用方法"]
+  WIKI --> MEMORY["获准的情景 / 程序 / 反思记忆"]
+  WIKI --> GRAPH["Wiki 关系与证据"]
+  MEMORY --> STAR["记忆星体投影"]
+  WIKI --> RECEIPT["Obsidian 独立记录 / 原任务结果链接"]
+  DRAFT -.-> TASK["统一任务管理器 · Wiki 维护子任务"]

@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "1.0-draft",
+  "exampleOnly": true,
+  "pageId": "wiki-example-troubleshooting",
+  "pageType": "troubleshooting",
+  "initialOrigin": "agent",
+  "originKinds": [
+    "agent",
+    "user"
+  ],
+  "displayOrigin": "mixed",
+  "createdBy": {
+    "actorPrincipalId": "agent-atlas",
+    "actorPrincipalKind": "agent",
+    "effectivePrincipalId": "delegated-project-reviewer",
+    "workRoleId": "researcher",
+    "taskId": "task-example"
+  },
+  "contributors": [
+    {
+      "actorPrincipalId": "agent-atlas",
+      "kind": "agent",
+      "contribution": "draft_and_solution"
+    },
+    {
+      "actorPrincipalId": "user-example",
+      "kind": "user",
+      "contribution": "substantive_correction"
+    }
+  ],
+  "validation": {
+    "status": "verified",
+    "validatedFor": [
+      "example-environment-v1"
+    ],
+    "evidenceRefs": [
+      "tool-event-example",
+      "test-report-example"
+    ]
+  },
+  "artifactRefs": [
+    {
+      "id": "artifact-example",
+      "version": "v1"
+    }
+  ],
+  "taskRefs": [
+    "task-example"
+  ],
+  "currentVersion": 2,
+  "lastOperation": {
+    "actorPrincipalId": "system-indexer",
+    "actorPrincipalKind": "system",
+    "operation": "metadata_refresh",
+    "changesSubstantiveOrigin": false
+  }
+}
