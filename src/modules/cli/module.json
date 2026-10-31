@@ -1,6 +1,10 @@
 {
   "id": "cli",
-  "publicEntrypoints": ["index.ts", "domain/index.ts"],
+  "publicEntrypoints": [
+    "index.ts",
+    "domain/index.ts",
+    "application/index.ts"
+  ],
   "allowedModuleDependencies": [],
   "allowedExternalImports": [],
   "allowedLegacyImports": []

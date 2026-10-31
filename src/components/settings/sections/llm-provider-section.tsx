@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { ChevronDown, ChevronRight, AlertCircle, CheckCircle2, Loader2, XCircle, Plus, Trash2 } from "lucide-react"
 import { useTranslation } from "react-i18next"
-import { invoke } from "@tauri-apps/api/core"
+import { cliCapabilities } from "@/app/cli/native-ports"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -1107,12 +1107,7 @@ function ModelPicker({ value, suggestions, placeholder, onChange }: ModelPickerP
   )
 }
 
-interface DetectResult {
-  installed: boolean
-  version: string | null
-  path: string | null
-  error: string | null
-}
+type DetectResult = import("@/modules/cli/domain").CliCapability
 
 /**
  * Health-check pill for the Claude Code CLI provider. Auto-runs
@@ -1129,7 +1124,7 @@ function ClaudeCliStatusPill() {
   async function detect() {
     setState("loading")
     try {
-      const r = await invoke<DetectResult>("claude_cli_detect")
+      const r = await cliCapabilities.detect("claude")
       setResult(r)
       setState(r.installed ? "ok" : "err")
     } catch (e) {
@@ -1224,7 +1219,7 @@ function CodexCliStatusPill() {
   async function detect() {
     setState("loading")
     try {
-      const r = await invoke<DetectResult>("codex_cli_detect")
+      const r = await cliCapabilities.detect("codex")
       setResult(r)
       setState(r.installed ? "ok" : "err")
     } catch (e) {
