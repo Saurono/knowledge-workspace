@@ -1,7 +1,7 @@
 # 第一批实现进度
 
-日期：2026-10-31（Asia/Shanghai）  
-工作分支：`codex/knowledge-workspace-v0.1`  
+日期：2026-10-31（Asia/Shanghai）<br>
+工作分支：`codex/knowledge-workspace-v0.1`<br>
 基线：上游 v0.6.13。目标需求见 ../target/requirements-v0.2.md。
 
 ## 已实现的第一批可运行功能

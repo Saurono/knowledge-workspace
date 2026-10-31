@@ -1,8 +1,8 @@
 # LLM Wiki 原生功能拆解与改造基线
 
-分析日期：2026-10-31（Asia/Shanghai）  
-仓库：https://github.com/nashsu/llm_wiki  
-基线：main / v0.6.13 / `e08cfce65aad8b76b13546a081c1a8d4422b70c3`（提交日期 2026-10-21）  
+分析日期：2026-10-31（Asia/Shanghai）<br>
+仓库：https://github.com/nashsu/llm_wiki<br>
+基线：main / v0.6.13 / `e08cfce65aad8b76b13546a081c1a8d4422b70c3`（提交日期 2026-10-21）<br>
 范围：桌面前端、Rust 后端、Chrome 扩展、内置 MCP、配置与持久化。按产品能力而非每一个按钮拆成 **12 个功能域、93 个功能项**。
 
 ## 1. 结论与验证口径
