@@ -79,7 +79,7 @@ export function createServiceHttp(options: ServiceOptions) {
         const catalog = (await options.authentication.catalog.read()).catalog
         if (scope.projectId !== id || permissions.some(permission => !scope.permissions.includes(permission) || !evaluateProjectPermission(catalog, { accountId: identity.account.id, projectId: id, permission, workRoleId: scope.workRoleId ?? undefined }).allowed)) throw new ServiceError("forbidden", "Operation exceeds Agent Token scope")
       }
-      if (part === "access" && method === "GET" && identity && options.authentication) return send(200, await options.authentication.access(identity.principal, id))
+      if (part === "access" && method === "GET" && identity && options.authentication) return send(200, await options.authentication.contexts.resolve(identity.principal, id, request.headers["x-kw-context"] as string | undefined))
       if (!part && method === "GET") return send(200, await service.project(id))
       if ((part === "wiki" || part === "documents") && method === "GET") {
         const page = await service.list(id, part === "wiki" ? "wiki" : "document", url.searchParams.get("limit"), url.searchParams.get("cursor"))

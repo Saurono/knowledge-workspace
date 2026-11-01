@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { randomUUID, timingSafeEqual } from "node:crypto"
-import { createAuthenticationService, createIdentityCatalogService, createAgentTokenService, captureAccessContext } from "@/modules/identity/application"
-import { AuthError, globalPermissions } from "@/modules/identity/domain"
+import { createAuthenticationService, createIdentityCatalogService, createAgentTokenService, createContextService } from "@/modules/identity/application"
+import { AuthError, globalPermissions, requireContextPermission } from "@/modules/identity/domain"
 import type { AccountInput, SessionIdentity } from "@/modules/identity/domain"
 import type { SqliteRepository } from "./repository"
 import { hashPassword, verifyPassword, secretDigest, opaqueSecret } from "./passwords"
@@ -14,7 +14,9 @@ export function sessionCookie(request: IncomingMessage) {
 export function createAccountAuthentication(repository: SqliteRepository, bootstrapKey: string, secureCookies = false, now = () => new Date().toISOString()) {
   const auth = createAuthenticationService(repository.authentication, { id: randomUUID, now, secret: opaqueSecret, digest: secretDigest, hash: hashPassword, verify: verifyPassword })
   const tokens = createAgentTokenService(repository.tokens, { id: randomUUID, now, secret: opaqueSecret, digest: secretDigest })
+  const contexts = createContextService(repository.contexts, { id: randomUUID, now })
   const catalog = createIdentityCatalogService(repository.identities, { id: randomUUID, now, projectExists: async id => !!(await repository.project(id)) })
+  const projectDirectory = (state: Awaited<ReturnType<typeof catalog.read>>, projectId: string) => ({ revision: state.revision, members: state.catalog.memberships.filter(member => member.projectId === projectId), roles: state.catalog.workRoles.filter(role => role.projectId === projectId), accounts: state.catalog.accounts.map(({ id, handle, displayName, kind, status }) => ({ id, handle, displayName, kind, status })) })
   const cookie = (response: ServerResponse, raw: string, maxAge: number) => response.setHeader("Set-Cookie", `kw_session=${raw}; HttpOnly; SameSite=Strict; Path=/api/v1; Max-Age=${maxAge}${secureCookies ? "; Secure" : ""}`)
   const authenticate = (request: IncomingMessage): Promise<SessionIdentity> => {
     const authorization = request.headers.authorization
@@ -26,8 +28,8 @@ export function createAccountAuthentication(repository: SqliteRepository, bootst
   }
   const requireAdmin = async (request: IncomingMessage) => { const identity = await authenticate(request); if (!globalPermissions(identity.account).includes("accounts.manage")) throw new AuthError("forbidden", "Account administration requires an administrator"); return identity }
   return {
-    auth, catalog, tokens, authenticate,
-    async access(principal: SessionIdentity["principal"], projectId: string) { return captureAccessContext(await catalog.read(), principal, projectId, { id: randomUUID, now }) },
+    auth, catalog, tokens, contexts, authenticate,
+    async access(principal: SessionIdentity["principal"], projectId: string) { return contexts.resolve(principal, projectId) },
     async handle(request: IncomingMessage, response: ServerResponse, pathname: string, json: JsonBody, send: JsonSend) {
       const method = request.method
       if (pathname === "/api/v1/auth/status" && method === "GET") { send(200, { initialized: await auth.initialized() }); return true }
@@ -63,6 +65,29 @@ export function createAccountAuthentication(repository: SqliteRepository, bootst
       if (pathname === "/api/v1/auth/tokens" && method === "POST") { const identity = await authenticate(request); send(201, await tokens.create(identity.principal, await json() as never)); return true }
       const revoke = pathname.match(/^\/api\/v1\/auth\/tokens\/([^/]+)$/)
       if (revoke && method === "DELETE") { const identity = await authenticate(request); await tokens.revoke(identity.principal, revoke[1]); send(200, null); return true }
+      const projectRoute = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/(contexts|delegations|members|roles)(?:\/([^/]+))?$/)
+      if (projectRoute) {
+        const identity = await authenticate(request), [, projectId, part, targetId] = projectRoute
+        if (part === "contexts" && method === "POST" && !targetId) { send(201, await contexts.switch(identity.principal, projectId, await json())); return true }
+        if (part === "delegations") {
+          if (method === "GET" && !targetId) { send(200, await contexts.list(identity.principal, projectId)); return true }
+          if (method === "POST" && !targetId) { send(201, await contexts.grant(identity.principal, { ...await json(), projectId } as never)); return true }
+          if (method === "DELETE" && targetId) { await contexts.revoke(identity.principal, projectId, targetId); send(200, null); return true }
+        }
+        if ((part === "members" || part === "roles") && !targetId) {
+          const access = await contexts.resolve(identity.principal, projectId, request.headers["x-kw-context"] as string | undefined)
+          requireContextPermission(access, part === "members" ? "members.manage" : "roles.manage")
+          if (method === "GET") {
+            const state = await catalog.read()
+            send(200, projectDirectory(state, projectId)); return true
+          }
+          if (method === "PUT") {
+            const body = await json()
+            const updated = part === "members" ? await catalog.saveMembership(body.revision as number, { ...body, projectId } as never) : await catalog.saveWorkRole(body.revision as number, { ...body, projectId } as never)
+            send(200, projectDirectory(updated, projectId)); return true
+          }
+        }
+      }
       return false
     },
   }

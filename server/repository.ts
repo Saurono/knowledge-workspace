@@ -11,13 +11,16 @@ import { createAuthenticationRepository } from "./auth-store"
 import type { AuthenticationRepository } from "@/modules/identity/application"
 import { createTokenRepository } from "./token-store"
 import type { TokenRepository } from "@/modules/identity/application"
-export const SERVICE_SCHEMA_VERSION = 4
+import { createContextRepository } from "./context-store"
+import type { ContextRepository } from "@/modules/identity/application"
+export const SERVICE_SCHEMA_VERSION = 5
 type Row = Record<string, string | number | null>
 export class SqliteRepository implements SharedRepository {
   private db: DatabaseSync
   readonly identities: IdentityRepository
   readonly authentication: AuthenticationRepository
   readonly tokens: TokenRepository
+  readonly contexts: ContextRepository
   constructor(directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const file = join(directory, "service.sqlite")
@@ -48,8 +51,12 @@ export class SqliteRepository implements SharedRepository {
       if (version < 4) this.transaction(() => {
         this.db.exec("CREATE TABLE agent_tokens(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, digest TEXT NOT NULL UNIQUE, data TEXT NOT NULL); PRAGMA user_version=4;")
       })
+      if (version < 5) this.transaction(() => {
+        this.db.exec("CREATE TABLE identity_delegations(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE access_contexts(id TEXT PRIMARY KEY, data TEXT NOT NULL); PRAGMA user_version=5;")
+      })
       this.authentication = createAuthenticationRepository(this.db)
       this.tokens = createTokenRepository(this.db, this.authentication)
+      this.contexts = createContextRepository(this.db, this.authentication)
       this.identities = createSqliteIdentityRepository(this.db)
     } catch (error) { this.db.close(); throw error }
   }

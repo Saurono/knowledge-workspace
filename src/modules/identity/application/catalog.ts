@@ -28,6 +28,7 @@ export function createIdentityCatalogService(repository: IdentityRepository, con
     },
     async saveWorkRole(revision: number, input: { id?: string; projectId: string; name: string; description?: string; permissionRole: ProjectPermissionRole; permissions: ProjectPermission[]; status?: WorkRole["status"] }) {
       await checkProject(input.projectId)
+      if (!Array.isArray(input.permissions)) throw new IdentityError("invalid_argument", "Work role permissions are required")
       return update(revision, catalog => {
         const previous = input.id ? catalog.workRoles.find(role => role.id === input.id) : undefined
         if (input.id && !previous) throw new IdentityError("not_found", "Work role not found")
@@ -38,6 +39,7 @@ export function createIdentityCatalogService(repository: IdentityRepository, con
     },
     async saveMembership(revision: number, input: { projectId: string; accountId: string; permissionRole: ProjectPermissionRole; workRoleIds: string[]; status?: ProjectMembership["status"] }) {
       await checkProject(input.projectId)
+      if (!Array.isArray(input.workRoleIds)) throw new IdentityError("invalid_argument", "Membership work roles are required")
       return update(revision, catalog => {
         const previous = catalog.memberships.find(member => member.projectId === input.projectId && member.accountId === input.accountId), now = context.now()
         const member: ProjectMembership = { id: previous?.id ?? context.id(), projectId: input.projectId, accountId: input.accountId, permissionRole: input.permissionRole, workRoleIds: [...input.workRoleIds], status: input.status ?? previous?.status ?? "active", createdAt: previous?.createdAt ?? now, updatedAt: now }
