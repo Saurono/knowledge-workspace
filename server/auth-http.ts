@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { randomUUID, timingSafeEqual } from "node:crypto"
-import { createAuthenticationService, createIdentityCatalogService, createAgentTokenService } from "@/modules/identity/application"
+import { createAuthenticationService, createIdentityCatalogService, createAgentTokenService, captureAccessContext } from "@/modules/identity/application"
 import { AuthError, globalPermissions } from "@/modules/identity/domain"
 import type { AccountInput, SessionIdentity } from "@/modules/identity/domain"
 import type { SqliteRepository } from "./repository"
@@ -27,6 +27,7 @@ export function createAccountAuthentication(repository: SqliteRepository, bootst
   const requireAdmin = async (request: IncomingMessage) => { const identity = await authenticate(request); if (!globalPermissions(identity.account).includes("accounts.manage")) throw new AuthError("forbidden", "Account administration requires an administrator"); return identity }
   return {
     auth, catalog, tokens, authenticate,
+    async access(principal: SessionIdentity["principal"], projectId: string) { return captureAccessContext(await catalog.read(), principal, projectId, { id: randomUUID, now }) },
     async handle(request: IncomingMessage, response: ServerResponse, pathname: string, json: JsonBody, send: JsonSend) {
       const method = request.method
       if (pathname === "/api/v1/auth/status" && method === "GET") { send(200, { initialized: await auth.initialized() }); return true }
