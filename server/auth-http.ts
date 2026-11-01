@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { randomUUID, timingSafeEqual } from "node:crypto"
-import { createAuthenticationService, createIdentityCatalogService } from "@/modules/identity/application"
+import { createAuthenticationService, createIdentityCatalogService, createAgentTokenService } from "@/modules/identity/application"
 import { AuthError, globalPermissions } from "@/modules/identity/domain"
 import type { AccountInput, SessionIdentity } from "@/modules/identity/domain"
 import type { SqliteRepository } from "./repository"
@@ -13,12 +13,20 @@ export function sessionCookie(request: IncomingMessage) {
 }
 export function createAccountAuthentication(repository: SqliteRepository, bootstrapKey: string, secureCookies = false, now = () => new Date().toISOString()) {
   const auth = createAuthenticationService(repository.authentication, { id: randomUUID, now, secret: opaqueSecret, digest: secretDigest, hash: hashPassword, verify: verifyPassword })
+  const tokens = createAgentTokenService(repository.tokens, { id: randomUUID, now, secret: opaqueSecret, digest: secretDigest })
   const catalog = createIdentityCatalogService(repository.identities, { id: randomUUID, now, projectExists: async id => !!(await repository.project(id)) })
   const cookie = (response: ServerResponse, raw: string, maxAge: number) => response.setHeader("Set-Cookie", `kw_session=${raw}; HttpOnly; SameSite=Strict; Path=/api/v1; Max-Age=${maxAge}${secureCookies ? "; Secure" : ""}`)
-  const authenticate = (request: IncomingMessage): Promise<SessionIdentity> => auth.authenticate(sessionCookie(request))
+  const authenticate = (request: IncomingMessage): Promise<SessionIdentity> => {
+    const authorization = request.headers.authorization
+    if (authorization !== undefined) {
+      if (!/^Bearer kwt_[A-Za-z0-9_-]{43}$/.test(authorization)) return Promise.reject(new AuthError("unauthenticated", "Valid Agent Token required"))
+      return tokens.authenticate(authorization.slice(7))
+    }
+    return auth.authenticate(sessionCookie(request))
+  }
   const requireAdmin = async (request: IncomingMessage) => { const identity = await authenticate(request); if (!globalPermissions(identity.account).includes("accounts.manage")) throw new AuthError("forbidden", "Account administration requires an administrator"); return identity }
   return {
-    auth, catalog, authenticate,
+    auth, catalog, tokens, authenticate,
     async handle(request: IncomingMessage, response: ServerResponse, pathname: string, json: JsonBody, send: JsonSend) {
       const method = request.method
       if (pathname === "/api/v1/auth/status" && method === "GET") { send(200, { initialized: await auth.initialized() }); return true }
@@ -50,6 +58,10 @@ export function createAccountAuthentication(repository: SqliteRepository, bootst
         if (body.status !== "active" && body.status !== "disabled") throw new AuthError("invalid_argument", "Invalid account status")
         send(200, await catalog.setAccountStatus(body.revision as number, status[1], body.status)); return true
       }
+      if (pathname === "/api/v1/auth/tokens" && method === "GET") { const identity = await authenticate(request); send(200, await tokens.list(identity.principal)); return true }
+      if (pathname === "/api/v1/auth/tokens" && method === "POST") { const identity = await authenticate(request); send(201, await tokens.create(identity.principal, await json() as never)); return true }
+      const revoke = pathname.match(/^\/api\/v1\/auth\/tokens\/([^/]+)$/)
+      if (revoke && method === "DELETE") { const identity = await authenticate(request); await tokens.revoke(identity.principal, revoke[1]); send(200, null); return true }
       return false
     },
   }

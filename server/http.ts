@@ -6,7 +6,8 @@ import { randomUUID, timingSafeEqual, createHash } from "node:crypto"
 import { createSharedService, createDocumentReceiver, type UploadStorage } from "@/modules/service-api/application"
 import { ServiceError, ERROR_STATUS, parsePrecondition, etag, API_VERSION } from "@/modules/service-api/domain"
 import type { SharedRepository } from "@/modules/service-api/application"
-import { AuthError, IdentityError } from "@/modules/identity/domain"
+import { AuthError, IdentityError, evaluateProjectPermission } from "@/modules/identity/domain"
+import type { ProjectPermission, SessionIdentity } from "@/modules/identity/domain"
 import type { AccountAuthentication } from "./auth-http"
 export interface ServiceOptions { repository: SharedRepository; token: string; authentication?: AccountAuthentication; maxJsonBytes?: number; uploads?: UploadStorage; maxUploadBytes?: number; webRoot?: string }
 export function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
@@ -59,9 +60,11 @@ export function createServiceHttp(options: ServiceOptions) {
       if (origin && origin !== `http://${request.headers.host}` && origin !== `https://${request.headers.host}`) throw new ServiceError("forbidden", "Cross-origin access is not enabled")
       if (!["GET", "HEAD"].includes(method) && request.headers.cookie && request.headers["x-kw-csrf"] !== "1") throw new ServiceError("forbidden", "A same-origin mutation header is required")
       if (options.authentication && await options.authentication.handle(request, response, url.pathname, json, send)) return
-      if (options.authentication) await options.authentication.authenticate(request)
-      else authenticate(request)
+      const identity: SessionIdentity | undefined = options.authentication ? await options.authentication.authenticate(request) : undefined
+      if (!options.authentication) authenticate(request)
       if (url.pathname === "/api/v1/projects") {
+        if (method === "GET" && identity?.principal.scope) return send(200, [await service.project(identity.principal.scope.projectId)], null)
+        if (method === "POST" && identity?.principal.scope) throw new ServiceError("forbidden", "Agent Tokens cannot create projects")
         if (method === "GET") { const page = await service.projects(url.searchParams.get("limit"), url.searchParams.get("cursor")); return send(200, page.items, page.nextCursor) }
         if (method === "POST") return send(201, await service.createProject((await json()).name))
       }
@@ -70,6 +73,12 @@ export function createServiceHttp(options: ServiceOptions) {
       let id: string
       try { id = decodeURIComponent(route[1]) } catch { throw new ServiceError("invalid_argument", "Invalid project identifier") }
       const part = route[2]
+      if (identity?.principal.scope && options.authentication) {
+        const scope = identity.principal.scope
+        const permissions: ProjectPermission[] = !part ? ["project.read"] : part.startsWith("wiki") ? [method === "GET" ? "wiki.read" : "wiki.write"] : part.startsWith("documents") ? [method === "GET" ? "documents.read" : "documents.write"] : part === "workspace" ? method === "GET" ? ["memory.read"] : ["memory.write", "domains.manage"] : part.startsWith("events") ? ["wiki.read", "documents.read", "memory.read"] : ["project.read"]
+        const catalog = (await options.authentication.catalog.read()).catalog
+        if (scope.projectId !== id || permissions.some(permission => !scope.permissions.includes(permission) || !evaluateProjectPermission(catalog, { accountId: identity.account.id, projectId: id, permission, workRoleId: scope.workRoleId ?? undefined }).allowed)) throw new ServiceError("forbidden", "Operation exceeds Agent Token scope")
+      }
       if (!part && method === "GET") return send(200, await service.project(id))
       if ((part === "wiki" || part === "documents") && method === "GET") {
         const page = await service.list(id, part === "wiki" ? "wiki" : "document", url.searchParams.get("limit"), url.searchParams.get("cursor"))

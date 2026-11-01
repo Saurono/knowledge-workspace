@@ -7,3 +7,5 @@
 C04 仅提供模型和内部可信管理组合；没有开放账号管理 HTTP 路由，也没有登录、Token 签发或生产 AccessContext。C05–C09 将负责认证、可信上下文、角色委托切换和全路由授权。私有记忆 grant 参数必须由未来可信授权层构造，不可直接信任客户端提交。
 
 权限规则与后续接入边界见 analysis/architecture/identity-permission-matrix.md。
+
+C05–C06 已增加认证/Token 用例，经密码散列、随机数/摘要、时钟和仓储端口组合；Node 适配实际持久化口令散列/会话摘要/Token 摘要，不记录明文。初始化密钥只供首次 admin 引导，人员 Cookie 与 Agent Bearer Token 分离。C07–C10 继续接入访问上下文、统一授权和界面；不能把旧 C04 限制说明当作最终状态。

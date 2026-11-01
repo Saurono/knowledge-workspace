@@ -9,12 +9,15 @@ import { emptyIdentityCatalog } from "@/modules/identity/domain"
 import { createSqliteIdentityRepository } from "./identity"
 import { createAuthenticationRepository } from "./auth-store"
 import type { AuthenticationRepository } from "@/modules/identity/application"
-export const SERVICE_SCHEMA_VERSION = 3
+import { createTokenRepository } from "./token-store"
+import type { TokenRepository } from "@/modules/identity/application"
+export const SERVICE_SCHEMA_VERSION = 4
 type Row = Record<string, string | number | null>
 export class SqliteRepository implements SharedRepository {
   private db: DatabaseSync
   readonly identities: IdentityRepository
   readonly authentication: AuthenticationRepository
+  readonly tokens: TokenRepository
   constructor(directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const file = join(directory, "service.sqlite")
@@ -42,7 +45,11 @@ export class SqliteRepository implements SharedRepository {
           CREATE INDEX login_attempts_key ON login_attempts(key,attempted_at);
           PRAGMA user_version=3;`)
       })
+      if (version < 4) this.transaction(() => {
+        this.db.exec("CREATE TABLE agent_tokens(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, digest TEXT NOT NULL UNIQUE, data TEXT NOT NULL); PRAGMA user_version=4;")
+      })
       this.authentication = createAuthenticationRepository(this.db)
+      this.tokens = createTokenRepository(this.db, this.authentication)
       this.identities = createSqliteIdentityRepository(this.db)
     } catch (error) { this.db.close(); throw error }
   }
