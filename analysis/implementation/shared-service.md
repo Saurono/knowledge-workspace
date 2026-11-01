@@ -48,3 +48,11 @@ npm run start:service
 本地端口使用现有文件/监听/Vault 服务，Shell 桥接复用 Rust Agent 工具；Web 没有本机桥接时这些能力不可用。完整 LLM/解析/向量/本机 CLI、多人账号授权、Vault 连接器与双向同步均不是这个 Web 基础入口已经交付的能力。
 
 验收：`npx vitest run server src/modules/platform src/modules/service-api`；真实双客户端浏览器脚本为 analysis/implementation/smoke-shared-web.mjs，使用临时服务进程、临时数据和随机凭据，结束后清理，不连接用户 Vault 或运行本机 Shell。
+
+## C04 身份目录与数据库升级
+
+当前数据库 schema 为 2，启动时从 schema 1 自动新增身份目录，不改原项目、资源、版本、墓碑和事件。升级前停止服务并备份完整数据目录；升级后不要用仅支持 schema 1 的旧服务打开此库，回退应恢复备份。未知高版本或损坏身份目录会拒绝启动，不静默重置。
+
+账号、成员与工作角色经 identity 模块内部可信用例维护，使用独立目录修订和事务条件更新。初始目录为空；首次管理员引导、人员登录、Agent Token 和 HTTP 逐资源授权尚属 C05–C09，未提供公开管理路由。连接密钥不会自动成为 admin 账号。规则见 ../architecture/identity-permission-matrix.md。
+
+身份升级/竞争/重启测试：`npx vitest run server/identity.test.ts src/modules/identity`。共享回归时排除旧 mcp-server 的 Node test 文件和真实模型测试，CI 已使用同一过滤，避免 Vitest 将 mcp-server 当作 server 目录匹配。

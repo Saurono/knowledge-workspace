@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 440,
-  "moduleCount": 17,
+  "productionFiles": 448,
+  "moduleCount": 18,
   "modules": [
     {
       "id": "agent",
@@ -93,6 +93,28 @@
         "react",
         "react-i18next"
       ],
+      "legacyExceptions": []
+    },
+    {
+      "id": "identity",
+      "productionFiles": 7,
+      "testFiles": 1,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 4
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 3
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [],
       "legacyExceptions": []
     },
     {

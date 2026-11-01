@@ -4,9 +4,13 @@ import { join } from "node:path"
 import { ServiceError } from "@/modules/service-api/domain"
 import type { ProjectRecord, ResourceKind, ResourceRecord, ProjectEvent } from "@/modules/service-api/domain"
 import type { SharedRepository } from "@/modules/service-api/application"
+import type { IdentityRepository } from "@/modules/identity/application"
+import { emptyIdentityCatalog } from "@/modules/identity/domain"
+import { createSqliteIdentityRepository } from "./identity"
 type Row = Record<string, string | number | null>
 export class SqliteRepository implements SharedRepository {
   private db: DatabaseSync
+  readonly identities: IdentityRepository
   constructor(directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const file = join(directory, "service.sqlite")
@@ -14,13 +18,21 @@ export class SqliteRepository implements SharedRepository {
     if (process.platform !== "win32") chmodSync(file, 0o600)
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
     const version = Number((this.db.prepare("PRAGMA user_version").get() as Row).user_version)
-    if (version > 1) { this.db.close(); throw new Error("Unsupported service database schema; original database preserved") }
+    if (version > 2) { this.db.close(); throw new Error("Unsupported service database schema; original database preserved") }
     if (version === 0) this.db.exec(`BEGIN IMMEDIATE;
       CREATE TABLE projects(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE resources(project_id TEXT NOT NULL REFERENCES projects(id), kind TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, revision INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(project_id,kind,key));
       CREATE TABLE events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL REFERENCES projects(id), type TEXT NOT NULL, kind TEXT NOT NULL, key TEXT NOT NULL, revision INTEGER NOT NULL, recorded_at TEXT NOT NULL);
       CREATE INDEX events_project_sequence ON events(project_id,sequence);
       PRAGMA user_version=1; COMMIT;`)
+    try {
+      if (version < 2) this.transaction(() => {
+        this.db.exec("CREATE TABLE identity_catalog(id INTEGER PRIMARY KEY CHECK(id=1), data TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0))")
+        this.db.prepare("INSERT INTO identity_catalog(id,data,revision) VALUES(1,?,1)").run(JSON.stringify(emptyIdentityCatalog()))
+        this.db.exec("PRAGMA user_version=2")
+      })
+      this.identities = createSqliteIdentityRepository(this.db)
+    } catch (error) { this.db.close(); throw error }
   }
   close() { this.db.close() }
   private transaction<T>(operation: () => T): T {

@@ -65,7 +65,7 @@ jobs:
         run: npm run build:service
 
       - name: Check shared HTTP and persistence
-        run: npx vitest run server src/modules/platform src/modules/service-api
+        run: npx vitest run server src/modules/platform src/modules/service-api src/modules/identity --exclude='**/mcp-server/**' --exclude='**/*.real-llm.test.ts'
 
       - name: Prepare MCP server resources
         run: |
