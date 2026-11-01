@@ -1,0 +1,7 @@
+{
+  "id": "service-api",
+  "publicEntrypoints": ["index.ts", "domain/index.ts", "application/index.ts"],
+  "allowedModuleDependencies": ["wiki", "memory", "domains"],
+  "allowedExternalImports": [],
+  "allowedLegacyImports": []
+}

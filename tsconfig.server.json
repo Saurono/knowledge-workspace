@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": { "target": "ES2022", "types": ["node"], "tsBuildInfoFile": "./tsconfig.server.tsbuildinfo" },
+  "include": ["server"]
+}

@@ -50,3 +50,8 @@ pnpm-debug.log*
 # Brainstorm assets (not tracked in source control)
 .superpowers/
 .claude/
+
+# Shared service runtime and build output
+.knowledge-workspace-service/
+dist-service/
+dist-web/

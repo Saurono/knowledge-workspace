@@ -13,7 +13,7 @@ function resolve(file, specifier, sourceRoot) {
 }
 export function auditModules(root) {
   const sourceRoot = path.join(root, "src"), moduleRoot = path.join(sourceRoot, "modules")
-  const files = walk(sourceRoot), importers = new Map(), facades = []
+  const files = [...walk(sourceRoot), ...walk(path.join(root, "server"))], importers = new Map(), facades = []
   for (const file of files) {
     const ast = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true)
     if (file.startsWith(path.join(sourceRoot, "lib") + path.sep) && ast.statements.length && ast.statements.every(statement => ts.isExportDeclaration(statement) && statement.moduleSpecifier)) facades.push(file)
@@ -46,7 +46,7 @@ export function auditModules(root) {
   }).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   const compatibility = facades.map(file => ({ path: normalize(path.relative(root, file)), productionImporters: importers.get(file)?.production.size ?? 0, testImporters: importers.get(file)?.tests.size ?? 0 })).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
   for (const facade of compatibility) if (!facade.productionImporters && !facade.testImporters) errors.push(`${facade.path}: unreferenced compatibility facade`)
-  return { schemaVersion: 1, scope: "src production imports and type imports; feature layers/manifests; compatibility facade references including tests", productionFiles: files.filter(file => !test(file)).length,
+  return { schemaVersion: 1, scope: "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests", productionFiles: files.filter(file => !test(file)).length,
     moduleCount: modules.length, modules, compatibility, errors }
 }
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {

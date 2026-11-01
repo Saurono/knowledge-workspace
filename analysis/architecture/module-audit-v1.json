@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "scope": "src production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 415,
-  "moduleCount": 15,
+  "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
+  "productionFiles": 426,
+  "moduleCount": 16,
   "modules": [
     {
       "id": "agent",
@@ -81,7 +81,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 3
+          "productionImporters": 4
         },
         {
           "path": "application/index.ts",
@@ -130,7 +130,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 2
+          "productionImporters": 3
         },
         {
           "path": "application/index.ts",
@@ -268,6 +268,32 @@
       "legacyExceptions": []
     },
     {
+      "id": "service-api",
+      "productionFiles": 8,
+      "testFiles": 0,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 7
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 3
+        }
+      ],
+      "dependencies": [
+        "domains",
+        "memory",
+        "wiki"
+      ],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
       "id": "settings",
       "productionFiles": 15,
       "testFiles": 1,
@@ -352,7 +378,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 13
+          "productionImporters": 14
         },
         {
           "path": "application/index.ts",

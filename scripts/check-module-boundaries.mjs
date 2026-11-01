@@ -120,7 +120,7 @@ export function checkModuleBoundaries(root) {
   const ownerOf = (file) =>
     [...modules.values()].find((module) => file.startsWith(`${module.directory}${path.sep}`))
   const dependencyGraph = new Map([...modules.keys()].map((name) => [name, new Set()]))
-  for (const file of walk(sourceRoot).filter((file) => sourcePattern.test(file) && !isTest(file))) {
+  for (const file of [...walk(sourceRoot), ...walk(path.join(root, "server"))].filter((file) => sourcePattern.test(file) && !isTest(file))) {
     const source = ownerOf(file)
     const layer = source ? normalize(path.relative(source.directory, file)).split("/")[0] : null
     if (layer === "domain") for (const global of domainPlatformCalls(file))

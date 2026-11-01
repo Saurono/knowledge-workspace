@@ -1,6 +1,6 @@
 # 新会话交接
 
-> 当前状态：用户授权开始 C 系列，完成到 C04 后停止。C01 已完成，继续 C02–C04。
+> 当前状态：用户授权开始 C 系列，完成到 C04 后停止。C01/C02 已完成，继续 C03–C04。
 
 ## 先读与工作约定
 
@@ -69,7 +69,7 @@ B16 已完成：全树审计覆盖 415 个生产源文件、15 个模块（模�
 
 - 本轮提交：B10 `62787f5`，B11 `86e3445`，B12 `8642f2a`，B13 `acf0d5e`，B14 `deeed74`，B15 `7e4318f`，B16 以 Git 日志为准。均推送 origin 开发分支，未合并 main。
 - B07c 未完成，需要先实现 C02 共享 API 和 I02 新 MCP 的文档注册链路。原有本地监听/手动/定时导入接入不等于新增服务端路径已完成。
-- 当前已启动 C01–C04，部署/离线决策见 analysis/architecture/deployment-and-offline.md。C01 已完成，接续 C02 共享 API、C03 平台与 Web 入口、C04 身份模型；完成后停止。B07c 还需 I02 新 MCP 路径，不能仅凭 C02 勾选。
+- 当前已启动 C01–C04，部署/离线决策见 analysis/architecture/deployment-and-offline.md。C01/C02 已完成，接续 C03 平台与 Web 入口、C04 身份模型；完成后停止。B07c 还需 I02 新 MCP 路径，不能仅凭 C02 勾选。
 - 部分旧 lib 仍负责解析/编译、模型传输或平台兼容组合；新模块不反向导入这些实现。静态模块审计不是生产权限、安全沙箱或完整运行时证明。
 - 源文件/导入/公开契约变化后执行 `npm run audit:modules` 并提交报告，CI 的 `audit:modules:check` 检查其一致性。
 
@@ -92,3 +92,5 @@ npm run build:preview
 - 显式沙箱入口 preview.html / src/preview，构建为 dist-preview/preview.html，使用模拟文件系统和合成数据。
 - 可复现浏览器脚本在 analysis/implementation：smoke-task-ui.mjs、smoke-wiki-repository.mjs、smoke-file-history.mjs、smoke-generated-pages.mjs、smoke-wiki-conflict.mjs、smoke-retrieval.mjs、smoke-modular-features.mjs；需要 PLAYWRIGHT_MODULE、CHROMIUM_PATH 与 Vite。禁止将夹具脚本指向真实知识库。
 - `/tmp` 工具、端口与 `/workspace/artifacts` 预览是环境临时产物，不保证新会话存在。新增测试避免放进被忽略的 tests/ 目录。
+
+C02：新增 service-api 公开协议/用例/SDK 与 server/ Node 24 HTTP/SQLite 适配。项目、Wiki、记忆/领域工作区、文档目录和事件查询可实际调用；版本条件/墓碑防 ABA，资源和事件同事务。服务连接密钥不是人员登录。运行方法见 analysis/implementation/shared-service.md；真实 HTTP 临时 SQLite 验证重启/并发/分页/错误通过。C03 上传/SSE/Web 入口尚待接入。
