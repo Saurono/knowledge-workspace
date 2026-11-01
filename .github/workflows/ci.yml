@@ -58,11 +58,14 @@ jobs:
       - name: Check frontend build
         run: npx vite build
 
+      - name: Check shared Web build
+        run: npm run build:web
+
       - name: Check shared service build
         run: npm run build:service
 
       - name: Check shared HTTP and persistence
-        run: npx vitest run server/http.test.ts
+        run: npx vitest run server src/modules/platform src/modules/service-api
 
       - name: Prepare MCP server resources
         run: |

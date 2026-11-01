@@ -1,10 +1,12 @@
+import { serveWeb } from "./static"
+import { streamProjectEvents } from "./events"
 import { createServer } from "node:http"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { randomUUID, timingSafeEqual, createHash } from "node:crypto"
-import { createSharedService } from "@/modules/service-api/application"
+import { createSharedService, createDocumentReceiver, type UploadStorage } from "@/modules/service-api/application"
 import { ServiceError, ERROR_STATUS, parsePrecondition, etag, API_VERSION } from "@/modules/service-api/domain"
 import type { SharedRepository } from "@/modules/service-api/application"
-export interface ServiceOptions { repository: SharedRepository; token: string; maxJsonBytes?: number }
+export interface ServiceOptions { repository: SharedRepository; token: string; maxJsonBytes?: number; uploads?: UploadStorage; maxUploadBytes?: number; webRoot?: string }
 export function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     let size = 0, failed = false
@@ -27,6 +29,8 @@ export function createServiceHttp(options: ServiceOptions) {
     const value = request.headers.authorization
     if (!value?.startsWith("Bearer ") || !timingSafeEqual(secret, createHash("sha256").update(value.slice(7)).digest())) throw new ServiceError("unauthenticated", "A valid service access key is required")
   }
+  const receiver = options.uploads ? createDocumentReceiver(options.repository, options.uploads, { id: randomUUID, now: () => new Date().toISOString(), hash: bytes => createHash("sha256").update(bytes).digest("hex") }) : null
+  const streams = new Set<() => void>()
   const handler = async (request: IncomingMessage, response: ServerResponse) => {
     const requestId = randomUUID()
     response.setHeader("X-Request-Id", requestId); response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff")
@@ -46,7 +50,8 @@ export function createServiceHttp(options: ServiceOptions) {
     const version = () => parsePrecondition({ match: request.headers["if-match"] as string | undefined, noneMatch: request.headers["if-none-match"] as string | undefined })
     try {
       const url = new URL(request.url ?? "/", "http://service"), method = request.method ?? "GET"
-      if (method === "GET" && url.pathname === "/api/v1/health") return send(200, { apiVersion: API_VERSION, authentication: "service-key", accountLogin: false })
+      if (method === "GET" && url.pathname === "/api/v1/health") return send(200, { apiVersion: API_VERSION, authentication: "service-key", accountLogin: false, capabilities: { uploads: !!receiver, events: true, localBridge: false } })
+      if (!url.pathname.startsWith("/api/") && method === "GET" && options.webRoot && await serveWeb(options.webRoot, url.pathname, response)) return
       if (!url.pathname.startsWith("/api/v1/")) throw new ServiceError("not_found", "Route not found")
       authenticate(request)
       const origin = request.headers.origin
@@ -64,6 +69,28 @@ export function createServiceHttp(options: ServiceOptions) {
       if ((part === "wiki" || part === "documents") && method === "GET") {
         const page = await service.list(id, part === "wiki" ? "wiki" : "document", url.searchParams.get("limit"), url.searchParams.get("cursor"))
         return send(200, page.items, page.nextCursor)
+      }
+      if (part === "documents" && method === "POST") {
+        await service.project(id)
+        if (!receiver) throw new ServiceError("unsupported", "Uploads are not configured")
+        let name: string
+        try { name = decodeURIComponent(String(request.headers["x-file-name"] ?? "")) } catch { throw new ServiceError("invalid_argument", "Invalid filename encoding") }
+        const bytes = await readBody(request, options.maxUploadBytes ?? 16 * 1024 * 1024)
+        return send(201, await receiver.receive(id, name, String(request.headers["content-type"] ?? "application/octet-stream").split(";")[0], bytes))
+      }
+      const document = part?.match(/^documents\/([^/]+)\/content$/)
+      if (document && method === "GET") {
+        await service.project(id)
+        if (!receiver) throw new ServiceError("unsupported", "Uploads are not configured")
+        const bytes = await receiver.content(id, decodeURIComponent(document[1]))
+        response.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Disposition": "attachment; filename=source.bin" }); response.end(bytes); return
+      }
+      if (part === "events/stream" && method === "GET") {
+        const after = Number(url.searchParams.get("after") ?? request.headers["last-event-id"] ?? 0)
+        await service.events(id, after, 1)
+        let close: () => void = () => {}
+        close = streamProjectEvents(response, after, cursor => service.events(id, cursor, 200), () => streams.delete(close))
+        streams.add(close); return
       }
       if (part === "wiki/page") {
         const path = url.searchParams.get("path") ?? ""
@@ -83,5 +110,5 @@ export function createServiceHttp(options: ServiceOptions) {
       response.end(JSON.stringify({ error: { code: failure.code, message: failure.message, requestId, ...(failure.details ? { details: failure.details } : {}) } }))
     }
   }
-  return { server: createServer((request, response) => { void handler(request, response) }), service, authenticate }
+  return { closeStreams: () => { for (const close of [...streams]) close() }, server: createServer((request, response) => { void handler(request, response) }), service, authenticate }
 }

@@ -662,6 +662,7 @@ pub fn run() {
             clip_server_status,
             api_server_status,
             api_server_reload_config,
+            commands::platform::platform_shell_exec,
             agent_start_turn,
             agent_start_turn_stream,
             agent_cancel_turn,

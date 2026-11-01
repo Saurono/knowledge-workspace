@@ -1,96 +1,62 @@
 # 新会话交接
 
-> 当前状态：用户授权开始 C 系列，完成到 C04 后停止。C01/C02 已完成，继续 C03–C04。
+> 当前状态：用户已恢复 C 队列。C03 已完成，继续 C04；按原先“完成到 C04”的范围，C04 后停止。
 
-## 先读与工作约定
+## 工作约定
 
-1. 读本文件、[TASKS](TASKS.md)、[WORKLOG](WORKLOG.md)、[ARCHITECTURE](ARCHITECTURE.md)。检查实际 Git 分支、状态和日志，不假设旧后台进程存在。
-2. TASKS 是状态入口。完成一项就勾选、追加 WORKLOG（实现/验证/限制）、更新本交接点并提交；不能只更新复选框。
-3. 用户最新指令是**开始 C 系列，完成到 C04**；完成 C04 后停止，不自动启动 C05。B 系列已逐项完成到 B16。B07c 依赖 C02/I02；未在本轮扩展实现 C/I 新后端，不得将 B07 总项勾选。
-4. 保持小批次可回归迁移，业务放模块，通过公开 API 和端口组合。旧调用者迁完才删兼容入口；新模块不得依赖旧 Store/Tauri/文件系统。
-5. 后续仓库默认公开，推送到用户 origin；不加入真实笔记、凭据或机密。当前工作目录 `/workspace/llm_wiki`，新环境路径变化时重新定位。
+1. 先读本文件、TASKS、WORKLOG、ARCHITECTURE，检查真实 Git 状态/日志，不假设旧端口或进程还在。
+2. 完成一项就勾选 TASKS、追加 WORKLOG（实现/验证/限制）、更新交接、提交并推送；不能只勾选。
+3. 用户最新已恢复 C 队列，当前启动 C04 账号/项目成员/工作角色模型与权限矩阵，完成 C04 后停止，不自动启动 C05。
+4. 业务属于模块，经公开入口与端口组合。模块不能依赖旧 Store/Tauri/文件系统；应用与 server 适配器不绕过模块公开接口。
+5. 改变源文件/依赖/公开契约后运行 `npm run audit:modules` 并提交报告。所有后续仓库默认公开，不加入真实笔记、凭据或私人数据。
 
-## 仓库与确定选择
+## 仓库与固定选择
 
-- 工作仓库：https://github.com/Saurono/knowledge-workspace ，公开；origin 指向它，upstream 指向 nashsu/llm_wiki。
-- 开发分支：`codex/knowledge-workspace-v0.1`；后续迁移已推此分支，main 仍为之前基线，未自动合并。
-- 上游 v0.6.13 / `e08cfce`；首批迁移 `d8eeb78`；仓库接入 `da3e522`。最新提交以 Git 日志为准。
-- GPL-3.0，保留原版权与星图 MIT 声明。
-- 桌面/Web 两端；user/agent/admin，Agent 用 API Token；工作角色与已授权有效权限身份一起切换。
-- 记忆按项目/角色共享，私有明确授权；用户最终专门记忆分类方案尚待补充。
-- 扁平多选领域；Obsidian 只生成独立 JSON 回执，不改原笔记。
-- Wiki 来源为用户/Agent/系统生成/混合；Agent 问题、解决方案、产出手册和方法回流；本机 CLI 和外部 API/MCP 都在范围内。
+- 工作目录 `/workspace/llm_wiki`；公开 origin：https://github.com/Saurono/knowledge-workspace ，upstream 为 nashsu/llm_wiki。
+- 开发分支 `codex/knowledge-workspace-v0.1`，最新提交看 Git；本轮已推该分支，没有合并 main。
+- GPL-3.0，保留上游及星图 MIT 声明。
+- 桌面/Web 两端；将来 user/agent/admin，Agent 用 API Token；角色与已授权有效权限身份一起切换。
+- 记忆按项目/角色共享，私有明确授权；用户专门记忆分类仍待补充。扁平多选领域。
+- Obsidian 只生成独立 JSON 回执，不改原笔记。Wiki 来源为用户/Agent/系统/混合，Agent 问题/方案/手册/方法回流；CLI/API/MCP 在后续范围内。
 
-## 实现边界与完成点
+## 已完成的迁移
 
-现有十五个模块：star-map、memory、domains、tasks、quality、wiki、ingestion、retrieval、cli、research、projects、documents、agent、obsidian、settings。部分模块仅迁出核心规则，不能将目录存在当作完整能力已交付。
+现有十七模块：agent、cli、documents、domains、ingestion、memory、obsidian、platform、projects、quality、research、retrieval、service-api、settings、star-map、tasks、wiki。
 
-- B01–B03：任务外部取消、入库执行器、独立队列服务/恢复/快照端口。有序提交、epoch、部分写入、暂停/重试保留。队列活动快照仍 best-effort、读取失败视空，未升级为统一强持久化任务服务。
-- B04/B05：research 模型/正文引用校验/执行器；tasks/ui 与 research/ui 受控页面。app/research 注入搜索/模型/文件。新研究任务绑定项目，项目切换取消旧执行；部分搜索 I/O 本身还不能取消，但迟到结果丢弃。
-- B06：projects 模型、身份/注册表/最近项目仓储。身份持锁原子写入成功才返回；注册表/偏好更新串行。配置方法仍在 lib/project-store，待 B14。
-- B07a/B07b：documents 来源规则/目录/修订查询，app/document-records 保持旧聚合格式；本地监听/定时导入登记原路径，来源移动协调目录和 Wiki 引用/摘要时间，历史回执不改。跨文件失败恢复不是事务。B07c 新 API/MCP 统一入口依赖 C02/I02；B07 总项未完成。
-- B08a/B08b：Wiki 页面仓储、修订冲突接口与编辑预览接入；合并服务和正文链接规则迁出，解析/模型/备份由端口注入。编辑器在 B08c4 接入条件保存/冲突提示，版本仍沿用原生历史库。
-- B08c1：单条/批量纠错在项目锁内变换最新内容，跳过无变化写入；并发补建页只创建一次。
-- **B08c2**：documents 文件历史模型和服务、app/wiki 历史查询/恢复适配、wiki/ui 受控展示；Wiki Markdown 也有历史入口。查询/恢复晚到结果按文件/项目世代丢弃，恢复使用项目提交锁；原生历史库格式与命令保留。Rust 原生运行未验收。
+B01–B06、B07a/B07b、B08–B16 已完成既有本地链路的迁移。包含入库/研究执行器和有序队列、项目/来源身份、Wiki 条件编辑/冲突/历史/显式提交、检索/证据、Agent 流式生命周期/产出、检查审阅/批量修复、CLI/Obsidian/设置端口、Store 投影和星图查询。
 
-现有本地数据格式仍兼容：workspace.json v1、ingest-records.json v1、队列数组、project.json 及 app-state.json 原 key。未实现生产账号/授权、共享记忆后端、生产 Web 服务；模拟预览不能证明这些能力存在。
+B07/B07c 仍未完成：C02 已建立共享 API 基础，但 I02 新 MCP 的完整文档注册/版本/来源链路尚未实现。不得因此把 B07 勾选。部分解析/编译和模型传输仍是旧 lib 应用适配，不代表所有旧代码已消失。
 
-## 下一步
+## C01–C03 本轮结果
 
-B08c3 已完成：Wiki application 提供有生命周期的提交上下文，app/wiki 装配共享项目锁和原生读写；上下文在回调结束后关闭，并等待已启动的 I/O 结束才释放锁。入库显式传入该上下文，复用队列提交回合，不再在内部重复获取项目锁。
+- C01 `b39ca60` / L028：部署/离线/同步决策见 analysis/architecture/deployment-and-offline.md。桌面独立数据和共享服务数据各自权威，无隐式双向同步或离线写队列。
+- C02 `185ef89` / L029：service-api 共享协议/用例/SDK，server 的真实 Node HTTP/SQLite。项目、Wiki、记忆/领域工作区、文档目录、持久事件；ETag/If-Match、范围游标、统一错误、墓碑防 ABA，资源和事件同事务。
+- C03 / L030：本地文件/监听/Shell/Vault 端口与项目捕获；原生 watcher 所有者协调。Rust Shell 命令只桥接已有 Agent ToolRegistry，不复制引擎；Shell 确认不代表账号授权。
+- Web 独立入口 web.html，app/platform/web 使用真实 API、上传和带 Authorization 的 fetch SSE。取消/项目切换关闭旧连接，断线按最后事件序号恢复。Web 不伪造 Tauri、没有本机桥接时明确拒绝本机文件/Shell/Vault。
+- 共享页面实际支持项目、Wiki 编辑/预览、记忆/领域维护与文档上传，复用受控模块。远程仓储保留已加载基线，冲突不偷偷重读后覆盖；Wiki 保留冲突草稿。
+- 上传为独立二进制和 received 元数据，sourceIngestedAt=null，不把接收当作解析/入库/索引完成。目录 ID 重用不覆盖旧文件；元数据失败清理文件。跨介质崩溃仍可能遗留孤立文件，恢复/去重是后续 D/J 工作。
 
-- 覆盖入库正文/目录/概览/日志/旧摘要迁移/图片注入、补充生成、对话与审阅发布、研究落盘、去重合并及链接增强。
-- 页面服务仍只接收 Markdown；提交存储接口保留 wiki/ 下非 Markdown 输出兼容。缓存、检查点、警告和备份 sidecar 保持原路径/写入语义。
-- 对话/审阅共用发布服务，锁内分配文件名并更新最新目录/日志，保留审阅稳定名优先。读取已有目录失败不会伪造空目录覆盖。
-- 去重提交前验证模型输入快照，正文变动则要求重试；目录独立处理并保留模型准备期间新增条目。链接增强基于最新正文应用结果。
-- 这不是跨文件回滚事务；失败保留已完成写入。保留原生写入与历史格式，不代表身份授权、跨进程锁或生产 Web 后端完成。
+## 运行与协议
 
-B08c4 已完成：Wiki 领域拥有页面创建时间/来源关联及移动规则，现有 ingest-records v1 文件仍由应用层聚合。Wiki 页面、生成写入和历史共用桌面存储适配，保留原生 before/after 历史记录和格式。编辑会话串行条件保存，冲突后阻止队列/后续自动覆盖；界面保留草稿、提供复制和显式放弃后重载，读取/保存失败显示错误。预览读写编排迁入 app/wiki hook，编辑组件不直接导入文件命令；原文选择编辑与历史恢复后重新加载基线。
-
-B08/B08c 的现有本地链路迁移完成；生产 Web 存储/权限和跨进程排他仍在后续任务。本地 native writer 仍按上游记录 human，真实身份归因待账号/Agent 链路，不把它称为安全审计。B07c 仍依赖 C02/I02。
-
-B09 已完成：retrieval/domain 拥有分块/分词、向量配置/页面 ID、分块聚合；application 提供独立 embedding 服务、模型/索引/来源端口及搜索/证据服务。app/retrieval 装配原生模型/向量/搜索和 frontmatter 标题解析，旧 lib 入口重导出。排序继续使用原 Rust 共享后端，不在前端复制；LanceDB 文件/命令参数不变。证据默认 5 条、每页 2000/合计 8000 字符，空内容不占引用编号；选区问答接入。本地搜索不传模型配置，查询/项目切换/卸载取消旧请求并丢弃迟到结果。底层 I/O 不保证物理中断。
-
-B10 已完成：agent/domain 拥有会话/事件/产出与持久化规则；application 注入后端运行时和文件读取端口，负责流式生命周期、取消、超时及产出顺序。ChatPanel 不直接调用原生 Agent 命令/事件。共享执行/工具策略仍在已有 Rust agent 模块，未在前端复制引擎。未知文件前态不能撤销。
-
-B11 已完成：quality 拥有语义/结构检查与审阅清理服务、纠错/审阅规则、占位页与批量修复用例。app/quality 注入文件/模型/worker/活动和项目世代；同页纠错合并一次提交，部分失败保留已完成结果。检查/审阅组件不直接调用文件命令，审阅删除使用项目锁和路径校验。
-
-B12 已完成：cli/application 拥有 Claude/Codex 进程/事件/会话 transport 和能力查询端口；app/cli 注入 Tauri 与调用时 CWD，lib 兼容。设置页不直接 invoke 检测命令。保留协议/超时/隔离与取消启动竞态再次 kill；新增调用目录绑定与完成后迟到 token 契约。
-
-B13 已完成：obsidian 拥有回执模型/生成/Vault 归属和连接/投递服务；app/obsidian 复用 ingest-records 聚合锁与文件适配。来源和 Wiki 元数据仍各归其模块，app/document-records 组合。只写独立 JSON 回执，源笔记不改；失败 pending、稳定文件重试和重连校验保留。相关 3 文件/17 项通过；十四模块边界/类型/正式构建通过，无真实 Vault 验收。
-
-B14 已完成：settings 拥有配置类型、预设/路由/推理/Azure 策略、键值仓储与平台能力服务，app/settings 注入 Tauri/路径/监听/缩放适配；Store/旧入口重导出兼容。保持 app-state.json 键和模型覆盖串行更新，凭据存储未改变。关于页区分模拟/桌面/Web，能力状态不代表授权或实际 CLI/Vault 健康。设置相关 7 文件/40 项、十五模块边界/类型/正式构建通过。
-
-B15 已完成：聊天/审阅/检查更新器和默认配置归对应模块，Zustand 仅注入 React 状态/时钟/ID/文案；Wiki Store 仍保留导航/文件索引/当前配置投影。Wiki 图与关联检索服务注入文件/解析/worker，缓存按实例隔离，传递调用时版本；场景组装归 star-map application，组件只组装输入和交互。项目切换使旧图失效。删除零引用 memory-sea-scene 旧入口；仍被契约测试或生产代码引用的 facade 保留。
-
-B16 已完成：全树审计覆盖 415 个生产源文件、15 个模块（模块内 149 个生产文件）、33 个仍有调用/测试的兼容入口。所有模块无 legacy 例外、无私有入口绕用或依赖环；补充领域直接调用平台 I/O 的检查。审计脚本和 JSON 报告可复现，CI 检查报告一致性。详细证据见 `analysis/architecture/module-boundary-audit.md` 和 `module-audit-v1.json`。
-
-## 当前交接点
-
-- 本轮提交：B10 `62787f5`，B11 `86e3445`，B12 `8642f2a`，B13 `acf0d5e`，B14 `deeed74`，B15 `7e4318f`，B16 以 Git 日志为准。均推送 origin 开发分支，未合并 main。
-- B07c 未完成，需要先实现 C02 共享 API 和 I02 新 MCP 的文档注册链路。原有本地监听/手动/定时导入接入不等于新增服务端路径已完成。
-- 当前已启动 C01–C04，部署/离线决策见 analysis/architecture/deployment-and-offline.md。C01/C02 已完成，接续 C03 平台与 Web 入口、C04 身份模型；完成后停止。B07c 还需 I02 新 MCP 路径，不能仅凭 C02 勾选。
-- 部分旧 lib 仍负责解析/编译、模型传输或平台兼容组合；新模块不反向导入这些实现。静态模块审计不是生产权限、安全沙箱或完整运行时证明。
-- 源文件/导入/公开契约变化后执行 `npm run audit:modules` 并提交报告，CI 的 `audit:modules:check` 检查其一致性。
-
-## 验证与启动
+要求 Node.js 24 LTS；操作说明 analysis/implementation/shared-service.md。
 
 ```bash
 npm ci
-npm run check:modules
-npm run audit:modules:check
-npm run typecheck
-npm run test:mocks
-npm run build
-npm run build:preview
+npm run build:shared
+# 通过运行环境设置 KW_SERVICE_TOKEN（至少 24 字符，绝不提交）。
+npm run start:service
 ```
 
-最新完整模拟回归：178 文件 / 2231 项通过。十五模块边界、全树审计、类型、正式/预览构建通过；边界/审计脚本独立 2 文件/10 项通过。Chromium 七组验证全部通过，覆盖编辑/冲突、历史与 ABA、发布、检索与迟到结果、任务页、Wiki/64 条模拟记忆切换、单页批量纠错一次写入、设置能力提示；页面异常为 0。
+默认 127.0.0.1:4317，数据目录 `.knowledge-workspace-service`；可设置 KW_SERVICE_HOST/PORT/DATA/WEB_ROOT。静态 Web 与 API 同源。服务连接密钥仅属于当前部署信任域，保留在页面内存，不是人员登录或 Agent Token；C04–C09 尚未完成。不要把此服务当作已完成多租户隔离的产品。
 
-- 真实模型、真实 Vault、原生 Rust/watcher/桌面安装包尚未验收；本环境此前没有 cargo，新环境重新检查。
-- `npm run dev` 是前端；桌面需 `npm run tauri dev` 与 Rust/Tauri 依赖。
-- 显式沙箱入口 preview.html / src/preview，构建为 dist-preview/preview.html，使用模拟文件系统和合成数据。
-- 可复现浏览器脚本在 analysis/implementation：smoke-task-ui.mjs、smoke-wiki-repository.mjs、smoke-file-history.mjs、smoke-generated-pages.mjs、smoke-wiki-conflict.mjs、smoke-retrieval.mjs、smoke-modular-features.mjs；需要 PLAYWRIGHT_MODULE、CHROMIUM_PATH 与 Vite。禁止将夹具脚本指向真实知识库。
-- `/tmp` 工具、端口与 `/workspace/artifacts` 预览是环境临时产物，不保证新会话存在。新增测试避免放进被忽略的 tests/ 目录。
+`npm run dev:web` 在 1422 代理 `/api` 到本机 4317。原桌面 `npm run tauri dev` 独立，原预览 `/preview.html` 仍是明确沙箱。
 
-C02：新增 service-api 公开协议/用例/SDK 与 server/ Node 24 HTTP/SQLite 适配。项目、Wiki、记忆/领域工作区、文档目录和事件查询可实际调用；版本条件/墓碑防 ABA，资源和事件同事务。服务连接密钥不是人员登录。运行方法见 analysis/implementation/shared-service.md；真实 HTTP 临时 SQLite 验证重启/并发/分页/错误通过。C03 上传/SSE/Web 入口尚待接入。
+## 验证与限制
+
+- 最新完整模拟回归：182 文件 / 2245 项通过；类型、十七模块边界/审计、共享 Web/服务、原桌面前端和单文件预览构建通过。
+- 真实 HTTP/临时 SQLite 测试覆盖重启、条件并发、墓碑、事件、分页与错误；上传/SSE/端口测试覆盖接收状态、内容下载、路径/超限、顺序恢复、冲突、取消、清理及目录防覆盖。
+- Chromium 真实双客户端脚本 `analysis/implementation/smoke-shared-web.mjs`：独立服务提供静态页面，无 Tauri 模拟；项目/Wiki、冲突草稿、SSE、上传、领域/记忆 API 均通过，页面异常为 0。脚本只用临时数据与随机凭据，退出清理。
+- 当前无 cargo，新增 Rust 桥接及真实 watcher/Shell/Vault/桌面安装包尚未编译/真机验收，真实模型也未验收。CI 已增加 Node 24、共享 Web/服务和集成测试步骤，但远端 CI 未在本轮验收。
+- C04 身份模型未开始，C05 登录、C06 Token、C07 访问上下文、C08 委托切换、C09 全路由授权均未完成。共享记忆权限、完整执行器后端、最终真实星图仍在后续任务。
+
+复核命令：check:modules、audit:modules:check、typecheck、test:mocks、build、build:preview、build:shared。新会话重新检查临时 artifacts 与端口，不依赖 `/tmp` 工具存在。

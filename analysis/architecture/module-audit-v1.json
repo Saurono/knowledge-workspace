@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 426,
-  "moduleCount": 16,
+  "productionFiles": 440,
+  "moduleCount": 17,
   "modules": [
     {
       "id": "agent",
@@ -77,7 +77,7 @@
       "publicEntrypoints": [
         {
           "path": "index.ts",
-          "productionImporters": 1
+          "productionImporters": 2
         },
         {
           "path": "domain/index.ts",
@@ -85,7 +85,7 @@
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 1
+          "productionImporters": 2
         }
       ],
       "dependencies": [],
@@ -126,7 +126,7 @@
       "publicEntrypoints": [
         {
           "path": "index.ts",
-          "productionImporters": 1
+          "productionImporters": 2
         },
         {
           "path": "domain/index.ts",
@@ -134,7 +134,7 @@
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 1
+          "productionImporters": 2
         }
       ],
       "dependencies": [],
@@ -156,6 +156,28 @@
         {
           "path": "domain/index.ts",
           "productionImporters": 5
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 2
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
+      "id": "platform",
+      "productionFiles": 5,
+      "testFiles": 1,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 4
         },
         {
           "path": "application/index.ts",
@@ -269,8 +291,8 @@
     },
     {
       "id": "service-api",
-      "productionFiles": 8,
-      "testFiles": 0,
+      "productionFiles": 9,
+      "testFiles": 1,
       "publicEntrypoints": [
         {
           "path": "index.ts",
@@ -278,11 +300,11 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 7
+          "productionImporters": 13
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 3
+          "productionImporters": 7
         }
       ],
       "dependencies": [

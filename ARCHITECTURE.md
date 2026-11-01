@@ -30,8 +30,8 @@ undeclared dependencies, UI/platform coupling in domain code, non-literal module
 imports and module dependency cycles. It currently governs the new modules tree;
 legacy code is being migrated, with explicit compatibility entry points.
 
-Sixteen modules now contain extracted implementation: star-map, memory, domains,
-tasks, quality, wiki, ingestion, retrieval, cli, research, projects, documents, agent, obsidian, settings and service-api. See the
+Seventeen modules now contain extracted implementation: star-map, memory, domains,
+tasks, quality, wiki, ingestion, retrieval, cli, research, projects, documents, agent, obsidian, settings, service-api and platform. See the
 [migration status](analysis/architecture/migration-progress.md) for the exact scope
 and remaining legacy orchestration.
 The complete module inventory, dependency rules, storage ownership and migration
@@ -46,3 +46,8 @@ The reproducible [boundary audit](analysis/architecture/module-boundary-audit.md
 and [JSON inventory](analysis/architecture/module-audit-v1.json) document the exact
 scope. After changing source-file inventory, imports or public contracts, regenerate
 with `npm run audit:modules` and commit the report; CI checks its consistency.
+
+The desktop independent mode and the standalone shared-service/Web mode are
+explicitly separate deployments. See [C01 deployment boundaries](analysis/architecture/deployment-and-offline.md)
+and [shared service operations](analysis/implementation/shared-service.md).
+The service requires Node.js 24; runtime data and service keys are never committed.
