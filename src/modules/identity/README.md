@@ -1,11 +1,7 @@
-# 身份目录与权限模型
+# 身份、认证与授权
 
-领域层拥有 user/agent/admin 账号、项目成员、工作角色、权限矩阵和目录校验。账号类型决定登录通道与全局权限；项目成员提供权限上限，切换已授予的工作角色会同时收窄有效权限。管理员不默认绕过项目成员要求或私有记忆授权。
+领域层拥有 user/agent/admin、项目成员与工作角色、访问上下文及显式授权模型。应用层注入身份/密码/会话/Token/委托仓储与时钟、随机数、摘要端口。领域不依赖平台、UI 或其他模块。
 
-应用层通过 IdentityRepository、ID、时钟和项目存在性端口维护目录；显式版本条件防止并发覆盖，停用最后一个有效管理员被拒绝。账号目录不保存密码或 Token，工作角色不能授予全局管理权限。server/identity.ts 是 SQLite 持久化适配，资源库 schema 1→2 只新增身份目录，不改原资源版本或事件。
+C05–C09 已接入真实 Node HTTP/SQLite：随机盐口令散列、人员 Cookie、限流及失效，Agent 限项目/角色/权限/到期 Token，显式委托和不可变执行上下文。账号目录不保存凭据，密码/会话/Token 仅在独立表保存散列或摘要。初始化密钥只供首个管理员；项目资格与私有授权不因 admin 自动开放。
 
-C04 仅提供模型和内部可信管理组合；没有开放账号管理 HTTP 路由，也没有登录、Token 签发或生产 AccessContext。C05–C09 将负责认证、可信上下文、角色委托切换和全路由授权。私有记忆 grant 参数必须由未来可信授权层构造，不可直接信任客户端提交。
-
-权限规则与后续接入边界见 analysis/architecture/identity-permission-matrix.md。
-
-C05–C06 已增加认证/Token 用例，经密码散列、随机数/摘要、时钟和仓储端口组合；Node 适配实际持久化口令散列/会话摘要/Token 摘要，不记录明文。初始化密钥只供首次 admin 引导，人员 Cookie 与 Agent Bearer Token 分离。C07–C10 继续接入访问上下文、统一授权和界面；不能把旧 C04 限制说明当作最终状态。
+server/ 是持久化及加密适配，service-api 组合统一资源授权，所有共享客户端通过 HTTP/SDK，不直接读库。规则见 analysis/architecture/identity-permission-matrix.md 和 server-authorization.md。C10 将补齐共享 Web 管理/切换界面和持久审计查询；记忆业务分类/审核与实际共享执行器属于后续 F/H/I。

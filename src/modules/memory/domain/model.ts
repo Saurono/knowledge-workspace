@@ -1,5 +1,8 @@
+import { validMemoryAccess } from "./access"
+import type { MemoryAccess } from "./access"
 export interface MemoryRecord {
   id: string
+  access?: MemoryAccess
   title: string
   content: string
   category: string
@@ -24,6 +27,7 @@ export function validateMemories(value: unknown): MemoryRecord[] {
           memory.createdAt,
           memory.updatedAt,
         ].every((item) => typeof item === "string") &&
+        (memory.access === undefined || validMemoryAccess(memory.access)) &&
         stringList(memory.domainIds) &&
         stringList(memory.relatedIds),
     ) ||

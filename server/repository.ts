@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { DatabaseSync } from "node:sqlite"
 import { mkdirSync, chmodSync } from "node:fs"
 import { join } from "node:path"
@@ -5,7 +6,7 @@ import { ServiceError } from "@/modules/service-api/domain"
 import type { ProjectRecord, ResourceKind, ResourceRecord, ProjectEvent } from "@/modules/service-api/domain"
 import type { SharedRepository } from "@/modules/service-api/application"
 import type { IdentityRepository } from "@/modules/identity/application"
-import { emptyIdentityCatalog } from "@/modules/identity/domain"
+import { emptyIdentityCatalog, validateIdentityCatalog, globalPermissions } from "@/modules/identity/domain"
 import { createSqliteIdentityRepository } from "./identity"
 import { createAuthenticationRepository } from "./auth-store"
 import type { AuthenticationRepository } from "@/modules/identity/application"
@@ -13,7 +14,8 @@ import { createTokenRepository } from "./token-store"
 import type { TokenRepository } from "@/modules/identity/application"
 import { createContextRepository } from "./context-store"
 import type { ContextRepository } from "@/modules/identity/application"
-export const SERVICE_SCHEMA_VERSION = 5
+import { createMemoryGrantRepository } from "./memory-grants"
+export const SERVICE_SCHEMA_VERSION = 6
 type Row = Record<string, string | number | null>
 export class SqliteRepository implements SharedRepository {
   private db: DatabaseSync
@@ -21,6 +23,7 @@ export class SqliteRepository implements SharedRepository {
   readonly authentication: AuthenticationRepository
   readonly tokens: TokenRepository
   readonly contexts: ContextRepository
+  readonly memoryGrants: ReturnType<typeof createMemoryGrantRepository>
   constructor(directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const file = join(directory, "service.sqlite")
@@ -54,6 +57,10 @@ export class SqliteRepository implements SharedRepository {
       if (version < 5) this.transaction(() => {
         this.db.exec("CREATE TABLE identity_delegations(id TEXT PRIMARY KEY, data TEXT NOT NULL); CREATE TABLE access_contexts(id TEXT PRIMARY KEY, data TEXT NOT NULL); PRAGMA user_version=5;")
       })
+      if (version < 6) this.transaction(() => {
+        this.db.exec("CREATE TABLE memory_grants(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL); PRAGMA user_version=6;")
+      })
+      this.memoryGrants = createMemoryGrantRepository(this.db)
       this.authentication = createAuthenticationRepository(this.db)
       this.tokens = createTokenRepository(this.db, this.authentication)
       this.contexts = createContextRepository(this.db, this.authentication)
@@ -72,10 +79,17 @@ export class SqliteRepository implements SharedRepository {
   private resource(row: Row): ResourceRecord {
     return { projectId: String(row.project_id), kind: row.kind as ResourceKind, key: String(row.key), data: JSON.parse(String(row.data)), revision: Number(row.revision), createdAt: String(row.created_at), updatedAt: String(row.updated_at) }
   }
-  async createProject(project: ProjectRecord, initial: unknown) {
+  async createProject(project: ProjectRecord, initial: unknown, ownerId?: string) {
     return this.transaction(() => {
       this.db.prepare("INSERT INTO projects(id,name,created_at) VALUES(?,?,?)").run(project.id, project.name, project.createdAt)
       this.db.prepare("INSERT INTO resources(project_id,kind,key,data,revision,created_at,updated_at) VALUES(?,?,?,?,1,?,?)").run(project.id, "workspace", "default", JSON.stringify(initial), project.createdAt, project.createdAt)
+      if (ownerId) {
+        const row = this.db.prepare("SELECT data,revision FROM identity_catalog WHERE id=1").get() as { data: string; revision: number }, catalog = validateIdentityCatalog(JSON.parse(row.data))
+        const owner = catalog.accounts.find(account => account.id === ownerId)
+        if (!owner || !globalPermissions(owner).includes("projects.create")) throw new ServiceError("forbidden", "Project creation is not authorized")
+        catalog.memberships.push({ id: randomUUID(), projectId: project.id, accountId: ownerId, status: "active", permissionRole: "manager", workRoleIds: [], createdAt: project.createdAt, updatedAt: project.createdAt })
+        this.db.prepare("UPDATE identity_catalog SET data=?,revision=? WHERE id=1").run(JSON.stringify(validateIdentityCatalog(catalog)), row.revision + 1)
+      }
       this.event(project.id, "project.created", "project", project.id, 1, project.createdAt)
       return project
     })

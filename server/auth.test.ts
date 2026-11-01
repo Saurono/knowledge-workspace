@@ -51,4 +51,15 @@ describe("account login and session lifecycle", () => {
     for (let i = 0; i < 5; i++) expect((await f.login("unknown", "bad-password")).response.status).toBe(401)
     expect((await f.login("unknown", "bad-password")).response.status).toBe(429)
   })
+  it("initializes a pre-C05 admin without changing its stable account or memberships", async () => {
+    const f = await fixture()
+    const state = await f.authentication.catalog.createAccount(1, { handle: "admin", displayName: "Legacy Admin", kind: "admin" }), id = state.catalog.accounts[0].id
+    expect((await f.json("/auth/status")).data.initialized).toBe(false)
+    const bootstrapped = await f.bootstrap()
+    expect(bootstrapped.data.account.id).toBe(id)
+    expect((await f.authentication.catalog.read()).catalog.accounts).toHaveLength(1)
+    expect((await f.login()).response.status).toBe(200)
+    expect((await f.bootstrap()).response.status).toBe(409)
+  })
+
 })

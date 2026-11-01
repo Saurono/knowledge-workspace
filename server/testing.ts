@@ -5,13 +5,14 @@ import type { AddressInfo } from "node:net"
 import { SqliteRepository } from "./repository"
 import { createServiceHttp } from "./http"
 import { createAccountAuthentication } from "./auth-http"
+import type { ExecutionGateway } from "./resource-tools"
 import { DiskUploads } from "./uploads"
 export const fixturePassword = "Only-for-tests-4917!"
-export async function accountFixture() {
+export async function accountFixture(executions?: ExecutionGateway) {
   const directory = mkdtempSync(join(tmpdir(), "kw-accounts-")), setupKey = "fixture-initialization-key-not-production"
   let now = "2026-11-01T00:00:00.000Z"
   const repository = new SqliteRepository(directory), authentication = createAccountAuthentication(repository, setupKey, false, () => now)
-  const http = createServiceHttp({ repository, token: setupKey, authentication, uploads: new DiskUploads(directory) })
+  const http = createServiceHttp({ repository, authentication, executions, uploads: new DiskUploads(directory) })
   await new Promise<void>(resolve => http.server.listen(0, "127.0.0.1", resolve))
   const origin = `http://127.0.0.1:${(http.server.address() as AddressInfo).port}`
   const request = (path: string, method = "GET", body?: unknown, cookie = "", extra: Record<string, string> = {}) => fetch(origin + "/api/v1" + path, { method, headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie, "X-KW-CSRF": "1" } : {}), ...extra }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })

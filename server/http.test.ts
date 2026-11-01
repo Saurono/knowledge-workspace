@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { AddressInfo } from "node:net"
+import { createAccountAuthentication } from "./auth-http"
 import { createServiceHttp } from "./http"
 import { SqliteRepository } from "./repository"
 import { createSharedClient } from "@/modules/service-api/application"
@@ -10,15 +11,17 @@ const token = "integration-fixture-service-key-only"
 const cleanups: Array<() => Promise<void>> = []
 async function fixture(maxJsonBytes?: number) {
   const directory = mkdtempSync(join(tmpdir(), "kw-http-"))
-  let repository = new SqliteRepository(directory), http = createServiceHttp({ repository, token, maxJsonBytes })
+  let repository = new SqliteRepository(directory), authentication = createAccountAuthentication(repository, token), http = createServiceHttp({ repository, authentication, maxJsonBytes })
+  await authentication.auth.bootstrap({ handle: "admin", displayName: "Admin", password: "Fixture-password-1234" })
+  const cookie = `kw_session=${(await authentication.auth.login("admin", "Fixture-password-1234", "fixture")).secret}`
   let url = ""
   const listen = async () => { await new Promise<void>(resolve => http.server.listen(0, "127.0.0.1", resolve)); url = `http://127.0.0.1:${(http.server.address() as AddressInfo).port}` }
   const close = async () => { http.server.closeAllConnections(); await new Promise<void>((resolve, reject) => http.server.close(error => error ? reject(error) : resolve())); repository.close() }
   await listen()
   cleanups.push(async () => { await close(); rmSync(directory, { recursive: true, force: true }) })
-  const request = (path: string, init: RequestInit = {}) => fetch(url + "/api/v1" + path, { ...init, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...init.headers } })
+  const request = (path: string, init: RequestInit = {}) => fetch(url + "/api/v1" + path, { ...init, headers: { Cookie: cookie, "X-KW-CSRF": "1", "Content-Type": "application/json", ...init.headers } })
   const create = async (name = "Project") => (await (await request("/projects", { method: "POST", body: JSON.stringify({ name }) })).json()).data as { id: string; name: string }
-  return { request, create, anonymous: (path: string) => fetch(url + "/api/v1" + path), restart: async () => { await close(); repository = new SqliteRepository(directory); http = createServiceHttp({ repository, token, maxJsonBytes }); await listen() }, client: createSharedClient({ request: (method, path, options) => fetch(url + path, { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...options.headers }, ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }), signal: options.signal }) }) }
+  return { request, create, anonymous: (path: string) => fetch(url + "/api/v1" + path), restart: async () => { await close(); repository = new SqliteRepository(directory); authentication = createAccountAuthentication(repository, token); http = createServiceHttp({ repository, authentication, maxJsonBytes }); await listen() }, client: createSharedClient({ request: (method, path, options) => fetch(url + path, { method, headers: { Cookie: cookie, "X-KW-CSRF": "1", "Content-Type": "application/json", ...options.headers }, ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }), signal: options.signal }) }) }
 }
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })
 describe("shared service HTTP and SQLite", () => {

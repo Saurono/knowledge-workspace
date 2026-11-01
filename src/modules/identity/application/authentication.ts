@@ -4,6 +4,7 @@ export interface AuthenticationRepository {
   initialized(): Promise<boolean>
   register(account: Account, passwordHash: string | null, expectedRevision: number | null): Promise<RegistrationResult>
   password(handle: string): Promise<{ account: Account; hash: string } | null>
+  sessionById(id: string): Promise<LoginSession | null>
   session(digest: string): Promise<LoginSession | null>
   saveSession(session: LoginSession): Promise<void>
   touchSession(id: string, now: string): Promise<void>
@@ -23,7 +24,9 @@ export function createAuthenticationService(repository: AuthenticationRepository
   }
   const login = async (handle: unknown, password: unknown, attemptKey: string) => {
     const normalized = typeof handle === "string" ? handle.normalize("NFKC").trim().toLowerCase().slice(0, 64) : ""
-    const key = runtime.digest(attemptKey + "\0" + normalized), now = runtime.now()
+    const key = runtime.digest(attemptKey + "\0" + normalized), addressKey = runtime.digest("address\0" + attemptKey), now = runtime.now()
+    if (await repository.loginFailures(addressKey, new Date(Date.parse(now) - 15 * 60_000).toISOString()) >= 30) throw new AuthError("too_many_requests", "Too many login attempts; retry later")
+    if (await repository.failedLogin(addressKey, now) > 30) throw new AuthError("too_many_requests", "Too many login attempts; retry later")
     if (await repository.loginFailures(key, new Date(Date.parse(now) - 15 * 60_000).toISOString()) >= 5) throw new AuthError("too_many_requests", "Too many login attempts; retry later")
     // Count before the expensive verifier so parallel attempts cannot bypass the limit.
     if (await repository.failedLogin(key, now) > 5) throw new AuthError("too_many_requests", "Too many login attempts; retry later")
@@ -46,6 +49,7 @@ export function createAuthenticationService(repository: AuthenticationRepository
   return {
     initialized: () => repository.initialized(), login, authenticate,
     async bootstrap(input: Omit<AccountInput, "kind">) {
+      if (await repository.initialized()) throw new AuthError("conflict", "Initial administrator already exists")
       const account = makeAccount({ ...input, kind: "admin" }), hash = await runtime.hash(requirePassword(input.password))
       return repository.register(account, hash, null)
     },

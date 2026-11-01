@@ -56,3 +56,15 @@ npm run start:service
 账号、成员与工作角色经 identity 模块内部可信用例维护，使用独立目录修订和事务条件更新。初始目录为空；首次管理员引导、人员登录、Agent Token 和 HTTP 逐资源授权尚属 C05–C09，未提供公开管理路由。连接密钥不会自动成为 admin 账号。规则见 ../architecture/identity-permission-matrix.md。
 
 身份升级/竞争/重启测试：`npx vitest run server/identity.test.ts src/modules/identity`。共享回归时排除旧 mcp-server 的 Node test 文件和真实模型测试，CI 已使用同一过滤，避免 Vitest 将 mcp-server 当作 server 目录匹配。
+
+## C05–C09 认证和共享 CLI/MCP
+
+主程序现在必须使用人员会话或 Agent Token，KW_SERVICE_TOKEN 只供首次 admin 初始化，不再授权数据访问。初始化：GET /api/v1/auth/status；POST /auth/bootstrap 使用 X-KW-Setup-Key 和 JSON handle/displayName/password（12–256 字符）。初始化后 POST /auth/login 返回 HttpOnly Cookie；跨域拒绝，Cookie 变更请求需 X-KW-CSRF: 1。生产 HTTPS 请配置 KW_SECURE_COOKIE=1。Web 人员界面在 C10 更新。
+
+admin 可创建 user/agent/admin，项目 manager 可管理成员/角色；Agent 不使用口令。Token API /auth/tokens 使用显式单项目、权限列表、可选工作角色、到期时间，明文只返回一次。部署到环境变量或外部凭据管理器，不放在 URL、命令行参数、笔记、Git 或日志中。完整规则见 ../architecture/server-authorization.md。
+
+共享 CLI：先 npm run build:service，将 KW_API_URL、KW_AGENT_TOKEN 设置在进程环境；通过 stdin 输入 JSON，运行 node dist-service/cli.mjs <项目ID> wiki.read / wiki.write / wiki.list / documents.list / memory.list / search / context.switch。写 Wiki 必须给 expectedRevision（null 表示创建），冲突不自动覆盖。切换返回的上下文 ID 可放在 KW_ACCESS_CONTEXT；凭据仍用 Token，不能用上下文 ID 替代。
+
+共享 MCP：npm --prefix mcp-server ci && npm run mcp:build，再运行 node mcp-server/dist/src/shared.js。同样使用 KW_API_URL、KW_AGENT_TOKEN，可选 KW_PROJECT_ID 固定项目与 KW_ACCESS_CONTEXT。七个工具只调用共享受保护资源 API，角色切换不会修改正在运行的调用。原 mcp-server/dist/src/index.js 继续是旧本机桌面 API 模式，不混用两种数据源或凭据。
+
+端到端 CLI/MCP 验收：node analysis/implementation/smoke-shared-clients.mjs；需要预先构建服务/CLI 与 MCP。无真实模型或用户笔记，不依赖 Tauri。

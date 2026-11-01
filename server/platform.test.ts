@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { AddressInfo } from "node:net"
 import { SqliteRepository } from "./repository"
+import { createAccountAuthentication } from "./auth-http"
 import { createServiceHttp } from "./http"
 import { DiskUploads } from "./uploads"
 import { createWebPlatform } from "@/app/platform/web"
@@ -13,13 +14,16 @@ const cleanup: Array<() => Promise<void>> = [], token = "platform-integration-fi
 async function fixture(maxUploadBytes = 1024) {
   const directory = mkdtempSync(join(tmpdir(), "kw-platform-")), repository = new SqliteRepository(directory)
   const storage = new DiskUploads(directory)
-  const http = createServiceHttp({ repository, token, uploads: storage, maxUploadBytes })
+  const authentication = createAccountAuthentication(repository, token)
+  await authentication.auth.bootstrap({ handle: "admin", displayName: "Admin", password: "Fixture-password-1234" })
+  const cookie = `kw_session=${(await authentication.auth.login("admin", "Fixture-password-1234", "fixture")).secret}`
+  const http = createServiceHttp({ repository, authentication, uploads: storage, maxUploadBytes })
   await new Promise<void>(resolve => http.server.listen(0, "127.0.0.1", resolve))
   const origin = `http://127.0.0.1:${(http.server.address() as AddressInfo).port}`
-  const platform = createWebPlatform(origin, token)
+  const platform = createWebPlatform(origin, "", (input, init) => fetch(input, { ...init, headers: { ...init?.headers, Cookie: cookie } }))
   const project = (await platform.api.createProject("Platform fixture")).data
   cleanup.push(async () => { http.closeStreams(); http.server.closeAllConnections(); await new Promise<void>(resolve => http.server.close(() => resolve())); repository.close(); rmSync(directory, { recursive: true, force: true }) })
-  return { platform, project, storage, request: (path: string, init: RequestInit = {}) => fetch(origin + `/api/v1/projects/${project.id}` + path, { ...init, headers: { Authorization: `Bearer ${token}`, ...init.headers } }) }
+  return { platform, project, storage, request: (path: string, init: RequestInit = {}) => fetch(origin + `/api/v1/projects/${project.id}` + path, { ...init, headers: { Cookie: cookie, "X-KW-CSRF": "1", ...init.headers } }) }
 }
 afterEach(async () => { for (const close of cleanup.splice(0)) await close() })
 it("uploads bytes through the Web adapter with honest received state and downloads the exact content", async () => {

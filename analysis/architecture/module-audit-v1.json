@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 462,
+  "productionFiles": 470,
   "moduleCount": 18,
   "modules": [
     {
@@ -28,7 +28,7 @@
     },
     {
       "id": "cli",
-      "productionFiles": 11,
+      "productionFiles": 12,
       "testFiles": 1,
       "publicEntrypoints": [
         {
@@ -41,7 +41,7 @@
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 4
+          "productionImporters": 5
         }
       ],
       "dependencies": [],
@@ -97,7 +97,7 @@
     },
     {
       "id": "identity",
-      "productionFiles": 15,
+      "productionFiles": 16,
       "testFiles": 2,
       "publicEntrypoints": [
         {
@@ -106,7 +106,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 13
+          "productionImporters": 17
         },
         {
           "path": "application/index.ts",
@@ -143,7 +143,7 @@
     },
     {
       "id": "memory",
-      "productionFiles": 6,
+      "productionFiles": 7,
       "testFiles": 1,
       "publicEntrypoints": [
         {
@@ -152,7 +152,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 3
+          "productionImporters": 4
         },
         {
           "path": "application/index.ts",
@@ -300,7 +300,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 14
+          "productionImporters": 15
         },
         {
           "path": "application/index.ts",
@@ -313,7 +313,7 @@
     },
     {
       "id": "service-api",
-      "productionFiles": 9,
+      "productionFiles": 11,
       "testFiles": 1,
       "publicEntrypoints": [
         {
@@ -322,15 +322,16 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 13
+          "productionImporters": 16
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 7
+          "productionImporters": 9
         }
       ],
       "dependencies": [
         "domains",
+        "identity",
         "memory",
         "wiki"
       ],

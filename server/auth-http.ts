@@ -1,8 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { randomUUID, timingSafeEqual } from "node:crypto"
 import { createAuthenticationService, createIdentityCatalogService, createAgentTokenService, createContextService } from "@/modules/identity/application"
-import { AuthError, globalPermissions, requireContextPermission } from "@/modules/identity/domain"
-import type { AccountInput, SessionIdentity } from "@/modules/identity/domain"
+import { AuthError, globalPermissions, requireContextPermission, identityId } from "@/modules/identity/domain"
+import type { AccountInput, SessionIdentity, MemoryGrant } from "@/modules/identity/domain"
+import type { SharedWorkspace } from "@/modules/service-api/application"
 import type { SqliteRepository } from "./repository"
 import { hashPassword, verifyPassword, secretDigest, opaqueSecret } from "./passwords"
 export type JsonBody = () => Promise<Record<string, unknown>>
@@ -28,7 +29,18 @@ export function createAccountAuthentication(repository: SqliteRepository, bootst
   }
   const requireAdmin = async (request: IncomingMessage) => { const identity = await authenticate(request); if (!globalPermissions(identity.account).includes("accounts.manage")) throw new AuthError("forbidden", "Account administration requires an administrator"); return identity }
   return {
-    auth, catalog, tokens, contexts, authenticate,
+    auth, catalog, tokens, contexts, authenticate, now,
+    async validatePrincipal(principal: SessionIdentity["principal"]) {
+      const account = (await catalog.read()).catalog.accounts.find(account => account.id === principal.accountId && account.status === "active")
+      if (!account) throw new AuthError("unauthenticated", "Account unavailable")
+      if (principal.channel === "session") {
+        const session = await repository.authentication.sessionById(principal.credentialId)
+        if (!session || session.accountId !== principal.accountId || session.revokedAt || Date.parse(session.expiresAt) <= Date.parse(now()) || Date.parse(session.lastSeenAt) + 30 * 60_000 <= Date.parse(now())) throw new AuthError("unauthenticated", "Session expired")
+      } else {
+        const token = (await repository.tokens.tokens()).find(token => token.id === principal.credentialId && token.accountId === principal.accountId)
+        if (!token || token.revokedAt || Date.parse(token.expiresAt) <= Date.parse(now())) throw new AuthError("unauthenticated", "Agent Token expired or revoked")
+      }
+    },
     async access(principal: SessionIdentity["principal"], projectId: string) { return contexts.resolve(principal, projectId) },
     async handle(request: IncomingMessage, response: ServerResponse, pathname: string, json: JsonBody, send: JsonSend) {
       const method = request.method
@@ -87,6 +99,25 @@ export function createAccountAuthentication(repository: SqliteRepository, bootst
             send(200, projectDirectory(updated, projectId)); return true
           }
         }
+      }
+      const memoryGrantRoute = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/memories\/([^/]+)\/grants(?:\/([^/]+))?$/)
+      if (memoryGrantRoute) {
+        const [, projectId, memoryId, grantId] = memoryGrantRoute, identity = await authenticate(request)
+        const access = await contexts.resolve(identity.principal, projectId, request.headers["x-kw-context"] as string | undefined)
+        requireContextPermission(access, "memory.write")
+        const workspace = await repository.get(projectId, "workspace", "default"), memory = (workspace?.data as SharedWorkspace | undefined)?.memories.find(memory => memory.id === memoryId)
+        if (!memory?.access || memory.access.ownerId !== access.actorId || access.actorId !== access.effectiveAccountId) throw new AuthError("forbidden", "Only the actual memory owner may manage private grants")
+        const grants = await repository.memoryGrants.list(projectId)
+        if (method === "GET" && !grantId) { send(200, grants.filter(grant => grant.memoryId === memoryId)); return true }
+        if (method === "POST" && !grantId) {
+          const body = await json(), accountId = identityId(body.accountId), end = Date.parse(body.expiresAt as string)
+          if (!Number.isFinite(end) || end <= Date.parse(now()) || end > Date.parse(now()) + 90 * 24 * 60 * 60_000 || !Array.isArray(body.actions) || !body.actions.length || body.actions.some(action => action !== "read" && action !== "write")) throw new AuthError("invalid_argument", "Choose read/write actions and an expiry within 90 days")
+          const state = await catalog.read()
+          if (!state.catalog.accounts.some(account => account.id === accountId && account.status === "active") || !state.catalog.memberships.some(member => member.projectId === projectId && member.accountId === accountId && member.status === "active")) throw new AuthError("forbidden", "Grant recipient must be an active project member")
+          const grant: MemoryGrant = { id: randomUUID(), projectId, memoryId, ownerId: access.actorId, accountId, actions: [...new Set(body.actions)] as ("read" | "write")[], expiresAt: new Date(end).toISOString(), revokedAt: null }
+          await repository.memoryGrants.save(grant); send(201, grant); return true
+        }
+        if (method === "DELETE" && grantId && grants.some(grant => grant.id === grantId && grant.memoryId === memoryId)) { await repository.memoryGrants.revoke(grantId, now()); send(200, null); return true }
       }
       return false
     },

@@ -8,18 +8,21 @@ export function createAuthenticationRepository(db: DatabaseSync): Authentication
     return { catalog: validateIdentityCatalog(JSON.parse(row.data)), revision: row.revision }
   }
   const transaction = <T>(change: () => T): T => { db.exec("BEGIN IMMEDIATE"); try { const value = change(); db.exec("COMMIT"); return value } catch (error) { db.exec("ROLLBACK"); throw error } }
+  const initialized = () => identities().catalog.accounts.some(account => account.kind === "admin" && !!db.prepare("SELECT 1 FROM passwords WHERE account_id=?").get(account.id))
   return {
     async identities() { return identities() },
-    async initialized() { return identities().catalog.accounts.some(account => account.kind === "admin") },
+    async initialized() { return initialized() },
     async register(account, hash, expectedRevision) {
       return transaction(() => {
         const state = identities()
-        if (expectedRevision === null) { if (state.catalog.accounts.some(account => account.kind === "admin")) throw new AuthError("conflict", "Initial administrator already exists") }
+        if (expectedRevision === null) { if (initialized()) throw new AuthError("conflict", "Initial administrator already exists") }
         else if (!Number.isSafeInteger(expectedRevision) || state.revision !== expectedRevision) throw new IdentityError("conflict", "Identity catalog changed; reload", state.revision)
-        const catalog = validateIdentityCatalog({ ...state.catalog, accounts: [...state.catalog.accounts, account] }), revision = state.revision + 1
+        const legacy = expectedRevision === null ? state.catalog.accounts.find(previous => previous.handle === account.handle && previous.kind === "admin" && previous.status === "active") : undefined
+        const registered = legacy ?? account
+        const catalog = validateIdentityCatalog({ ...state.catalog, accounts: legacy ? state.catalog.accounts : [...state.catalog.accounts, account] }), revision = state.revision + 1
         db.prepare("UPDATE identity_catalog SET data=?,revision=? WHERE id=1").run(JSON.stringify(catalog), revision)
-        if (hash) db.prepare("INSERT INTO passwords(account_id,hash) VALUES(?,?)").run(account.id, hash)
-        return { snapshot: { catalog, revision }, account }
+        if (hash) db.prepare("INSERT INTO passwords(account_id,hash) VALUES(?,?)").run(registered.id, hash)
+        return { snapshot: { catalog, revision }, account: registered }
       })
     },
     async password(handle) {
@@ -28,6 +31,7 @@ export function createAuthenticationRepository(db: DatabaseSync): Authentication
       const row = db.prepare("SELECT hash FROM passwords WHERE account_id=?").get(account.id) as { hash: string } | undefined
       return row ? { account, hash: row.hash } : null
     },
+    async sessionById(id) { const row = db.prepare("SELECT data FROM login_sessions WHERE id=?").get(id) as { data: string } | undefined; return row ? JSON.parse(row.data) as LoginSession : null },
     async session(digest) {
       const row = db.prepare("SELECT data FROM login_sessions WHERE digest=?").get(digest) as { data: string } | undefined
       return row ? JSON.parse(row.data) as LoginSession : null

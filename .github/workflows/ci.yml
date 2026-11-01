@@ -72,6 +72,9 @@ jobs:
           npm --prefix mcp-server ci
           npm run mcp:build
 
+      - name: Check shared CLI and MCP authorization
+        run: node analysis/implementation/smoke-shared-clients.mjs
+
       - name: Check Rust build
         working-directory: src-tauri
         run: cargo build
