@@ -23,6 +23,8 @@ export function createSqliteIdentityRepository(db: DatabaseSync): IdentityReposi
         const next = validateIdentityCatalog(change(current.catalog))
         const serialized = JSON.stringify(next)
         if (serialized === before) { db.exec("COMMIT"); return current }
+        const hasPassword = (id: string) => !!db.prepare("SELECT 1 FROM passwords WHERE account_id=?").get(id)
+        if (current.catalog.accounts.some(account => account.kind === "admin" && account.status === "active" && hasPassword(account.id)) && !next.accounts.some(account => account.kind === "admin" && account.status === "active" && hasPassword(account.id))) throw new IdentityError("last_admin", "The last administrator with a login credential cannot be disabled")
         for (const account of next.accounts) if (account.status === "disabled" && current.catalog.accounts.find(previous => previous.id === account.id)?.status !== "disabled") {
           db.prepare("UPDATE agent_tokens SET data=json_set(data,'$.revokedAt',?) WHERE account_id=?").run(account.updatedAt, account.id)
           db.prepare("UPDATE login_sessions SET data=json_set(data,'$.revokedAt',?) WHERE account_id=?").run(account.updatedAt, account.id)

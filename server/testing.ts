@@ -10,11 +10,13 @@ import { DiskUploads } from "./uploads"
 export const fixturePassword = "Only-for-tests-4917!"
 export async function accountFixture(executions?: ExecutionGateway) {
   const directory = mkdtempSync(join(tmpdir(), "kw-accounts-")), setupKey = "fixture-initialization-key-not-production"
-  let now = "2026-11-01T00:00:00.000Z"
-  const repository = new SqliteRepository(directory), authentication = createAccountAuthentication(repository, setupKey, false, () => now)
-  const http = createServiceHttp({ repository, authentication, executions, uploads: new DiskUploads(directory) })
-  await new Promise<void>(resolve => http.server.listen(0, "127.0.0.1", resolve))
-  const origin = `http://127.0.0.1:${(http.server.address() as AddressInfo).port}`
+  let now = "2026-11-01T00:00:00.000Z", origin = "", repository = new SqliteRepository(directory)
+  let authentication = createAccountAuthentication(repository, setupKey, false, () => now)
+  const makeHttp = () => createServiceHttp({ repository, authentication, executions, uploads: new DiskUploads(directory) })
+  let http = makeHttp()
+  const listen = async () => { await new Promise<void>(resolve => http.server.listen(0, "127.0.0.1", resolve)); origin = `http://127.0.0.1:${(http.server.address() as AddressInfo).port}` }
+  const closeHttp = async () => { http.closeStreams(); http.server.closeAllConnections(); await new Promise<void>(resolve => http.server.close(() => resolve())); repository.close() }
+  await listen()
   const request = (path: string, method = "GET", body?: unknown, cookie = "", extra: Record<string, string> = {}) => fetch(origin + "/api/v1" + path, { method, headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie, "X-KW-CSRF": "1" } : {}), ...extra }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
   const json = async (path: string, method = "GET", body?: unknown, cookie = "", extra: Record<string, string> = {}) => { const response = await request(path, method, body, cookie, extra); return { response, ...(await response.json()) } }
   const bootstrap = async () => json("/auth/bootstrap", "POST", { handle: "admin", displayName: "Admin", password: fixturePassword }, "", { "X-KW-Setup-Key": setupKey })
@@ -25,5 +27,5 @@ export async function accountFixture(executions?: ExecutionGateway) {
     if (result.response.status !== 201) throw new Error("Fixture account creation failed")
     return result.data.catalog.accounts.find((account: { handle: string }) => account.handle === handle)
   }
-  return { repository, authentication, request, json, bootstrap, login, createAccount, origin, setupKey, clock: (value: string) => { now = value }, close: async () => { http.closeStreams(); http.server.closeAllConnections(); await new Promise<void>(resolve => http.server.close(() => resolve())); repository.close(); rmSync(directory, { recursive: true, force: true }) }, directory }
+  return { get repository() { return repository }, get authentication() { return authentication }, get origin() { return origin }, request, json, bootstrap, login, createAccount, setupKey, clock: (value: string) => { now = value }, restart: async () => { await closeHttp(); repository = new SqliteRepository(directory); authentication = createAccountAuthentication(repository, setupKey, false, () => now); http = makeHttp(); await listen() }, close: async () => { await closeHttp(); rmSync(directory, { recursive: true, force: true }) }, directory }
 }

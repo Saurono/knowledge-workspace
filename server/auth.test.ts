@@ -60,6 +60,8 @@ describe("account login and session lifecycle", () => {
     expect((await f.authentication.catalog.read()).catalog.accounts).toHaveLength(1)
     expect((await f.login()).response.status).toBe(200)
     expect((await f.bootstrap()).response.status).toBe(409)
+    const current = await f.authentication.catalog.read(), metadataOnly = await f.authentication.catalog.createAccount(current.revision, { handle: "metadata-admin", displayName: "Metadata only", kind: "admin" }), login = await f.login()
+    expect((await f.request(`/admin/accounts/${id}/status`, "PUT", { revision: metadataOnly.revision, status: "disabled" }, login.cookie)).status).toBe(409)
   })
 
 })

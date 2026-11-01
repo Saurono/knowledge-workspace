@@ -1,7 +1,14 @@
 {
   "id": "identity",
-  "publicEntrypoints": ["index.ts", "domain/index.ts", "application/index.ts"],
+  "publicEntrypoints": [
+    "index.ts",
+    "domain/index.ts",
+    "application/index.ts",
+    "ui/index.ts"
+  ],
   "allowedModuleDependencies": [],
-  "allowedExternalImports": [],
+  "allowedExternalImports": [
+    "react"
+  ],
   "allowedLegacyImports": []
 }

@@ -55,3 +55,11 @@ The service requires Node.js 24; runtime data and service keys are never committ
 The [identity permission matrix](analysis/architecture/identity-permission-matrix.md)
 defines account kinds, project membership ceilings and granted work roles. C04 stores
 this catalog internally; authentication and HTTP authorization remain C05–C09.
+
+C05–C10 now authenticate personnel sessions and scoped Agent Tokens, capture
+credential-bound immutable contexts, and authorize shared resource/execution ports.
+The identity UI and transport-injected SDK are reusable; the Web composition root
+selects them. [Server authorization](analysis/architecture/server-authorization.md)
+and [operations](analysis/implementation/shared-service.md) describe current scope.
+The bootstrap key does not grant data access. SQLite schema 7 adds persistent audit;
+actual shared task/native execution engines remain subsequent H/I work.

@@ -15,13 +15,15 @@ import type { TokenRepository } from "@/modules/identity/application"
 import { createContextRepository } from "./context-store"
 import type { ContextRepository } from "@/modules/identity/application"
 import { createMemoryGrantRepository } from "./memory-grants"
-export const SERVICE_SCHEMA_VERSION = 6
+import { createAuditRepository } from "./audit"
+export const SERVICE_SCHEMA_VERSION = 7
 type Row = Record<string, string | number | null>
 export class SqliteRepository implements SharedRepository {
   private db: DatabaseSync
   readonly identities: IdentityRepository
   readonly authentication: AuthenticationRepository
   readonly tokens: TokenRepository
+  readonly audit: ReturnType<typeof createAuditRepository>
   readonly contexts: ContextRepository
   readonly memoryGrants: ReturnType<typeof createMemoryGrantRepository>
   constructor(directory: string) {
@@ -60,6 +62,10 @@ export class SqliteRepository implements SharedRepository {
       if (version < 6) this.transaction(() => {
         this.db.exec("CREATE TABLE memory_grants(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL); PRAGMA user_version=6;")
       })
+      if (version < 7) this.transaction(() => {
+        this.db.exec("CREATE TABLE audit_log(sequence INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, actor_id TEXT, data TEXT NOT NULL); CREATE INDEX audit_scope ON audit_log(project_id,actor_id,sequence); PRAGMA user_version=7;")
+      })
+      this.audit = createAuditRepository(this.db)
       this.memoryGrants = createMemoryGrantRepository(this.db)
       this.authentication = createAuthenticationRepository(this.db)
       this.tokens = createTokenRepository(this.db, this.authentication)

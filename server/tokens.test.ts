@@ -43,4 +43,18 @@ describe("scoped Agent Tokens", () => {
     await f.authentication.catalog.saveMembership(state.revision, { accountId: f.agent.id, projectId: f.project.id, permissionRole: "editor", status: "revoked", workRoleIds: [] })
     expect((await f.request("/auth/me", "GET", undefined, "", headers)).status).toBe(401)
   })
+  it("limits bearer credential management to itself and cannot turn a temporary Token into a lasting identity delegation", async () => {
+    const f = await fixture(), first = await f.mint(), secondProject = (await f.json("/projects", "POST", { name: "Other" }, f.admin.cookie)).data
+    const state = await f.authentication.catalog.read()
+    await f.authentication.catalog.saveMembership(state.revision, { projectId: secondProject.id, accountId: f.agent.id, permissionRole: "editor", workRoleIds: [] })
+    const second = await f.mint({ projectId: secondProject.id }), headers = { Authorization: `Bearer ${first.data.secret}` }
+    const visible = (await f.json("/auth/tokens", "GET", undefined, "", headers)).data
+    expect(visible.map((token: { id: string }) => token.id)).toEqual([first.data.token.id])
+    expect((await f.request(`/auth/tokens/${second.data.token.id}`, "DELETE", undefined, "", headers)).status).toBe(404)
+    expect((await f.request("/auth/me", "GET", undefined, "", { Authorization: `Bearer ${second.data.secret}` })).status).toBe(200)
+    expect((await f.request(`/projects/${f.project.id}/delegations`, "POST", { granteeId: f.admin.data.account.id, permissions: ["project.read", "wiki.read"], expiresAt: "2026-11-02T00:00:00Z" }, "", headers)).status).toBe(403)
+    expect((await f.request(`/auth/tokens/${first.data.token.id}`, "DELETE", undefined, "", headers)).status).toBe(200)
+    expect((await f.request("/auth/me", "GET", undefined, "", headers)).status).toBe(401)
+  })
+
 })

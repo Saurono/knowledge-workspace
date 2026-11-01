@@ -6,6 +6,7 @@ export interface MemoryLibraryProps {
   memories: MemoryRecord[]
   domains: { id: string; name: string }[]
   loading: boolean
+  readOnly?: boolean
   saving: boolean
   error: string | null
   selected: string | null
@@ -20,6 +21,7 @@ export function MemoryLibrary({
   domains,
   loading,
   saving,
+  readOnly = false,
   error,
   selected,
   onSelect: setSelected,
@@ -32,7 +34,7 @@ export function MemoryLibrary({
   const [query, setQuery] = useState("")
   const [domain, setDomain] = useState("")
   const [draft, setDraft] = useState<MemoryRecord | null>(null)
-  const disabled = loading || saving || !!error
+  const disabled = readOnly || loading || saving || !!error
   const current = draft ?? memories.find((m) => m.id === selected)
   const filtered = memories.filter(
     (m) =>
@@ -42,7 +44,7 @@ export function MemoryLibrary({
         .includes(query.toLocaleLowerCase()),
   )
   const edit = (value: Partial<MemoryRecord>) => {
-    if (current) setDraft({ ...current, ...value })
+    if (current && !readOnly) setDraft({ ...current, ...value })
   }
   return (
     <div className="flex h-full flex-col">

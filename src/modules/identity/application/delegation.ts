@@ -30,6 +30,7 @@ export function createContextService(repository: ContextRepository, runtime: { i
       return (await repository.delegations()).filter(grant => grant.projectId === projectId && (grant.grantorId === principal.accountId || grant.granteeId === principal.accountId))
     },
     async grant(principal: Principal, input: { projectId: string; granteeId: string; workRoleId?: string | null; permissions: ProjectPermission[]; expiresAt: string }) {
+      if (principal.channel !== "session") throw new AuthError("forbidden", "Identity delegation issuance requires an interactive session")
       identityId(input.granteeId)
       const snapshot = await repository.identities(), authority = captureAccessContext(snapshot, principal, input.projectId, runtime, input.workRoleId ?? undefined)
       const recipient = snapshot.catalog.accounts.find(account => account.id === input.granteeId && account.status === "active")

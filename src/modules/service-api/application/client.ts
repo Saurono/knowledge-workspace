@@ -8,8 +8,8 @@ export class ApiClientError extends ServiceError {
   constructor(code: ServiceError["code"], message: string, public readonly status: number, public readonly requestId: string, details?: Record<string, unknown>) { super(code, message, details) }
 }
 export function createSharedClient(transport: ApiTransport) {
-  const request = async <T>(method: string, path: string, body?: unknown, expected?: number | null, signal?: AbortSignal): Promise<ApiSuccess<T>> => {
-    const headers: Record<string, string> = expected === undefined ? {} : expected === null ? { "If-None-Match": "*" } : { "If-Match": `"v${expected}"` }
+  const request = async <T>(method: string, path: string, body?: unknown, expected?: number | null, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<ApiSuccess<T>> => {
+    const headers: Record<string, string> = { ...(expected === undefined ? {} : expected === null ? { "If-None-Match": "*" } : { "If-Match": `"v${expected}"` }), ...extraHeaders }
     const response = await transport.request(method, `/api/v1${path}`, { body, headers, signal })
     const payload = await response.json() as ApiSuccess<T> & ApiFailure
     if (response.status < 200 || response.status >= 300) throw new ApiClientError(payload.error?.code ?? "internal", payload.error?.message ?? "Service request failed", response.status, payload.error?.requestId ?? "", payload.error?.details)

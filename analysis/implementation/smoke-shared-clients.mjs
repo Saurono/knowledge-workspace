@@ -11,7 +11,7 @@ const {Client}=await import(pathToFileURL(resolve('mcp-server/node_modules/@mode
 const {StdioClientTransport}=await import(pathToFileURL(resolve('mcp-server/node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js')).href)
 const pick=createServer(); await new Promise(done=>pick.listen(0,'127.0.0.1',done));const port=pick.address().port;await new Promise(done=>pick.close(done))
 const directory=mkdtempSync(join(tmpdir(),'kw-clients-')),key=randomBytes(32).toString('hex'),password=randomBytes(24).toString('hex'),origin=`http://127.0.0.1:${port}`
-const service=spawn(process.execPath,['dist-service/server.mjs'],{env:{...process.env,KW_SERVICE_TOKEN:key,KW_SERVICE_DATA:directory,KW_SERVICE_PORT:String(port)},stdio:['ignore','pipe','pipe']})
+let service=spawn(process.execPath,['dist-service/server.mjs'],{env:{...process.env,KW_BOOTSTRAP_KEY:key,KW_SERVICE_DATA:directory,KW_SERVICE_PORT:String(port)},stdio:['ignore','pipe','pipe']})
 let cookie='',mcp
 try {
  await new Promise((done,reject)=>{const timer=setTimeout(()=>reject(new Error('Service startup timeout')),15000);service.stdout.on('data',chunk=>{if(String(chunk).includes('listening')){clearTimeout(timer);done()}});service.once('exit',()=>{clearTimeout(timer);reject(new Error('Service exited'))})})
@@ -37,5 +37,13 @@ try {
  const cross=await mcp.callTool({name:'kw_wiki_read',arguments:{projectId:'other',path:'wiki/cli.md'}});assert.equal(cross.isError,true)
  await request('/auth/tokens/'+reader.token.id,'DELETE')
  assert.equal((await mcp.callTool({name:'kw_wiki_read',arguments:{path:'wiki/cli.md'}})).isError,true)
- console.log(JSON.stringify({result:'passed',checks:['real CLI write/read','CLI readonly denial without secret echo','MCP stdio handshake and tools','MCP read/write scope','MCP project pin','revocation while connected']}))
-} finally {await mcp?.close();service.kill('SIGTERM');await new Promise(done=>service.once('exit',done));rmSync(directory,{recursive:true,force:true})}
+ await mcp.close();mcp=undefined
+ service.kill('SIGTERM');await new Promise(done=>service.once('exit',done))
+ const restartedEnv={...process.env,KW_SERVICE_DATA:directory,KW_SERVICE_PORT:String(port)};delete restartedEnv.KW_BOOTSTRAP_KEY;delete restartedEnv.KW_SERVICE_TOKEN
+ service=spawn(process.execPath,['dist-service/server.mjs'],{env:restartedEnv,stdio:['ignore','pipe','pipe']})
+ await new Promise((done,reject)=>{const timer=setTimeout(()=>reject(new Error('Restart without initialization key timed out')),15000);service.stdout.on('data',chunk=>{if(String(chunk).includes('listening')){clearTimeout(timer);done()}});service.once('exit',()=>{clearTimeout(timer);reject(new Error('Restarted service exited'))})})
+ assert.match((await cli(writer.secret,'wiki.read',{path:'wiki/cli.md'})).stdout,/CLI persisted evidence/)
+ const persistedAudit=await request(`/projects/${project.id}/audit?limit=100`)
+ assert.ok(persistedAudit.data.items.some(entry=>entry.action==='POST /api/v1/projects/:id/mcp'))
+ console.log(JSON.stringify({result:'passed',checks:['real CLI write/read','CLI readonly denial without secret echo','MCP stdio handshake and tools','MCP read/write scope','MCP project pin','revocation while connected','service restart without bootstrap key','session Token content and audit persistence']}))
+} finally {await mcp?.close();service.kill('SIGTERM');await new Promise(done=>{if(service.exitCode!==null||service.signalCode!==null)done();else service.once('exit',done)});rmSync(directory,{recursive:true,force:true})}

@@ -11,7 +11,7 @@ export function createAgentTokenService(repository: TokenRepository, runtime: { 
   const list = async (actor: Principal) => {
     const catalog = (await repository.identities()).catalog, account = catalog.accounts.find(account => account.id === actor.accountId && account.status === "active")
     if (!account) throw new AuthError("unauthenticated", "Account unavailable")
-    return (await repository.tokens()).filter(token => account.kind === "admin" || token.issuerId === actor.accountId || token.accountId === actor.accountId)
+    return (await repository.tokens()).filter(token => actor.channel === "token" ? token.id === actor.credentialId && token.accountId === actor.accountId && token.projectId === actor.scope?.projectId : account.kind === "admin" || token.issuerId === actor.accountId || token.accountId === actor.accountId)
   }
   return {
     async list(actor: Principal) { return (await list(actor)).map(publicAgentToken) },

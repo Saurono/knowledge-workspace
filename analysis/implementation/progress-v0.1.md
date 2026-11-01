@@ -1,5 +1,7 @@
 # 第一批实现进度
 
+> 本文为首批历史记录。当前 C01–C10 已完成，独立 Web/共享账号与服务端授权已落地；最新范围以根目录 TASKS、HANDOFF 和 [共享服务手册](shared-service.md) 为准。以下“尚未完成”仅指首批时点。
+
 日期：2026-10-31（Asia/Shanghai）<br>
 工作分支：`codex/knowledge-workspace-v0.1`<br>
 基线：上游 v0.6.13。目标需求见 ../target/requirements-v0.2.md。

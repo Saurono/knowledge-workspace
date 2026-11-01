@@ -1,6 +1,6 @@
 # LLM Wiki
 
-> Fork development: see [modular architecture](ARCHITECTURE.md) and [implementation progress](analysis/implementation/progress-v0.1.md).
+> Fork development: C01–C10 shared Web/service and identity foundation completed. See [setup and CLI/MCP guide](analysis/implementation/shared-service.md), [task status](TASKS.md), and [modular architecture](ARCHITECTURE.md). Desktop independent mode remains available; shared execution engines and the final memory workflow are subsequent work.
 
 <p align="center">
   <img src="logo.jpg" width="128" height="128" style="border-radius: 22%;" alt="LLM Wiki Logo">

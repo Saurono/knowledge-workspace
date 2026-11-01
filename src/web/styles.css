@@ -8,3 +8,8 @@ html, body, #root { height: 100%; margin: 0; }
 .web-workspace label { font-size: 13px; display: grid; gap: 7px; }
 .web-workspace .error { border: 1px solid #9a5f2c; color: #f6cfa4; border-radius: 8px; padding: 12px; font-size: 13px; }
 .web-workspace .muted { color: var(--muted-foreground); font-size: 13px; }
+
+.web-workspace input[type=checkbox] { width: 15px; height: 15px; accent-color: #6b91d4; }
+.web-workspace label.flex { display: flex; }
+.web-workspace th { color: var(--muted-foreground); font-weight: 500; }
+.web-workspace td { overflow-wrap: anywhere; }

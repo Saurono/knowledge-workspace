@@ -7,6 +7,7 @@ export interface DomainTagEditorProps {
   resourcePath?: string
   error: string | null
   loading: boolean
+  readOnly?: boolean
   saving: boolean
   onRetry: () => void
   onAdd: (tag: { id: string; name: string }) => Promise<boolean>
@@ -20,6 +21,7 @@ export function DomainTagEditor({
   error,
   loading,
   saving,
+  readOnly = false,
   onRetry,
   onAdd,
   onRemove,
@@ -46,7 +48,7 @@ export function DomainTagEditor({
                 type="checkbox"
                 aria-label={domain.name}
                 checked={selected.includes(domain.id)}
-                disabled={loading || saving || !!error}
+                disabled={readOnly || loading || saving || !!error}
                 onChange={() => void onToggle(resourcePath, domain.id)}
               />
             )}
@@ -54,7 +56,7 @@ export function DomainTagEditor({
             {!resourcePath && (
               <button
                 aria-label={`${t("workspace.delete")} ${domain.name}`}
-                disabled={loading || saving || !!error}
+                disabled={readOnly || loading || saving || !!error}
                 onClick={() => void onRemove(domain.id)}
               >
                 ×
@@ -85,7 +87,7 @@ export function DomainTagEditor({
           className="min-w-0 flex-1 rounded border bg-background px-2 py-1"
         />
         <button
-          disabled={!name.trim() || loading || saving || !!error}
+          disabled={!name.trim() || readOnly || loading || saving || !!error}
           className="rounded border px-2 disabled:opacity-40"
         >
           {t("workspace.add")}

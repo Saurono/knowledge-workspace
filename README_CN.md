@@ -1,5 +1,7 @@
 # LLM Wiki
 
+> 本仓库改造进度：C01–C10 已完成，提供共享 Web/服务、人员登录、Agent Token、角色委托与服务端授权。请先读[启动与 CLI/MCP 手册](analysis/implementation/shared-service.md)、[任务清单](TASKS.md)和[模块架构](ARCHITECTURE.md)。完整记忆业务与共享执行器仍在后续任务中。
+
 <p align="center">
   <img src="logo.jpg" width="128" height="128" style="border-radius: 22%;" alt="LLM Wiki Logo">
 </p>

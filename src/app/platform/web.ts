@@ -1,3 +1,4 @@
+import { createIdentityClient } from "@/modules/identity/application"
 import { createSharedClient, ApiClientError } from "@/modules/service-api/application"
 import type { ReceivedDocument } from "@/modules/service-api/application"
 import type { ApiSuccess, ResourceRecord, ProjectEvent, ApiFailure } from "@/modules/service-api/domain"
@@ -9,15 +10,16 @@ const pause = (signal: AbortSignal) => new Promise<void>(resolve => {
   signal.addEventListener("abort", finish, { once: true })
   if (signal.aborted) finish()
 })
-export function createWebPlatform(baseUrl: string, token = "", transport: typeof fetch = fetch) {
+export function createWebPlatform(baseUrl: string, token = "", transport: typeof fetch = fetch, contextId?: string) {
   const base = new URL(baseUrl)
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash || base.pathname !== "/") throw new Error("Use the service origin as the connection address")
   const origin = base.origin
-  const send = (path: string, init: RequestInit = {}) => transport(origin + path, { ...init, redirect: "error", credentials: token ? "omit" : "same-origin", headers: { "X-KW-CSRF": "1", ...init.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } })
+  const send = (path: string, init: RequestInit = {}) => transport(origin + path, { ...init, redirect: "error", credentials: token ? "omit" : "same-origin", headers: { "X-KW-CSRF": "1", ...(contextId ? { "X-KW-Context": contextId } : {}), ...init.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } })
   const api = createSharedClient({ request: (method, path, options) => send(path, { method, signal: options.signal, headers: { "Content-Type": "application/json", ...options.headers }, ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }) }) })
   const unsupported = () => Promise.reject(new CapabilityError("unsupported", "This Web connection does not have a local machine bridge"))
   return {
     api,
+    identity: createIdentityClient({ request: async <T>(method: string, path: string, body?: unknown, headers?: Record<string, string>) => (await api.request<T>(method, path, body, undefined, undefined, headers)).data }),
     capabilities: Object.freeze({ localFiles: false, watcher: false, shell: false, vault: false, upload: true, events: true }),
     readLocal: unsupported, shell: unsupported, configureVault: unsupported,
     async upload(projectId: string, file: File, signal?: AbortSignal): Promise<ApiSuccess<ResourceRecord<ReceivedDocument>>> {

@@ -1,3 +1,4 @@
+import { auditAction } from "./audit"
 import { serveWeb } from "./static"
 import { streamProjectEvents } from "./events"
 import { createServer } from "node:http"
@@ -9,7 +10,7 @@ import type { SqliteRepository } from "./repository"
 import { resourceTool, keywordSearch, executionPermission } from "./resource-tools"
 import type { ExecutionGateway } from "./resource-tools"
 import { AuthError, IdentityError, globalPermissions, requireContextPermission } from "@/modules/identity/domain"
-import type { ProjectPermission } from "@/modules/identity/domain"
+import type { ProjectPermission, SessionIdentity, AccessContext } from "@/modules/identity/domain"
 import type { AccountAuthentication } from "./auth-http"
 export interface ServiceOptions { repository: SqliteRepository; authentication: AccountAuthentication; executions?: ExecutionGateway; maxJsonBytes?: number; uploads?: UploadStorage; maxUploadBytes?: number; webRoot?: string }
 export function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
@@ -32,6 +33,16 @@ export function createServiceHttp(options: ServiceOptions) {
   const streams = new Set<() => void>()
   const handler = async (request: IncomingMessage, response: ServerResponse) => {
     const requestId = randomUUID()
+    let auditIdentity: SessionIdentity | undefined, auditContext: AccessContext | undefined, auditSequence: number | undefined, auditProject: string | null = null
+    const observe = (identity: SessionIdentity, context?: AccessContext) => { auditIdentity = identity; if (context) { auditContext = context; auditProject = context.projectId } }
+    let recorded = false
+    const record = () => {
+      if (recorded || auditSequence === undefined) return
+      recorded = true
+      try { options.repository.audit.finish(auditSequence, { actorId: auditIdentity?.account.id ?? null, effectiveAccountId: auditContext?.effectiveAccountId ?? auditIdentity?.account.id ?? null, projectId: auditProject, workRoleId: auditContext?.workRoleId ?? null, contextId: auditContext?.id ?? null, credentialId: auditIdentity?.principal.credentialId || null, status: response.writableFinished ? response.statusCode : null, result: !response.writableFinished ? "failed" : [401, 403].includes(response.statusCode) ? "denied" : response.statusCode < 400 ? "allowed" : "failed" }) }
+      catch { console.error("Audit completion failed; request start retained") }
+    }
+    response.once("finish", record); response.once("close", record)
     response.setHeader("X-Request-Id", requestId); response.setHeader("Cache-Control", "no-store"); response.setHeader("X-Content-Type-Options", "nosniff")
     const send = (status: number, data: unknown, nextCursor?: string | null) => {
       response.writeHead(status, { "Content-Type": "application/json; charset=utf-8" })
@@ -52,13 +63,18 @@ export function createServiceHttp(options: ServiceOptions) {
       if (method === "GET" && url.pathname === "/api/v1/health") return send(200, { apiVersion: API_VERSION, authentication: "accounts", accountLogin: true, capabilities: { uploads: uploadsEnabled, events: true, localBridge: false } })
       if (!url.pathname.startsWith("/api/") && method === "GET" && options.webRoot && await serveWeb(options.webRoot, url.pathname, response)) return
       if (!url.pathname.startsWith("/api/v1/")) throw new ServiceError("not_found", "Route not found")
+      auditSequence = options.repository.audit.start({ requestId, recordedAt: options.authentication.now(), action: auditAction(method, url.pathname), result: "pending", status: null, actorId: null, effectiveAccountId: null, projectId: null, workRoleId: null, contextId: null, credentialId: null })
+      const projectHint = url.pathname.match(/^\/api\/v1\/projects\/([A-Za-z0-9_-]{1,128})(?:\/|$)/)?.[1]
+      if (projectHint && await options.repository.project(projectHint)) auditProject = projectHint
+      try { if (request.headers.cookie || request.headers.authorization) observe(await options.authentication.authenticate(request)) } catch { /* Record invalid attempts without trusting an identity. */ }
       const origin = request.headers.origin
       if (origin && origin !== `http://${request.headers.host}` && origin !== `https://${request.headers.host}`) throw new ServiceError("forbidden", "Cross-origin access is not enabled")
       if (!["GET", "HEAD"].includes(method) && request.headers.cookie && request.headers["x-kw-csrf"] !== "1") throw new ServiceError("forbidden", "A same-origin mutation header is required")
-      if (await options.authentication.handle(request, response, url.pathname, json, send)) return
+      if (await options.authentication.handle(request, response, url.pathname, json, send, observe)) return
       const identity = await options.authentication.authenticate(request), principal = identity.principal
+      observe(identity)
       const selectedContext = url.pathname === "/api/v1/projects" ? undefined : request.headers["x-kw-context"] as string | undefined
-      const access = async (project: string) => { await options.authentication.validatePrincipal(principal); return options.authentication.contexts.resolve(principal, project, selectedContext) }
+      const access = async (project: string) => { await options.authentication.validatePrincipal(principal); const context = await options.authentication.contexts.resolve(principal, project, selectedContext); if (url.pathname !== "/api/v1/projects") observe(identity, context); return context }
       const guarded = createAuthorizedRepository(options.repository, access, id => options.repository.memoryGrants.list(id), options.authentication.now)
       const service = createSharedService(guarded, { id: randomUUID, now: options.authentication.now })
       const receiver = options.uploads ? createDocumentReceiver(guarded, options.uploads, { id: randomUUID, now: options.authentication.now, hash: bytes => createHash("sha256").update(bytes).digest("hex") }) : null
@@ -67,7 +83,7 @@ export function createServiceHttp(options: ServiceOptions) {
         if (method === "POST") {
           if (!globalPermissions(identity.account).includes("projects.create")) throw new ServiceError("forbidden", "Project creation is not authorized")
           const ownerService = createSharedService({ ...guarded, createProject: (project, initial) => options.repository.createProject(project, initial, identity.account.id) }, { id: randomUUID, now: options.authentication.now })
-          return send(201, await ownerService.createProject((await json()).name))
+          const project = await ownerService.createProject((await json()).name); auditProject = project.id; return send(201, project)
         }
       }
       const route = url.pathname.match(/^\/api\/v1\/projects\/([^/]+)(?:\/(.*))?$/)

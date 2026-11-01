@@ -1,0 +1,2 @@
+export interface AuditEntry { sequence: number; requestId: string; recordedAt: string; action: string; result: "pending" | "allowed" | "denied" | "failed"; status: number | null; actorId: string | null; effectiveAccountId: string | null; projectId: string | null; workRoleId: string | null; contextId: string | null; credentialId: string | null }
+export interface AuditPage { items: AuditEntry[]; nextCursor: number | null }
