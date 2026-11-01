@@ -11,3 +11,6 @@
 C03 已接入文档接收、受认证 SSE 和独立 Web 静态入口。上传只保存服务生成 ID 下的独立二进制和 received 元数据；元数据失败时清理对应二进制，目录 ID 重用不能覆盖旧上传。断线按持久序号恢复。SQLite 与文件写入不是跨介质事务，进程在文件落地后、元数据提交前崩溃可能留下孤立二进制，恢复清理仍需后续工作，不能据此伪报入库完成。
 
 C05–C10 已替换早期部署连接密钥模式：HTTP 必须使用人员会话或范围受限的 Agent Token。authorized-repository 在资源/上传/检索/事件/CLI/MCP/任务网关重查权限，私有/角色记忆会过滤并在局部保存时保留隐藏记录。初始化密钥仅供首次管理员设置，当前操作以 analysis/implementation/shared-service.md 为准。以上 C02/C03 段落保留作演进说明，不代表当前仍开放服务密钥访问数据。
+# D01 文档摄取状态
+
+真实文件上传会在文档资源中随接收元数据保存初始 ingestion 检查点，`sourceIngestedAt` 仍为空。`GET /api/v1/projects/:id/documents/:documentId/ingestion` 使用 documents.read 返回检查点、资源 revision 和结论，并通过 ETag 暴露资源版本。该端点只读；客户端不能自行报告解析、编译、索引或回传成功。旧 received 文档仅在接收元数据可靠时兼容为初始状态，损坏检查点不会被覆盖。

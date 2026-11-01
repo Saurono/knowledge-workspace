@@ -1,0 +1,4 @@
+
+> llm-wiki@0.6.13 typecheck
+> tsc --build --pretty
+

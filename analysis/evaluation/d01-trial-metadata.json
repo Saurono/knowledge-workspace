@@ -1,0 +1,116 @@
+{
+  "baseline_commit": "f4c9bb2",
+  "product_model_requested": "gpt-6-luna",
+  "control_model": "inherited_primary_model",
+  "control_checkout": "isolated worktree",
+  "common_brief": "analysis/evaluation/d01-trial-brief.md",
+  "started_at": "2026-11-01T10:03:19.461466+00:00",
+  "measurement_note": "No per-agent billing usage is exposed by available collaboration tools. Never substitute output-text estimates for actual consumption.",
+  "scope": "D01 only; no D02 or actual external executors",
+  "first_snapshots_frozen_at": "2026-11-01T10:13:37.249518+00:00",
+  "initial_patches_sha256": {
+    "luna": "9300e5dd5d68925197025c26c2c2e7ba9476aa48b2c8230f4c0bac069c220b3d",
+    "primary_control": "1efa4ed601e93c9b0bbc3579da8fea873265e21069f294b8a72c073dd4da41f8"
+  },
+  "metering_availability": {
+    "collaboration_usage": false,
+    "current_session_usage_logs": false,
+    "actual_billable_input_output_cache_reasoning_tokens": null
+  },
+  "normalization": "Control-only node_modules symlink removed from patch; no implementation code removed.",
+  "initial_acceptance": {
+    "contract_cases": 15,
+    "additional_hardening_cases": 1,
+    "luna": {
+      "contract_passed": 11,
+      "contract_failed": 4,
+      "hardening_passed": 0,
+      "hardening_failed": 1
+    },
+    "primary_control": {
+      "contract_passed": 15,
+      "contract_failed": 0,
+      "hardening_passed": 1,
+      "hardening_failed": 0
+    }
+  },
+  "source_evidence_times": {
+    "luna_first_checkpoint_file_created_at": "2026-11-01T10:04:06.134086Z",
+    "luna_last_self_check_log_updated_at": "2026-11-01T10:09:02.726894Z",
+    "primary_first_checkpoint_file_created_at": "2026-11-01T10:04:37.282588Z",
+    "primary_author_reported_completed_at": "2026-11-01T10:08:41Z",
+    "note": "Visible filesystem/self-report intervals, not model inference time; prompt preparation began before generation."
+  },
+  "final_product_acceptance": {
+    "contract_passed": 15,
+    "contract_cases": 15,
+    "additional_hardening_passed": 1,
+    "additional_hardening_cases": 1
+  },
+  "acceptance_source_sha256": "9ec9465267957dd7c8f52f70cdda9099103c1d3f124e2c2ddb0904bf884eed75",
+  "product_review_repair_rounds": 2,
+  "actual_model_usage": {
+    "luna_product": {
+      "input": null,
+      "output": null,
+      "reasoning": null,
+      "cache": null,
+      "total": null
+    },
+    "primary_control": {
+      "input": null,
+      "output": null,
+      "reasoning": null,
+      "cache": null,
+      "total": null
+    },
+    "luna_independent_checks": {
+      "input": null,
+      "output": null,
+      "reasoning": null,
+      "cache": null,
+      "total": null
+    },
+    "primary_orchestration_review": {
+      "input": null,
+      "output": null,
+      "reasoning": null,
+      "cache": null,
+      "total": null
+    }
+  },
+  "usage_note": "Available tools provide no billable usage or hidden reasoning/cache counters. o200k_base counts are visible-code-text proxies only; no cost-saving claim is supported.",
+  "independently_replayed_initial_typecheck": {
+    "luna": "passed",
+    "primary_control": "failed_TS2352_in_late_added_test"
+  },
+  "reviewed_patch_sha256": {
+    "luna": "e746b56518fe486133777b462fa96f35aef7de55ec04574cfe162ab1081607fd",
+    "primary_control": "e5a9c7f47e931a9530889790987dbdf2d7fa2430a3f7e5b8923140d2c22f98ab"
+  },
+  "scope_comparison_note": "Reviewed snapshots apply the same main review checklist. Product snapshot additionally includes CI wiring and real SDK assertion; text counts are not cumulative generation or billing.",
+  "reviewed_control_acceptance": {
+    "contract_passed": 15,
+    "additional_hardening_passed": 1,
+    "typecheck": "passed"
+  },
+  "tokenizer_package": {
+    "name": "gpt-tokenizer",
+    "version": "4.1.0",
+    "encoding": "o200k_base",
+    "installed_outside_project": true
+  },
+  "final_product_validation": {
+    "test_files": 194,
+    "tests_passed": 2313,
+    "ci_target_files": 20,
+    "ci_target_tests": 98,
+    "browser_groups_passed": 12,
+    "browser_page_errors": 0,
+    "cli_mcp_groups_passed": 8,
+    "modules": 18,
+    "production_source_files": 480
+  },
+  "handoff_requested": true,
+  "new_session_tool_status": "Codex app list_projects failed: connection closed before server request was answered; no new thread created"
+}

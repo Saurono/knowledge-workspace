@@ -1,0 +1,81 @@
+{
+  "metadata": {
+    "measure": "visible_text_proxy_not_billing_usage",
+    "tokenizer": "o200k_base BPE",
+    "source": "patch added text and shared brief",
+    "actualInputTokens": null,
+    "actualOutputTokens": null,
+    "actualReasoningTokens": null,
+    "actualCacheTokens": null
+  },
+  "luna": {
+    "wholePatch": {
+      "o200kBaseBpeTokens": 16996,
+      "utf8Bytes": 64599
+    },
+    "addedLinesByCategory": {
+      "implementation": {
+        "o200kBaseBpeTokens": 5716,
+        "utf8Bytes": 23865,
+        "addedLines": 239
+      },
+      "tests": {
+        "o200kBaseBpeTokens": 5473,
+        "utf8Bytes": 19714,
+        "addedLines": 230
+      },
+      "documentation": {
+        "o200kBaseBpeTokens": 912,
+        "utf8Bytes": 3640,
+        "addedLines": 22
+      },
+      "audit": {
+        "o200kBaseBpeTokens": 56,
+        "utf8Bytes": 204,
+        "addedLines": 7
+      },
+      "other": {
+        "o200kBaseBpeTokens": 57,
+        "utf8Bytes": 228,
+        "addedLines": 1
+      }
+    }
+  },
+  "control": {
+    "wholePatch": {
+      "o200kBaseBpeTokens": 14745,
+      "utf8Bytes": 55437
+    },
+    "addedLinesByCategory": {
+      "implementation": {
+        "o200kBaseBpeTokens": 4672,
+        "utf8Bytes": 18533,
+        "addedLines": 220
+      },
+      "tests": {
+        "o200kBaseBpeTokens": 5445,
+        "utf8Bytes": 20621,
+        "addedLines": 250
+      },
+      "documentation": {
+        "o200kBaseBpeTokens": 1260,
+        "utf8Bytes": 5181,
+        "addedLines": 37
+      },
+      "audit": {
+        "o200kBaseBpeTokens": 65,
+        "utf8Bytes": 239,
+        "addedLines": 8
+      },
+      "other": {
+        "o200kBaseBpeTokens": 0,
+        "utf8Bytes": 0,
+        "addedLines": 0
+      }
+    }
+  },
+  "sharedBrief": {
+    "o200kBaseBpeTokens": 1776,
+    "utf8Bytes": 7293
+  }
+}

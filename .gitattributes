@@ -1,0 +1,3 @@
+# Preserve literal diff/test evidence; production source whitespace stays checked.
+analysis/evaluation/artifacts/*.patch -whitespace
+analysis/evaluation/artifacts/*.txt -whitespace

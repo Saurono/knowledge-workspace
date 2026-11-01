@@ -1,12 +1,12 @@
 # 新会话交接
 
-> 当前状态：用户要求 C 系列全部完成，本轮 C05–C10 已逐项完成，C01–C10 全部勾选。当前无进行中的 C 项；下一阶段从 D01 开始，尚未启动。不要按旧“停在 C04”状态恢复。
+> 当前状态：C01–C10、D01 已完成。用户要求完成当前节点后移交新会话；本会话停在 D01 收尾，不进入 D02。新会话从 D02 开始，继续主控拆分/调度/审查、Luna 编码。
 
 ## 工作约定
 
 1. 先读本文件、TASKS、WORKLOG、ARCHITECTURE，检查真实 Git 状态/日志，不假设旧端口或进程仍在。
 2. 每项完成需勾选 TASKS、追加 WORKLOG（实现/验证/限制）、更新交接、提交并推送，不能只勾选。
-3. 用户本轮授权仅为完成整个 C 系列；已完成后结束，不自动扩展到 D/F/H/I。新指令继续时从 D01 的入库阶段/可恢复状态开始。
+3. 本轮 D01 试运行与报告已完成，不自动进入 D02。继续指令从 D02 开始，默认仍由主控调度/审查、Luna 编码。对照只为评估，不能把对照 patch 混入产品。
 4. 业务归独立模块，经公开入口和端口组合。领域不依赖 React/Tauri/Store；server/app 不绕过模块公开接口。
 5. 源文件清单/依赖/公开契约变更后运行 audit:modules 并提交报告。所有后续仓库默认公开，不提交真实笔记、凭据或私人数据。
 
@@ -82,3 +82,20 @@ Node.js 24，npm ci；可选共享 MCP 先 npm --prefix mcp-server ci。npm run 
 - 上传只报告 received，sourceIngestedAt=null；跨介质崩溃可遗留孤立文件，D/J 补恢复去重。最终共享执行器/持久任务、完整来源 MCP、最终记忆分类/星图未冒充 C 系列已完成。
 
 复核：check:modules、audit:modules:check、typecheck、test:mocks、mcp:test、build、build:preview、build:shared。端到端脚本为 analysis/implementation/smoke-shared-web.mjs 与 smoke-shared-clients.mjs，均用临时数据及随机凭据并清理；Playwright/Chromium 路径以当前环境为准，不依赖 /tmp 工具必然存在。
+
+## D01 / L039 最新交付与试运行
+
+- 五阶段 checkpoint、显式状态/证据/attempt、不可变转换、阶段/时间/计数校验、独立重试及显式中断恢复；并非自动执行调度器。
+- 文档 JSON 新增兼容可选 ingestion，上传初始只确认 receive；索引默认 required、无回传配置才 disabled/skipped。SDK documentIngestion 与受 documents.read 保护的只读 GET /projects/:id/documents/:doc/ingestion 返回 revision/checkpoint/summary 和 ETag；无客户端自行标成功的写接口。
+- 生命周期通过仓储端口和显式 revision 更新；server 适配保留元数据，保护已有接收证据/policy/创建时间，拒绝损坏/跨归属/时间回退及不可靠 legacy 数据，不重置损坏状态；沿用 SQLite 资源+事件原子性，schema 仍为 7。
+- 最终验证：194 文件/2313 测试通过，CI 同口径20文件/98项通过；类型、18模块/480生产源文件审计及 Web/服务/CLI/桌面前端/预览构建通过，浏览器12组页面异常0、CLI/MCP8组链路通过。新阶段的故障/成功是规则和注入验证，不冒充真实模型/索引/Vault 执行器。
+- 评估报告 analysis/evaluation/d01-luna-trial-report.md；共同任务书、16项独立验收、两组首版与审查后patch/日志、文本计量脚本和JSON均在 analysis/evaluation。基线 f4c9bb2，实际产品代码由 gpt-6-luna 生成；主控模型仅在隔离目录做对照。
+- 首版合同验收：Luna11/15、对照15/15；额外硬化0/1与1/1。独立重放类型检查则Luna通过、对照首版失败；不能只信代理自测声明。审查后双方16/16并类型通过；产品两轮功能返修后交付。
+- 真实input/output/reasoning/cache/total Tokens均未由工具暴露，不可给实际费用或节省率。o200k_base可见实现+测试文本：首版Luna7217/对照8443，审查后11189/10117；只是快照文字，非累计生成量或计费。测量依赖在项目外安装，通过D01_TOKENIZER_MODULE配置，不依赖临时路径永久存在。
+- D02稳定来源/版本/幂等，D04全入口时间，D05实际索引，D06回执及H/I执行器未完成。用户最终记忆分类、真实模型/Vault/原生验证仍待后续。试验不会自动推进D02。
+
+## 新会话启动指令
+
+继续 knowledge-workspace：先读取 HANDOFF.md、TASKS.md、WORKLOG.md、ARCHITECTURE.md 和 analysis/evaluation/d01-luna-trial-report.md，检查真实 Git 状态/日志及 origin/codex/knowledge-workspace-v0.1。D01 已完成，接续 D02（来源稳定ID、内容修订、任务幂等，避免重复导入/重试/移动重建）。由主控拆分/调度/审查及验收，Luna（gpt-6-luna）生成代码与测试；本次对照模型生成仅是已结束的试验，不改变默认分工。每项完成更新任务/日志/交接并提交推送；未获真实 usage 时不得给虚构 Token/费用。先限定 D02 的验收边界，不扩大到未授权的整个 D 系列。
+
+本轮保留了 /tmp/kw-d01-control、/tmp/kw-d01-initial-luna、/tmp/kw-d01-initial-primary 三个隔离实验 worktree，仅供核查；它们不是产品工作目录，数据已归档到评估 artifacts，不应在新会话继续编码或并入产品。计量依赖和 /tmp 日志可能消失，优先使用已提交报告与快照。跨会话工具 list_projects 当前连接失败，未声称已自动创建新会话。

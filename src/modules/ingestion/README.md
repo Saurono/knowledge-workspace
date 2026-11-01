@@ -5,6 +5,8 @@
 - `application/queue.ts`：`createIngestQueue(ports)`，每个实例独立拥有调度、恢复、并发、暂停/取消、重试、订阅与持久化写入串行状态。
 - `application/queue-ports.ts`：快照仓储、项目路径、模型、执行器、懒加载清理/审阅、时钟和调度接口。
 - `application/commit-coordinator.ts`：按任务启动顺序分配提交回合，准备阶段仍可并行。
+- `domain/checkpoint.ts`：五阶段检查点纯协议、运行时验证、恢复和结论汇总。
+- `application/lifecycle.ts`：带显式资源 revision 的检查点读写服务；并发冲突交由仓储拒绝。
 
 公开入口和依赖见 `module.json`。领域层无业务/平台依赖；应用层只依赖 tasks 的公开契约，不读取旧 store、Tauri 或文件系统。
 
@@ -19,6 +21,10 @@ B08c3：`lib/ingest.ts` 在队列提交回合内通过 `app/wiki/commit` 获取�
 旧 `lib/ingest-queue.ts` 和 `lib/ingest-commit-coordinator.ts` 仅重导出兼容入口。现有调用者和原回归测试不需要更换导入路径。
 
 ## 状态与数据规则
+
+- D01 的接收、解析、编译、索引、回传检查点使用独立协议；上传只记录真实接收证据，解析/编译/索引/回传需要各自可信执行器提供证据后才可成功。
+- 恢复会把遗留 running 标为 blocked/interrupted，重试保留阶段历史 attempt 计数并分配新 attemptId；旧结果不能提交。
+- disabled 的索引和回传记为 skipped；只有编译成功才表示内容可用，只有索引成功或明确 disabled 才表示知识可检索。回传关闭不算回传成功。
 
 - 恢复中每个异步边界检查 restore epoch；旧项目或同项目旧恢复结果不能覆盖新队列。
 - 活动队列在入列时捕获不可变 JSON 快照，按原先顺序串行写；后台非活动项目写入也保持串行和错误恢复。

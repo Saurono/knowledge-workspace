@@ -1,0 +1,714 @@
+diff --git a/analysis/architecture/ingestion-checkpoints.md b/analysis/architecture/ingestion-checkpoints.md
+new file mode 100644
+index 0000000..c1f1fa5
+--- /dev/null
++++ b/analysis/architecture/ingestion-checkpoints.md
+@@ -0,0 +1,25 @@
++# D01 文档入库检查点
++
++五阶段按 receive → parse → compile → index → feedback 顺序依赖。接收成功只证明二进制已写入并发布文档元数据，sourceIngestedAt 仍为 null。初始 parse/compile/index 待处理；索引默认 required；当前上传入口没有回传配置，所以明确采用 feedback disabled。调用方创建协议快照时可声明 required feedback 或 disabled index。
++
++## 完成边界
++
++每阶段有独立状态、递增 attempt、调用方注入的 attemptId/时间、证据引用和结构化可行动错误。成功必须有证据；只有明确 disabled 的 index/feedback 可以 skipped。contentReady 只由 compile 成功得出；knowledgeReady 还要求 index 成功或明确 disabled；feedbackDelivered 只由 feedback 成功得出。complete 还要求 required feedback 成功。后续阶段失败不撤销上游证据，也不会被报告为全成功。running 展示 processing；已有编译内容而后续未完成展示 partial。
++
++领域纯函数不调用当前时钟、随机数或 I/O，返回独立嵌套快照。validateCheckpoint 验证标识、ISO 时间、完整阶段、状态字段、依赖和时间顺序。证据仅存资源引用，错误用于指导恢复；执行器不得把正文、口令或 Token 写入其中。
++
++## 恢复、并发和兼容
++
++begin 只开始已满足依赖的 pending；finish 必须匹配 running 的 attempt 和 attemptId；retry 只将失败、阻塞或取消阶段重置待处理，保留尝试计数和上游成功。recover 将遗留 running 变为 blocked/interrupted；必须 retry/begin 后新尝试才可提交。无 running 的 recover 保持快照和版本不变。
++
++createIngestionLifecycleService 使用显式 expectedRevision；read 验证归属，变更时不通过重新读取偷偷替换预期版本。createDocumentCheckpointRepository 仅使用注入的 SharedRepository，保存完整 document 的未知字段与上传元数据，并以 document 资源 revision 做 CAS。资源和事件继续沿用 SQLite 的既有同事务保存，不新增表。失败保留旧状态；跨项目/文档快照被拒绝。受保护的仓储端口在读写时仍执行授权。
++
++旧文档只有 received、可靠的 id/sourceId、接收时间、文件名、媒体类型、正数大小、SHA-256 以及 sourceIngestedAt:null 才生成保守接收快照；只读查询不写回。已有但损坏的检查点报错并保持原样，不使用旧 done 或其他时间戳推断成功。
++
++GET /api/v1/projects/:id/documents/:documentId/ingestion 使用现有人/Agent 身份和 documents.read，返回 revision、checkpoint、summary，ETag 为 document 版本。SDK 方法为 documentIngestion(projectId,documentId)。没有可供客户端标记成功的变更 HTTP 路由。
++
++## 后续范围
++
++本协议不提供真实解析、模型编译、索引、Vault 回传执行器或调度，不改变桌面队列 done 语义。不实现去重、来源修订、来源时间入口迁移或统一任务页。执行器后续必须提供可信证据并尊重尝试及条件版本；该协议本身不能验证外部证据资源是否确实存在。
++
++审查补齐：生命周期应用入口公开独立的结构化错误及正安全整数 revision 校验。仓储禁止替换 receive 的既有证据，保留原 policy/createdAt 并禁止 updatedAt 回退。旧元数据还必须具备原上传入口的 NFC/trim 文件名、不含路径或控制字符、合法 MIME、正安全整数大小、64 位十六进制摘要及有效接收时间；损坏数据在读写时均拒绝。
+diff --git a/analysis/architecture/module-audit-v1.json b/analysis/architecture/module-audit-v1.json
+index 65b046e..f0ea7b1 100644
+--- a/analysis/architecture/module-audit-v1.json
++++ b/analysis/architecture/module-audit-v1.json
+@@ -1,7 +1,7 @@
+ {
+   "schemaVersion": 1,
+   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
+-  "productionFiles": 477,
++  "productionFiles": 480,
+   "moduleCount": 18,
+   "modules": [
+     {
+@@ -125,8 +125,8 @@
+     },
+     {
+       "id": "ingestion",
+-      "productionFiles": 10,
+-      "testFiles": 3,
++      "productionFiles": 12,
++      "testFiles": 5,
+       "publicEntrypoints": [
+         {
+           "path": "index.ts",
+@@ -134,11 +134,11 @@
+         },
+         {
+           "path": "domain/index.ts",
+-          "productionImporters": 4
++          "productionImporters": 9
+         },
+         {
+           "path": "application/index.ts",
+-          "productionImporters": 6
++          "productionImporters": 7
+         }
+       ],
+       "dependencies": [
+@@ -328,16 +328,17 @@
+         },
+         {
+           "path": "domain/index.ts",
+-          "productionImporters": 16
++          "productionImporters": 17
+         },
+         {
+           "path": "application/index.ts",
+-          "productionImporters": 9
++          "productionImporters": 10
+         }
+       ],
+       "dependencies": [
+         "domains",
+         "identity",
++        "ingestion",
+         "memory",
+         "wiki"
+       ],
+diff --git a/server/http.ts b/server/http.ts
+index 57b0d6d..a7f1d0d 100644
+--- a/server/http.ts
++++ b/server/http.ts
+@@ -1,3 +1,5 @@
++import { createDocumentCheckpointRepository } from "./ingestion-checkpoints"
++import { summarizeIngestion } from "@/modules/ingestion/domain"
+ import { auditAction } from "./audit"
+ import { serveWeb } from "./static"
+ import { streamProjectEvents } from "./events"
+@@ -135,6 +137,15 @@ export function createServiceHttp(options: ServiceOptions) {
+         const bytes = await readBody(request, options.maxUploadBytes ?? 16 * 1024 * 1024)
+         return send(201, await receiver.receive(id, name, String(request.headers["content-type"] ?? "application/octet-stream").split(";")[0], bytes))
+       }
++      const ingestion = part?.match(/^documents\/([^/]+)\/ingestion$/)
++      if (ingestion && method === "GET") {
++        let documentId: string
++        try { documentId = decodeURIComponent(ingestion[1]) } catch { throw new ServiceError("invalid_argument", "Invalid document identifier") }
++        const snapshot = await createDocumentCheckpointRepository(guarded).read(id, documentId)
++        if (!snapshot) throw new ServiceError("not_found", "Document not found")
++        response.setHeader("ETag", etag(snapshot.revision))
++        return send(200, { ...snapshot, summary: summarizeIngestion(snapshot.checkpoint) })
++      }
+       const document = part?.match(/^documents\/([^/]+)\/content$/)
+       if (document && method === "GET") {
+         await service.project(id)
+diff --git a/server/ingestion-checkpoints.test.ts b/server/ingestion-checkpoints.test.ts
+new file mode 100644
+index 0000000..c75ae3c
+--- /dev/null
++++ b/server/ingestion-checkpoints.test.ts
+@@ -0,0 +1,153 @@
++import { afterEach, it, expect } from "vitest"
++import { mkdtempSync, rmSync } from "node:fs"
++import { tmpdir } from "node:os"
++import { join } from "node:path"
++import type { AddressInfo } from "node:net"
++import { SqliteRepository } from "./repository"
++import { createDocumentCheckpointRepository } from "./ingestion-checkpoints"
++import { createIngestionLifecycleService } from "@/modules/ingestion/application"
++import { createServiceHttp } from "./http"
++import { createAccountAuthentication } from "./auth-http"
++import { DiskUploads } from "./uploads"
++import type { AccessContext } from "@/modules/identity/domain"
++import { createAuthorizedRepository, createSharedClient } from "@/modules/service-api/application"
++const now = "2026-11-01T12:00:00.000Z"
++const cleanups: Array<() => Promise<void>> = []
++afterEach(async () => { for (const c of cleanups.splice(0)) await c() })
++async function fixture() {
++  const directory = mkdtempSync(join(tmpdir(), "d01-control-"))
++  let repo = new SqliteRepository(directory)
++  const auth = createAccountAuthentication(repo, "fixture-key"), uploads = new DiskUploads(directory)
++  await auth.auth.bootstrap({ handle: "admin", displayName: "Admin", password: "Fixture-password-1234" })
++  const cookie = `kw_session=${(await auth.auth.login("admin", "Fixture-password-1234", "fixture")).secret}`
++  const http = createServiceHttp({ repository: repo, authentication: auth, uploads })
++  await new Promise<void>(resolve => http.server.listen(0, "127.0.0.1", resolve))
++  const url = `http://127.0.0.1:${(http.server.address() as AddressInfo).port}/api/v1`
++  const request = (path: string, options: RequestInit = {}) => fetch(url + path, { ...options, headers: { Cookie: cookie, "X-KW-CSRF": "1", "Content-Type": "application/json", ...options.headers } })
++  const project = (await (await request("/projects", { method: "POST", body: JSON.stringify({ name: "D01" }) })).json()).data.id as string
++  const response = await request(`/projects/${project}/documents`, { method: "POST", headers: { "X-File-Name": "note.md", "Content-Type": "text/markdown" }, body: "Uploaded content" })
++  expect(response.status).toBe(201)
++  const uploaded = (await response.json()).data
++  cleanups.push(async () => { http.server.closeAllConnections(); await new Promise<void>(r => http.server.close(() => r())); repo.close(); rmSync(directory, { recursive: true, force: true }) })
++  return { project, uploaded, repo, auth, request, url, cookie, directory, reopen: () => { repo.close(); repo = new SqliteRepository(directory); return repo } }
++}
++it("persists initial upload and serves protected read-only summaries with document ETag and SDK", async () => {
++  const f = await fixture(), path = `/projects/${f.project}/documents/${f.uploaded.key}/ingestion`
++  expect(f.uploaded.data.sourceIngestedAt).toBeNull()
++  expect(f.uploaded.data.ingestionCheckpoint.stages.receive.status).toBe("succeeded")
++  const read = await f.request(path), payload = (await read.json()).data
++  expect(read.headers.get("etag")).toBe('"v1"')
++  expect(payload.summary).toMatchObject({ status: "received", complete: false, knowledgeReady: false })
++  expect((await fetch(f.url + path)).status).toBe(401)
++  expect((await f.request(path, { method: "POST", body: "{}" })).status).toBe(404)
++  const sdk = createSharedClient({ request: (method, path, options) => fetch(f.url.replace(/\/api\/v1$/, "") + path, { method, headers: { Cookie: f.cookie, ...options.headers } }) })
++  expect((await sdk.documentIngestion(f.project, f.uploaded.key)).data).toEqual(payload)
++})
++it("conditional competing updates commit once, preserve metadata/events, reopen and recover without extra no-op revision", async () => {
++  const f = await fixture(), adapter = createDocumentCheckpointRepository(f.repo), life = createIngestionLifecycleService(adapter), d = f.uploaded.key
++  const attempts = await Promise.allSettled(["a", "b"].map(attemptId => life.begin(f.project, d, 1, "parse", { now, attemptId })))
++  expect(attempts.filter(x => x.status === "fulfilled")).toHaveLength(1)
++  expect((await f.repo.get(f.project, "document", d))?.data).toMatchObject({ name: "note.md", sha256: f.uploaded.data.sha256 })
++  expect((await f.repo.events(f.project, 0, 100)).filter(e => e.resource.kind === "document")).toHaveLength(2)
++  const reopened = f.reopen(), recoveredLife = createIngestionLifecycleService(createDocumentCheckpointRepository(reopened))
++  expect((await recoveredLife.read(f.project, d))?.checkpoint.stages.parse.status).toBe("running")
++  const recovered = await recoveredLife.recover(f.project, d, 2, now)
++  expect(recovered.checkpoint.stages.parse.error?.code).toBe("interrupted")
++  expect((await recoveredLife.recover(f.project, d, 3, now)).revision).toBe(3)
++  await expect(recoveredLife.finish(f.project, d, 3, "parse", { now, attempt: 1, attemptId: "a", outcome: "succeeded", evidence: ["ref"] })).rejects.toThrow()
++})
++it("never resets corrupt existing checkpoints; legacy receipts remain conservative and metadata survives", async () => {
++  const f = await fixture(), d = f.uploaded.key, adapter = createDocumentCheckpointRepository(f.repo)
++  const legacy = { ...f.uploaded.data, extra: { preserved: true } }; delete legacy.ingestionCheckpoint
++  await f.repo.save(f.project, "document", d, legacy, 1, now)
++  const read = await adapter.read(f.project, d)
++  expect(read?.checkpoint.stages.compile.status).toBe("pending")
++  expect((await f.repo.get(f.project, "document", d))?.revision).toBe(2)
++  const life = createIngestionLifecycleService(adapter)
++  await life.begin(f.project, d, 2, "parse", { now, attemptId: "legacy" })
++  expect((await f.repo.get(f.project, "document", d))?.data).toMatchObject({ extra: { preserved: true } })
++  const corrupt = { ...legacy, ingestionCheckpoint: { schemaVersion: 1, broken: true } }
++  await f.repo.save(f.project, "document", d, corrupt, 3, now)
++  await expect(adapter.read(f.project, d)).rejects.toThrow()
++  await expect(life.recover(f.project, d, 4, now)).rejects.toThrow()
++  expect((await f.repo.get(f.project, "document", d))?.revision).toBe(4)
++  await f.repo.save(f.project, "document", "unreliable", { ...legacy, id: "unreliable", sourceId: "unreliable", sha256: "bad" }, null, now)
++  await expect(adapter.read(f.project, "unreliable")).rejects.toThrow()
++})
++it("allows document-read Token scope, denies missing scope and cross-project requests", async () => {
++  const f = await fixture(), path = `/projects/${f.project}/documents/${f.uploaded.key}/ingestion`
++  const catalogState = await f.auth.catalog.read()
++  const agentResponse = await f.request("/admin/accounts", { method: "POST", body: JSON.stringify({ revision: catalogState.revision, handle: "robot", displayName: "Robot", kind: "agent", password: "Fixture-password-1234" }) })
++  expect(agentResponse.status).toBe(201)
++  const agent = (await agentResponse.json()).data.catalog.accounts.find((a: { handle: string }) => a.handle === "robot")
++  const state = await f.auth.catalog.read()
++  await f.auth.catalog.saveMembership(state.revision, { accountId: agent.id, projectId: f.project, permissionRole: "viewer", workRoleIds: [] })
++  const mint = async (permissions: string[]) => {
++    const r = await f.request("/auth/tokens", { method: "POST", body: JSON.stringify({ accountId: agent.id, projectId: f.project, workRoleId: null, permissions, label: "D01 reader", expiresAt: "2026-11-02T00:00:00Z" }) })
++    expect(r.status).toBe(201); return (await r.json()).data.secret as string
++  }
++  const token = await mint(["project.read", "documents.read"])
++  const tokenRequest = (path: string, secret = token, method = "GET") => fetch(f.url + path, { method, headers: { Authorization: `Bearer ${secret}` } })
++  expect((await tokenRequest(path)).status).toBe(200)
++  expect((await tokenRequest(path, await mint(["project.read"]))).status).toBe(403)
++  expect((await tokenRequest(path, token, "POST")).status).toBe(403)
++  const other = (await (await f.request("/projects", { method: "POST", body: JSON.stringify({ name: "Other" }) })).json()).data.id
++  expect((await tokenRequest(`/projects/${other}/documents/${f.uploaded.key}/ingestion`)).status).toBe(403)
++  expect((await f.request(`/projects/${other}/documents/${f.uploaded.key}/ingestion`)).status).toBe(404)
++  const adapter = createDocumentCheckpointRepository(f.repo), c = f.uploaded.data.ingestionCheckpoint
++  await expect(adapter.save(f.project, f.uploaded.key, 1, { ...c, projectId: other })).rejects.toThrow()
++  expect((await f.repo.get(f.project, "document", f.uploaded.key))?.revision).toBe(1)
++})
++
++it("preserves supplied repository authorization for checkpoint writes", async () => {
++  const f = await fixture()
++  const context: AccessContext = { id: "read-only-context", actorId: "reader", effectiveAccountId: "reader", projectId: f.project,
++    workRoleId: null, credential: { channel: "session", id: "fixture-session" }, permissions: ["documents.read"],
++    basis: { membershipId: "fixture-membership", catalogRevision: 1, tokenId: null, delegationId: null }, capturedAt: now }
++  const guarded = createAuthorizedRepository(f.repo, async () => context, async () => [], () => now)
++  const adapter = createDocumentCheckpointRepository(guarded)
++  const snapshot = await adapter.read(f.project, f.uploaded.key)
++  expect(snapshot?.revision).toBe(1)
++  await expect(adapter.save(f.project, f.uploaded.key, 1, snapshot!.checkpoint)).rejects.toMatchObject({ code: "forbidden" })
++  expect((await f.repo.get(f.project, "document", f.uploaded.key))?.revision).toBe(1)
++})
++it("protects received evidence and existing checkpoint history without writing a new revision", async () => {
++  const f = await fixture(), adapter = createDocumentCheckpointRepository(f.repo), d = f.uploaded.key
++  const snapshot = (await adapter.read(f.project, d))!
++  const mutations = [
++    (c: typeof snapshot.checkpoint) => { c.stages.receive.evidence = ["blob:replacement"] },
++    (c: typeof snapshot.checkpoint) => { c.policy.index = "disabled"; c.stages.index.status = "skipped" },
++    (c: typeof snapshot.checkpoint) => { c.createdAt = "2026-01-01T00:00:00Z"; c.stages.receive.startedAt = c.createdAt; c.stages.receive.finishedAt = c.createdAt },
++  ]
++  for (const mutate of mutations) {
++    const c = structuredClone(snapshot.checkpoint); mutate(c)
++    await expect(adapter.save(f.project, d, 1, c)).rejects.toMatchObject({ code: "invalid_argument" })
++  }
++  expect((await adapter.read(f.project, d))?.revision).toBe(1)
++})
++it("rejects malformed legacy metadata on both reads and writes and preserves damaged records", async () => {
++  const f = await fixture(), adapter = createDocumentCheckpointRepository(f.repo), d = f.uploaded.key
++  const valid = { ...f.uploaded.data }; delete valid.ingestionCheckpoint
++  const invalid = [
++    { sourceId: "another-document" }, { size: 0 }, { size: 1.5 }, { size: Number.MAX_SAFE_INTEGER + 1 }, { sha256: "0".repeat(63) }, { sha256: "z".repeat(64) },
++    { name: " " }, { name: " note.md" }, { name: "e\u0301.md" }, { name: "../note.md" }, { name: "dir\\note.md" }, { name: "note\u0000.md" }, { name: "note\u007f.md" }, { name: "." },
++    { mediaType: "" }, { mediaType: "text" }, { mediaType: "text/plain\nheader: value" }, { receivedAt: "2026-02-30T00:00:00Z" },
++  ]
++  let revision = 1
++  for (const damage of invalid) {
++    await f.repo.save(f.project, "document", d, { ...valid, ...damage }, revision++, now)
++    await expect(adapter.read(f.project, d)).rejects.toThrow()
++    await expect(adapter.save(f.project, d, revision, f.uploaded.data.ingestionCheckpoint)).rejects.toThrow()
++    expect((await f.repo.get(f.project, "document", d))?.revision).toBe(revision)
++  }
++  await f.repo.save(f.project, "document", d, { ...valid, sha256: valid.sha256.toUpperCase() }, revision++, now)
++  expect((await adapter.read(f.project, d))?.checkpoint.stages.parse.status).toBe("pending")
++})
++it("maps malformed project and document percent encoding to invalid_argument", async () => {
++  const f = await fixture()
++  for (const path of [`/projects/${f.project}/documents/%ZZ/ingestion`, `/projects/${f.project}/documents/%E0%A4/ingestion`, "/projects/%ZZ/documents/doc/ingestion"]) {
++    const response = await f.request(path)
++    expect(response.status).toBe(400)
++    expect((await response.json()).error.code).toBe("invalid_argument")
++  }
++})
+diff --git a/server/ingestion-checkpoints.ts b/server/ingestion-checkpoints.ts
+new file mode 100644
+index 0000000..99faae0
+--- /dev/null
++++ b/server/ingestion-checkpoints.ts
+@@ -0,0 +1,49 @@
++import { createReceivedCheckpoint, validateCheckpoint } from "@/modules/ingestion/domain"
++import type { IngestionCheckpointV1 } from "@/modules/ingestion/domain"
++import type { IngestionCheckpointRepository } from "@/modules/ingestion/application"
++import type { SharedRepository } from "@/modules/service-api/application"
++import { ServiceError, requireId } from "@/modules/service-api/domain"
++/** Uses the supplied port throughout, including its authorization and CAS checks. */
++export function createDocumentCheckpointRepository(shared: SharedRepository): IngestionCheckpointRepository {
++  const record = async (p: string, d: string) => {
++    requireId(p); requireId(d)
++    const value = await shared.get(p, "document", d)
++    if (value && (value.projectId !== p || value.key !== d || value.kind !== "document")) throw new ServiceError("internal", "Document ownership mismatch")
++    return value
++  }
++  const checkpoint = (data: unknown, p: string, d: string): IngestionCheckpointV1 => {
++    if (!data || typeof data !== "object" || Array.isArray(data)) throw new ServiceError("internal", "Invalid document metadata")
++    const value = data as Record<string, unknown>
++    let c: IngestionCheckpointV1
++    if (Object.prototype.hasOwnProperty.call(value, "ingestionCheckpoint")) c = validateCheckpoint(value.ingestionCheckpoint)
++    else {
++      // These fields were written only after binary storage completed in the old receiver.
++      const validName = typeof value.name === "string" && value.name === value.name.normalize("NFC").trim()
++        && value.name.length > 0 && value.name.length <= 255 && !/[/\\\x00-\x1f\x7f]/.test(value.name) && ![".", ".."].includes(value.name)
++      const validMediaType = typeof value.mediaType === "string" && /^[A-Za-z0-9!#$%&'*+.^_`|~-]+\/[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(value.mediaType)
++      const validDigest = typeof value.sha256 === "string" && /^[a-f0-9]{64}$/i.test(value.sha256)
++      if (value.id !== d || value.sourceId !== d || value.status !== "received" || value.sourceIngestedAt !== null
++        || !validName || !validMediaType || !validDigest || !Number.isSafeInteger(value.size) || Number(value.size) <= 0
++        || typeof value.receivedAt !== "string") throw new ServiceError("internal", "Reliable receipt metadata required for legacy document")
++      c = createReceivedCheckpoint({ projectId: p, documentId: d, receivedAt: value.receivedAt, artifactRef: `document:${p}/${d}/source` })
++    }
++    if (c.projectId !== p || c.documentId !== d) throw new ServiceError("internal", "Checkpoint ownership mismatch")
++    if (value.id !== undefined && value.id !== d) throw new ServiceError("internal", "Document metadata ownership mismatch")
++    return c
++  }
++  return {
++    async read(p, d) { const r = await record(p, d); return r ? { revision: r.revision, checkpoint: checkpoint(r.data, p, d) } : null },
++    async save(p, d, expectedRevision, input) {
++      const c = validateCheckpoint(input)
++      if (c.projectId !== p || c.documentId !== d) throw new ServiceError("invalid_argument", "Checkpoint ownership mismatch")
++      const r = await record(p, d)
++      if (!r) throw new ServiceError("not_found", "Document not found")
++      const previous = checkpoint(r.data, p, d)
++      if (r.revision !== expectedRevision) throw new ServiceError("conflict", "Document changed; reload before merging")
++      if (Date.parse(c.updatedAt) < Date.parse(previous.updatedAt) || c.createdAt !== previous.createdAt || c.policy.index !== previous.policy.index || c.policy.feedback !== previous.policy.feedback) throw new ServiceError("invalid_argument", "Checkpoint history mismatch")
++      if (c.stages.receive.evidence.length !== previous.stages.receive.evidence.length || c.stages.receive.evidence.some((ref, i) => ref !== previous.stages.receive.evidence[i])) throw new ServiceError("invalid_argument", "Received artifact evidence is immutable")
++      const saved = await shared.save(p, "document", d, { ...r.data as Record<string, unknown>, ingestionCheckpoint: c }, expectedRevision, c.updatedAt)
++      return { revision: saved.revision, checkpoint: checkpoint(saved.data, p, d) }
++    },
++  }
++}
+diff --git a/src/modules/ingestion/README.md b/src/modules/ingestion/README.md
+index 1a63682..4e63e58 100644
+--- a/src/modules/ingestion/README.md
++++ b/src/modules/ingestion/README.md
+@@ -31,3 +31,9 @@ B08c3：`lib/ingest.ts` 在队列提交回合内通过 `app/wiki/commit` 获取
+ ## 验证
+ 
+ 运行模块边界、类型、队列/执行器契约测试、旧队列单元与真实 FS 集成、提交顺序测试。独立队列测试只注入内存仓储与可控时钟，不模拟 Tauri，也不加载应用 Store。
++
++## D01 共享文档检查点
++
++`domain/checkpoint.ts` 公开五阶段 v1 协议、运行时校验、不可变迁移和完成摘要；`application/lifecycle.ts` 公开 `IngestionCheckpointRepository` 与 `createIngestionLifecycleService`，变更显式传入预期 revision。时间和尝试标识由调用者注入，恢复不会伪造外部执行成功。共享 document 适配位于 server/ingestion-checkpoints.ts。它与旧桌面队列快照独立，不改变旧 done 含义。完整完成边界见 analysis/architecture/ingestion-checkpoints.md。
++
++生命周期公开 `IngestionLifecycleError`（`invalid_argument` / `not_found` / `conflict`），不依赖 service-api；读取及变更均校验正安全整数 revision，非法预期版本在访问仓储前拒绝。
+diff --git a/src/modules/ingestion/application/index.ts b/src/modules/ingestion/application/index.ts
+index a97d09f..5444422 100644
+--- a/src/modules/ingestion/application/index.ts
++++ b/src/modules/ingestion/application/index.ts
+@@ -4,3 +4,4 @@ export { createIngestQueue } from "./queue"
+ export type { IngestQueue } from "./queue"
+ export { IngestCommitCoordinator } from "./commit-coordinator"
+ export type { IngestQueuePorts, QueueSnapshotRepository, QueueClock } from "./queue-ports"
++export * from "./lifecycle"
+diff --git a/src/modules/ingestion/application/lifecycle.test.ts b/src/modules/ingestion/application/lifecycle.test.ts
+new file mode 100644
+index 0000000..fd0310c
+--- /dev/null
++++ b/src/modules/ingestion/application/lifecycle.test.ts
+@@ -0,0 +1,34 @@
++import { expect, it, vi } from "vitest"
++import { createReceivedCheckpoint } from "../domain"
++import { createIngestionLifecycleService } from "./lifecycle"
++const now = "2026-01-01T00:00:00Z"
++const checkpoint = () => createReceivedCheckpoint({ projectId: "p", documentId: "d", receivedAt: now, artifactRef: "blob:d" })
++it("checks ownership and expected revision before save, propagates failed persistence, avoids no-op versions", async () => {
++  const stored = { revision: 1, checkpoint: checkpoint() }, original = structuredClone(stored), failure = new Error("CAS failed")
++  const save = vi.fn(async () => { throw failure }), read = vi.fn(async () => stored)
++  const service = createIngestionLifecycleService({ read, save })
++  await expect(service.begin("other", "d", 1, "parse", { now, attemptId: "a" })).rejects.toThrow("ownership")
++  await expect(service.begin("p", "d", 2, "parse", { now, attemptId: "a" })).rejects.toThrow("revision")
++  expect(save).not.toHaveBeenCalled()
++  await expect(service.begin("p", "d", 1, "parse", { now, attemptId: "a" })).rejects.toBe(failure)
++  expect(stored).toEqual(original)
++  expect(await service.recover("p", "d", 1, now)).toBe(stored)
++  expect(save).toHaveBeenCalledOnce()
++})
++it("exposes structured lifecycle failures and rejects invalid revisions before persistence", async () => {
++  const save = vi.fn(), stored = { revision: 1, checkpoint: checkpoint() }
++  const read = vi.fn(async () => stored)
++  const service = createIngestionLifecycleService({ read, save })
++  for (const revision of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
++    await expect(service.begin("p", "d", revision, "parse", { now, attemptId: "a" })).rejects.toMatchObject({ name: "IngestionLifecycleError", code: "invalid_argument" })
++  }
++  expect(read).not.toHaveBeenCalled()
++  await expect(service.begin("p", "d", 2, "parse", { now, attemptId: "a" })).rejects.toMatchObject({ code: "conflict" })
++  await expect(service.begin("p", "d", 1, "compile", { now, attemptId: "a" })).rejects.toMatchObject({ code: "invalid_argument" })
++  await expect(createIngestionLifecycleService({ read: async () => null, save }).retry("p", "d", 1, "parse", now)).rejects.toMatchObject({ code: "not_found" })
++  for (const revision of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
++    await expect(createIngestionLifecycleService({ read: async () => ({ ...stored, revision }), save }).read("p", "d")).rejects.toMatchObject({ code: "invalid_argument" })
++  }
++  await expect(service.read("../p", "d")).rejects.toMatchObject({ code: "invalid_argument" })
++  expect(save).not.toHaveBeenCalled()
++})
+diff --git a/src/modules/ingestion/application/lifecycle.ts b/src/modules/ingestion/application/lifecycle.ts
+new file mode 100644
+index 0000000..6f2c56e
+--- /dev/null
++++ b/src/modules/ingestion/application/lifecycle.ts
+@@ -0,0 +1,49 @@
++import { beginStage, finishStage, retryStage, recoverInterrupted, validateCheckpoint } from "../domain"
++import type { IngestionCheckpointV1, IngestionStage, FinishStageInput } from "../domain"
++export type IngestionLifecycleErrorCode = "invalid_argument" | "not_found" | "conflict"
++export class IngestionLifecycleError extends Error {
++  constructor(public readonly code: IngestionLifecycleErrorCode, message: string) { super(message); this.name = "IngestionLifecycleError" }
++}
++function requireRevision(revision: number) {
++  if (!Number.isSafeInteger(revision) || revision < 1) throw new IngestionLifecycleError("invalid_argument", "Checkpoint revision must be a positive safe integer")
++}
++function requireIdentity(projectId: string, documentId: string) {
++  if (![projectId, documentId].every(id => typeof id === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(id))) throw new IngestionLifecycleError("invalid_argument", "Invalid checkpoint identity")
++}
++function validateRule<T>(rule: () => T): T {
++  try { return rule() }
++  catch (error) { throw new IngestionLifecycleError("invalid_argument", error instanceof Error ? error.message : "Invalid checkpoint operation") }
++}
++export interface CheckpointSnapshot { revision: number; checkpoint: IngestionCheckpointV1 }
++export interface IngestionCheckpointRepository {
++  read(projectId: string, documentId: string): Promise<CheckpointSnapshot | null>
++  save(projectId: string, documentId: string, expectedRevision: number, checkpoint: IngestionCheckpointV1): Promise<CheckpointSnapshot>
++}
++export function createIngestionLifecycleService(repository: IngestionCheckpointRepository) {
++  const read = async (projectId: string, documentId: string) => {
++    requireIdentity(projectId, documentId)
++    const result = await repository.read(projectId, documentId)
++    if (result) {
++      requireRevision(result.revision)
++      validateRule(() => validateCheckpoint(result.checkpoint))
++      if (result.checkpoint.projectId !== projectId || result.checkpoint.documentId !== documentId) throw new IngestionLifecycleError("invalid_argument", "Checkpoint ownership mismatch")
++    }
++    return result
++  }
++  const mutate = async (projectId: string, documentId: string, expectedRevision: number, rule: (c: IngestionCheckpointV1) => IngestionCheckpointV1) => {
++    requireRevision(expectedRevision)
++    const current = await read(projectId, documentId)
++    if (!current) throw new IngestionLifecycleError("not_found", "Checkpoint not found")
++    if (current.revision !== expectedRevision) throw new IngestionLifecycleError("conflict", "Checkpoint revision conflict")
++    const next = validateRule(() => rule(current.checkpoint))
++    if (next === current.checkpoint) return current
++    return repository.save(projectId, documentId, expectedRevision, next)
++  }
++  return {
++    read,
++    begin: (p: string, d: string, revision: number, stage: IngestionStage, input: { attemptId: string; now: string }) => mutate(p, d, revision, c => beginStage(c, stage, input)),
++    finish: (p: string, d: string, revision: number, stage: IngestionStage, input: FinishStageInput) => mutate(p, d, revision, c => finishStage(c, stage, input)),
++    retry: (p: string, d: string, revision: number, stage: IngestionStage, now: string) => mutate(p, d, revision, c => retryStage(c, stage, now)),
++    recover: (p: string, d: string, revision: number, now: string) => mutate(p, d, revision, c => recoverInterrupted(c, now)),
++  }
++}
+diff --git a/src/modules/ingestion/domain/checkpoint.test.ts b/src/modules/ingestion/domain/checkpoint.test.ts
+new file mode 100644
+index 0000000..e18825d
+--- /dev/null
++++ b/src/modules/ingestion/domain/checkpoint.test.ts
+@@ -0,0 +1,62 @@
++import { describe, it, expect } from "vitest"
++import { createReceivedCheckpoint, beginStage, finishStage, retryStage, recoverInterrupted, summarizeIngestion, validateCheckpoint } from "./checkpoint"
++import type { IngestionCheckpointV1, IngestionStage } from "./checkpoint"
++const now = "2026-01-01T00:00:00.000Z"
++const initial = (indexPolicy: "required" | "disabled" = "required", feedbackPolicy: "required" | "disabled" = "disabled") => createReceivedCheckpoint({ projectId: "project", documentId: "doc", receivedAt: now, artifactRef: "blob:doc", indexPolicy, feedbackPolicy })
++function success(c: IngestionCheckpointV1, stage: IngestionStage) { const running = beginStage(c, stage, { now, attemptId: stage }); return finishStage(running, stage, { now, attemptId: stage, attempt: running.stages[stage].attempt, outcome: "succeeded", evidence: [`artifact:${stage}`] }) }
++const compiled = (feedback: "required" | "disabled" = "disabled") => success(success(initial("required", feedback), "parse"), "compile")
++describe("checkpoint protocol", () => {
++  it("starts received, completes legal stages with evidence and keeps input immutable", () => {
++    const c = initial(), original = structuredClone(c)
++    expect(summarizeIngestion(c)).toEqual({ status: "received", contentReady: false, knowledgeReady: false, feedbackDelivered: false, complete: false })
++    const ready = success(success(success(c, "parse"), "compile"), "index")
++    expect(summarizeIngestion(ready)).toMatchObject({ status: "ready", complete: true, feedbackDelivered: false })
++    expect(c).toEqual(original)
++    ready.stages.receive.evidence.push("another")
++    expect(c).toEqual(original)
++  })
++  it("requires real required feedback and supports explicitly disabled optional stages", () => {
++    const c = success(compiled("required"), "index")
++    expect(summarizeIngestion(c)).toMatchObject({ status: "partial", knowledgeReady: true, complete: false })
++    expect(summarizeIngestion(success(c, "feedback"))).toMatchObject({ status: "ready", feedbackDelivered: true, complete: true })
++    const disabled = success(success(initial("disabled"), "parse"), "compile")
++    expect(summarizeIngestion(disabled).complete).toBe(true)
++    expect(() => retryStage(disabled, "index", now)).toThrow()
++  })
++  it.each(["index", "feedback"] as const)("preserves upstream results when %s fails and retries", stage => {
++    const c = stage === "index" ? compiled() : success(compiled("required"), "index")
++    const running = beginStage(c, stage, { now, attemptId: "first" })
++    const failed = finishStage(running, stage, { now, attempt: 1, attemptId: "first", outcome: "failed", error: { code: "unavailable", message: "Retry the configured provider" } })
++    expect(summarizeIngestion(failed)).toMatchObject({ status: "partial", contentReady: true, knowledgeReady: stage === "feedback", complete: false })
++    const retried = retryStage(failed, stage, now)
++    expect(retried.stages.compile).toEqual(c.stages.compile)
++    expect(summarizeIngestion(success(retried, stage)).complete).toBe(true)
++  })
++  it.each(["cancelled", "blocked"] as const)("rejects late results after %s and after retry", outcome => {
++    const running = beginStage(initial(), "parse", { now, attemptId: "old" })
++    const ended = finishStage(running, "parse", { now, attempt: 1, attemptId: "old", outcome, error: { code: outcome, message: "Retry explicitly" } })
++    const result = { now, attempt: 1, attemptId: "old", outcome: "succeeded" as const, evidence: ["ref"] }
++    expect(() => finishStage(ended, "parse", result)).toThrow()
++    const restarted = beginStage(retryStage(ended, "parse", now), "parse", { now, attemptId: "new" })
++    expect(restarted.stages.parse.attempt).toBe(2)
++    expect(() => finishStage(restarted, "parse", result)).toThrow()
++  })
++  it("recovery blocks running, invalidates old results and is otherwise unchanged", () => {
++    const c = initial(); expect(recoverInterrupted(c, now)).toBe(c)
++    const running = beginStage(c, "parse", { now, attemptId: "first" }), original = structuredClone(running)
++    const recovered = recoverInterrupted(running, now)
++    expect(recovered.stages.parse.error?.code).toBe("interrupted")
++    expect(running).toEqual(original)
++    expect(() => finishStage(recovered, "parse", { now, attempt: 1, attemptId: "first", outcome: "succeeded", evidence: ["x"] })).toThrow()
++    expect(beginStage(retryStage(recovered, "parse", now), "parse", { now, attemptId: "next" }).stages.parse.attempt).toBe(2)
++  })
++  it("rejects empty evidence, errors, invalid times, malformed data and skipped dependencies", () => {
++    const running = beginStage(success(initial(), "parse"), "compile", { now, attemptId: "compile" })
++    expect(() => finishStage(running, "compile", { now, attempt: 1, attemptId: "compile", outcome: "succeeded", evidence: [] })).toThrow()
++    expect(() => finishStage(running, "compile", { now, attempt: 1, attemptId: "compile", outcome: "failed" })).toThrow()
++    expect(() => beginStage(initial(), "compile", { now, attemptId: "x" })).toThrow()
++    expect(() => beginStage(initial(), "parse", { now: "2025-12-31T23:59:59Z", attemptId: "x" })).toThrow()
++    expect(() => recoverInterrupted(initial(), "2026-02-30T00:00:00Z")).toThrow()
++    for (const mutate of [(c: IngestionCheckpointV1) => { c.schemaVersion = 2 as 1 }, (c: IngestionCheckpointV1) => { c.stages.parse.status = "skipped" }, (c: IngestionCheckpointV1) => { c.stages.receive.evidence = [] }, (c: IngestionCheckpointV1) => { c.documentId = "../doc" }]) { const c = initial(); mutate(c); expect(() => validateCheckpoint(c)).toThrow() }
++  })
++})
+diff --git a/src/modules/ingestion/domain/checkpoint.ts b/src/modules/ingestion/domain/checkpoint.ts
+new file mode 100644
+index 0000000..8b273b3
+--- /dev/null
++++ b/src/modules/ingestion/domain/checkpoint.ts
+@@ -0,0 +1,102 @@
++/** Evidence references only; this protocol never executes ingestion work. */
++export const ingestionStages = ["receive", "parse", "compile", "index", "feedback"] as const
++export type IngestionStage = typeof ingestionStages[number]
++export type StageStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled" | "skipped"
++export interface StageRecord {
++  status: StageStatus; attempt: number; attemptId: string | null; startedAt: string | null; finishedAt: string | null
++  evidence: string[]; error: { code: string; message: string } | null
++}
++export interface IngestionCheckpointV1 {
++  schemaVersion: 1; projectId: string; documentId: string; createdAt: string; updatedAt: string
++  policy: { index: "required" | "disabled"; feedback: "required" | "disabled" }
++  stages: Record<IngestionStage, StageRecord>
++}
++const fail = (message: string): never => { throw new Error(`Invalid ingestion checkpoint: ${message}`) }
++const text = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0
++const id = (v: unknown): v is string => typeof v === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(v)
++const iso = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(v) && Number.isFinite(Date.parse(v)) && validCalendar(v)
++function validCalendar(v: string) {
++  const y = Number(v.slice(0, 4)), m = Number(v.slice(5, 7)), d = Number(v.slice(8, 10))
++  return m >= 1 && m <= 12 && d >= 1 && d <= new Date(Date.UTC(y, m, 0)).getUTCDate() && Number(v.slice(11, 13)) < 24 && Number(v.slice(14, 16)) < 60 && Number(v.slice(17, 19)) < 60
++}
++const done = (s: StageRecord) => s.status === "succeeded" || s.status === "skipped"
++const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
++export function validateCheckpoint(value: unknown): IngestionCheckpointV1 {
++  if (!object(value) || value.schemaVersion !== 1 || !id(value.projectId) || !id(value.documentId)) fail("version or identity")
++  const c = value as unknown as IngestionCheckpointV1
++  if (!iso(c.createdAt) || !iso(c.updatedAt) || Date.parse(c.updatedAt) < Date.parse(c.createdAt)) fail("checkpoint times")
++  if (!object(c.policy) || !["required", "disabled"].includes(c.policy.index) || !["required", "disabled"].includes(c.policy.feedback)) fail("policy")
++  if (!object(c.stages) || Object.keys(c.stages).length !== 5 || ingestionStages.some(k => !Object.prototype.hasOwnProperty.call(c.stages, k))) fail("stage set")
++  for (const [i, stage] of ingestionStages.entries()) {
++    const s = c.stages[stage]
++    if (!object(s) || !["pending", "running", "succeeded", "failed", "blocked", "cancelled", "skipped"].includes(s.status) || !Number.isSafeInteger(s.attempt) || s.attempt < 0 || !Array.isArray(s.evidence) || !s.evidence.every(text)) fail(`${stage} record`)
++    const disabled = (stage === "index" || stage === "feedback") && c.policy[stage] === "disabled"
++    if (disabled !== (s.status === "skipped")) fail(`${stage} disabled policy`)
++    if (s.status === "pending" || s.status === "skipped") {
++      if (s.attemptId !== null || s.startedAt !== null || s.finishedAt !== null || s.evidence.length || s.error !== null || (s.status === "skipped" && s.attempt !== 0)) fail(`${stage} idle state`)
++    } else {
++      if (s.attempt < 1 || !text(s.attemptId) || !iso(s.startedAt) || Date.parse(s.startedAt as string) < Date.parse(c.createdAt) || Date.parse(s.startedAt as string) > Date.parse(c.updatedAt)) fail(`${stage} attempt`)
++      if (s.status === "running") {
++        if (s.finishedAt !== null || s.evidence.length || s.error !== null) fail(`${stage} running state`)
++      } else {
++        if (!iso(s.finishedAt) || Date.parse(s.finishedAt) < Date.parse(s.startedAt as string) || Date.parse(s.finishedAt) > Date.parse(c.updatedAt)) fail(`${stage} finish time`)
++        if (s.status === "succeeded") { if (!s.evidence.length || s.error !== null) fail(`${stage} success evidence`) }
++        else if (!object(s.error) || !text(s.error.code) || !text(s.error.message)) fail(`${stage} actionable error`)
++      }
++      for (const upstream of ingestionStages.slice(0, i)) {
++        const u = c.stages[upstream]
++        if (!done(u) || (u.finishedAt && Date.parse(s.startedAt as string) < Date.parse(u.finishedAt))) fail(`${stage} dependencies`)
++      }
++    }
++    if (s.status === "pending" && s.attempt > 0 && !ingestionStages.slice(0, i).every(k => done(c.stages[k]))) fail(`${stage} retry dependencies`)
++  }
++  if (c.stages.receive.status !== "succeeded" || c.stages.receive.attempt !== 1 || c.stages.receive.startedAt !== c.createdAt || c.stages.receive.finishedAt !== c.createdAt) fail("receipt")
++  return c
++}
++function checked(c: IngestionCheckpointV1, now: string) {
++  validateCheckpoint(c)
++  if (!iso(now) || Date.parse(now) < Date.parse(c.updatedAt)) fail("operation time")
++  return structuredClone(c)
++}
++export function createReceivedCheckpoint(input: { projectId: string; documentId: string; receivedAt: string; artifactRef: string; indexPolicy?: "required" | "disabled"; feedbackPolicy?: "required" | "disabled" }): IngestionCheckpointV1 {
++  if (!text(input.artifactRef)) fail("artifact reference")
++  const policy = { index: input.indexPolicy ?? "required", feedback: input.feedbackPolicy ?? "disabled" }
++  const stages = Object.fromEntries(ingestionStages.map(stage => [stage, { status: ((stage === "index" || stage === "feedback") && policy[stage] === "disabled") ? "skipped" : "pending", attempt: 0, attemptId: null, startedAt: null, finishedAt: null, evidence: [], error: null }])) as unknown as IngestionCheckpointV1["stages"]
++  stages.receive = { status: "succeeded", attempt: 1, attemptId: "receive", startedAt: input.receivedAt, finishedAt: input.receivedAt, evidence: [input.artifactRef], error: null }
++  return validateCheckpoint({ schemaVersion: 1, projectId: input.projectId, documentId: input.documentId, createdAt: input.receivedAt, updatedAt: input.receivedAt, policy, stages })
++}
++export function beginStage(c: IngestionCheckpointV1, stage: IngestionStage, input: { attemptId: string; now: string }) {
++  const next = checked(c, input.now), s = next.stages[stage]
++  if (!s || s.status !== "pending" || !text(input.attemptId) || !ingestionStages.slice(0, ingestionStages.indexOf(stage)).every(k => done(next.stages[k]))) fail("stage cannot begin")
++  Object.assign(s, { status: "running", attempt: s.attempt + 1, attemptId: input.attemptId, startedAt: input.now })
++  next.updatedAt = input.now; return validateCheckpoint(next)
++}
++export interface FinishStageInput { attempt: number; attemptId: string; now: string; outcome: "succeeded" | "failed" | "blocked" | "cancelled"; evidence?: string[]; error?: { code: string; message: string } }
++export function finishStage(c: IngestionCheckpointV1, stage: IngestionStage, input: FinishStageInput) {
++  const next = checked(c, input.now), s = next.stages[stage]
++  if (!s || s.status !== "running" || s.attempt !== input.attempt || s.attemptId !== input.attemptId || !["succeeded", "failed", "blocked", "cancelled"].includes(input.outcome)) fail("stale or invalid result")
++  Object.assign(s, { status: input.outcome, finishedAt: input.now, evidence: input.evidence ? [...input.evidence] : [], error: input.error ? { ...input.error } : null })
++  next.updatedAt = input.now; return validateCheckpoint(next)
++}
++export function retryStage(c: IngestionCheckpointV1, stage: IngestionStage, now: string) {
++  const next = checked(c, now), s = next.stages[stage]
++  if (!s || !["failed", "blocked", "cancelled"].includes(s.status)) fail("stage cannot retry")
++  Object.assign(s, { status: "pending", attemptId: null, startedAt: null, finishedAt: null, evidence: [], error: null })
++  next.updatedAt = now; return validateCheckpoint(next)
++}
++export function recoverInterrupted(c: IngestionCheckpointV1, now: string) {
++  const next = checked(c, now)
++  if (!ingestionStages.some(k => next.stages[k].status === "running")) return c
++  for (const stage of ingestionStages) if (next.stages[stage].status === "running") Object.assign(next.stages[stage], { status: "blocked", finishedAt: now, error: { code: "interrupted", message: "Worker interrupted; retry with a new attempt before resuming." } })
++  next.updatedAt = now; return validateCheckpoint(next)
++}
++export function summarizeIngestion(value: IngestionCheckpointV1) {
++  const c = validateCheckpoint(value), s = c.stages
++  const contentReady = s.compile.status === "succeeded"
++  const knowledgeReady = contentReady && done(s.index)
++  const feedbackDelivered = s.feedback.status === "succeeded"
++  const complete = knowledgeReady && (c.policy.feedback === "disabled" || feedbackDelivered)
++  const statuses = ingestionStages.map(k => s[k].status)
++  const status: "received" | "processing" | "waiting" | "failed" | "cancelled" | "partial" | "ready" = complete ? "ready" : statuses.includes("running") ? "processing" : contentReady ? "partial" : statuses.includes("failed") ? "failed" : statuses.includes("cancelled") ? "cancelled" : statuses.includes("blocked") ? "waiting" : s.parse.attempt === 0 && s.compile.attempt === 0 ? "received" : "waiting"
++  return { status, contentReady, knowledgeReady, feedbackDelivered, complete }
++}
+diff --git a/src/modules/ingestion/domain/index.ts b/src/modules/ingestion/domain/index.ts
+index 7cbc536..44b6fa6 100644
+--- a/src/modules/ingestion/domain/index.ts
++++ b/src/modules/ingestion/domain/index.ts
+@@ -1,3 +1,4 @@
+ export * from "./sanitize"
+ export type { IngestTask } from "./queue-task"
+ export { decodeQueueSnapshot, encodeQueueSnapshot } from "./queue-snapshot"
++export * from "./checkpoint"
+diff --git a/src/modules/service-api/README.md b/src/modules/service-api/README.md
+index c371016..75fc304 100644
+--- a/src/modules/service-api/README.md
++++ b/src/modules/service-api/README.md
+@@ -11,3 +11,9 @@
+ C03 已接入文档接收、受认证 SSE 和独立 Web 静态入口。上传只保存服务生成 ID 下的独立二进制和 received 元数据；元数据失败时清理对应二进制，目录 ID 重用不能覆盖旧上传。断线按持久序号恢复。SQLite 与文件写入不是跨介质事务，进程在文件落地后、元数据提交前崩溃可能留下孤立二进制，恢复清理仍需后续工作，不能据此伪报入库完成。
+ 
+ C05–C10 已替换早期部署连接密钥模式：HTTP 必须使用人员会话或范围受限的 Agent Token。authorized-repository 在资源/上传/检索/事件/CLI/MCP/任务网关重查权限，私有/角色记忆会过滤并在局部保存时保留隐藏记录。初始化密钥仅供首次管理员设置，当前操作以 analysis/implementation/shared-service.md 为准。以上 C02/C03 段落保留作演进说明，不代表当前仍开放服务密钥访问数据。
++
++## 文档入库查询（D01）
++
++上传在二进制落盘后将可选的 `ReceivedDocument.ingestionCheckpoint` 与 document 元数据一并保存，只有 receive 成功，sourceIngestedAt 仍为 null；索引默认 required，当前未配置回传所以 feedback disabled。旧客户端可忽略新增字段。
++
++`GET /api/v1/projects/:id/documents/:documentId/ingestion` 需要现有身份及 `documents.read`，返回 `data:{revision,checkpoint,summary}`，ETag 对应 document 资源版本。SDK：`client.documentIngestion(projectId,documentId)`。只读 Token 依其项目和权限范围读取；没有入库变更 HTTP 接口。检查点类型通过 ingestion/domain 公共入口引用，service-api 的依赖在 module.json 声明。SQLite 适配保留 document 元数据并沿用条件版本和资源/事件同事务语义。
+diff --git a/src/modules/service-api/application/client.ts b/src/modules/service-api/application/client.ts
+index c73b131..fa03e94 100644
+--- a/src/modules/service-api/application/client.ts
++++ b/src/modules/service-api/application/client.ts
+@@ -1,3 +1,4 @@
++import type { IngestionCheckpointV1, summarizeIngestion } from "@/modules/ingestion/domain"
+ import { ServiceError } from "../domain"
+ import type { ApiSuccess, ApiFailure, ProjectRecord, ResourceRecord, WikiContent, ProjectEvent } from "../domain"
+ import type { SharedWorkspace } from "./workspace"
+@@ -30,6 +31,7 @@ export function createSharedClient(transport: ApiTransport) {
+     workspace: (id: string) => request<ResourceRecord<SharedWorkspace>>("GET", `${root(id)}/workspace`),
+     saveWorkspace: (id: string, workspace: SharedWorkspace, expected: number) => request<ResourceRecord<SharedWorkspace>>("PUT", `${root(id)}/workspace`, workspace, expected),
+     documents: (id: string, query = "") => request<ResourceRecord[]>("GET", `${root(id)}/documents${query}`),
++    documentIngestion: (projectId: string, documentId: string) => request<{ revision: number; checkpoint: IngestionCheckpointV1; summary: ReturnType<typeof summarizeIngestion> }>("GET", `${root(projectId)}/documents/${encodeURIComponent(documentId)}/ingestion`),
+     events: (id: string, after = 0) => request<ProjectEvent[]>("GET", `${root(id)}/events?after=${after}`),
+   }
+ }
+diff --git a/src/modules/service-api/application/uploads.test.ts b/src/modules/service-api/application/uploads.test.ts
+index 1d1b978..9087197 100644
+--- a/src/modules/service-api/application/uploads.test.ts
++++ b/src/modules/service-api/application/uploads.test.ts
+@@ -4,7 +4,7 @@ import type { SharedRepository } from "./ports"
+ it("removes the stored binary if publishing its metadata fails and preserves the original failure", async () => {
+   const failure = new Error("database unavailable"), write = vi.fn(async () => {}), remove = vi.fn(async () => { throw new Error("cleanup also failed") })
+   const repository = { project: async () => ({ id: "project", name: "Project", createdAt: "time" }), save: vi.fn(async () => { throw failure }) } as unknown as SharedRepository
+-  const receiver = createDocumentReceiver(repository, { write, remove, read: vi.fn() }, { id: () => "document", now: () => "time", hash: () => "hash" })
++  const receiver = createDocumentReceiver(repository, { write, remove, read: vi.fn() }, { id: () => "document", now: () => "2026-01-01T00:00:00.000Z", hash: () => "hash" })
+   await expect(receiver.receive("project", "note.md", "text/markdown", new Uint8Array([1, 2]))).rejects.toBe(failure)
+   expect(write).toHaveBeenCalledOnce(); expect(remove).toHaveBeenCalledWith("project", "document")
+ })
+diff --git a/src/modules/service-api/application/uploads.ts b/src/modules/service-api/application/uploads.ts
+index 8fd8368..ef6c2aa 100644
+--- a/src/modules/service-api/application/uploads.ts
++++ b/src/modules/service-api/application/uploads.ts
+@@ -1,8 +1,10 @@
++import { createReceivedCheckpoint, type IngestionCheckpointV1 } from "@/modules/ingestion/domain"
+ import { ServiceError, requireId } from "../domain"
+ import type { SharedRepository } from "./ports"
+ export interface ReceivedDocument {
+   id: string; sourceId: string; name: string; mediaType: string; size: number; sha256: string
+   receivedAt: string; sourceIngestedAt: null; status: "received"
++  ingestionCheckpoint?: IngestionCheckpointV1
+ }
+ export interface UploadStorage {
+   write(projectId: string, documentId: string, bytes: Uint8Array): Promise<void>
+@@ -18,7 +20,7 @@ export function createDocumentReceiver(repository: SharedRepository, storage: Up
+       if (!normalized || normalized.length > 255 || /[/\\\x00-\x1f\x7f]/.test(normalized) || [".", ".."].includes(normalized)) throw new ServiceError("invalid_argument", "Upload requires a filename, not a filesystem path")
+       if (!bytes.length) throw new ServiceError("invalid_argument", "Empty documents cannot be received")
+       const id = context.id(), now = context.now()
+-      const data: ReceivedDocument = { id, sourceId: id, name: normalized, mediaType: mediaType || "application/octet-stream", size: bytes.length, sha256: context.hash(bytes), receivedAt: now, sourceIngestedAt: null, status: "received" }
++      const data: ReceivedDocument = { id, sourceId: id, name: normalized, mediaType: mediaType || "application/octet-stream", size: bytes.length, sha256: context.hash(bytes), receivedAt: now, sourceIngestedAt: null, status: "received", ingestionCheckpoint: createReceivedCheckpoint({ projectId, documentId: id, receivedAt: now, artifactRef: `document:${projectId}/${id}/source` }) }
+       await storage.write(projectId, id, bytes)
+       try { return await repository.save(projectId, "document", id, data, null, now) }
+       catch (error) { await storage.remove(projectId, id).catch(() => {}); throw error }
+diff --git a/src/modules/service-api/module.json b/src/modules/service-api/module.json
+index 10f2a7f..059e675 100644
+--- a/src/modules/service-api/module.json
++++ b/src/modules/service-api/module.json
+@@ -9,7 +9,8 @@
+     "wiki",
+     "memory",
+     "domains",
+-    "identity"
++    "identity",
++    "ingestion"
+   ],
+   "allowedExternalImports": [],
+   "allowedLegacyImports": []

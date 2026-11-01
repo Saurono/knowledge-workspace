@@ -1,8 +1,9 @@
 import { ServiceError, requireId } from "../domain"
 import type { SharedRepository } from "./ports"
+import { createReceivedCheckpoint } from "@/modules/ingestion/domain"
 export interface ReceivedDocument {
   id: string; sourceId: string; name: string; mediaType: string; size: number; sha256: string
-  receivedAt: string; sourceIngestedAt: null; status: "received"
+  receivedAt: string; sourceIngestedAt: null; status: "received"; ingestion?: ReturnType<typeof createReceivedCheckpoint>
 }
 export interface UploadStorage {
   write(projectId: string, documentId: string, bytes: Uint8Array): Promise<void>
@@ -18,7 +19,7 @@ export function createDocumentReceiver(repository: SharedRepository, storage: Up
       if (!normalized || normalized.length > 255 || /[/\\\x00-\x1f\x7f]/.test(normalized) || [".", ".."].includes(normalized)) throw new ServiceError("invalid_argument", "Upload requires a filename, not a filesystem path")
       if (!bytes.length) throw new ServiceError("invalid_argument", "Empty documents cannot be received")
       const id = context.id(), now = context.now()
-      const data: ReceivedDocument = { id, sourceId: id, name: normalized, mediaType: mediaType || "application/octet-stream", size: bytes.length, sha256: context.hash(bytes), receivedAt: now, sourceIngestedAt: null, status: "received" }
+      const data: ReceivedDocument = { id, sourceId: id, name: normalized, mediaType: mediaType || "application/octet-stream", size: bytes.length, sha256: context.hash(bytes), receivedAt: now, sourceIngestedAt: null, status: "received", ingestion: createReceivedCheckpoint({ projectId, documentId: id, receivedAt: now, artifactRef: `document:${id}` }) }
       await storage.write(projectId, id, bytes)
       try { return await repository.save(projectId, "document", id, data, null, now) }
       catch (error) { await storage.remove(projectId, id).catch(() => {}); throw error }

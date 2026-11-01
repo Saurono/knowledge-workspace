@@ -3,4 +3,6 @@ export type { IngestCompiler, IngestExecutionInput, IngestCommitRunner } from ".
 export { createIngestQueue } from "./queue"
 export type { IngestQueue } from "./queue"
 export { IngestCommitCoordinator } from "./commit-coordinator"
+export { createIngestionLifecycleService } from "./lifecycle"
+export type { IngestionCheckpointRepository } from "./lifecycle"
 export type { IngestQueuePorts, QueueSnapshotRepository, QueueClock } from "./queue-ports"

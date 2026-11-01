@@ -1,6 +1,7 @@
 import { ServiceError } from "../domain"
 import type { ApiSuccess, ApiFailure, ProjectRecord, ResourceRecord, WikiContent, ProjectEvent } from "../domain"
 import type { SharedWorkspace } from "./workspace"
+import type { IngestionCheckpointV1, IngestionSummary } from "@/modules/ingestion/domain"
 export interface ApiTransport {
   request(method: string, path: string, options: { body?: unknown; headers?: Record<string, string>; signal?: AbortSignal }): Promise<{ status: number; json(): Promise<unknown> }>
 }
@@ -30,6 +31,7 @@ export function createSharedClient(transport: ApiTransport) {
     workspace: (id: string) => request<ResourceRecord<SharedWorkspace>>("GET", `${root(id)}/workspace`),
     saveWorkspace: (id: string, workspace: SharedWorkspace, expected: number) => request<ResourceRecord<SharedWorkspace>>("PUT", `${root(id)}/workspace`, workspace, expected),
     documents: (id: string, query = "") => request<ResourceRecord[]>("GET", `${root(id)}/documents${query}`),
+    documentIngestion: (projectId: string, documentId: string) => request<{ revision: number; checkpoint: IngestionCheckpointV1; summary: IngestionSummary }>("GET", `${root(projectId)}/documents/${encodeURIComponent(documentId)}/ingestion`),
     events: (id: string, after = 0) => request<ProjectEvent[]>("GET", `${root(id)}/events?after=${after}`),
   }
 }

@@ -9,7 +9,8 @@
     "wiki",
     "memory",
     "domains",
-    "identity"
+    "identity",
+    "ingestion"
   ],
   "allowedExternalImports": [],
   "allowedLegacyImports": []

@@ -1,3 +1,4 @@
 export * from "./sanitize"
 export type { IngestTask } from "./queue-task"
 export { decodeQueueSnapshot, encodeQueueSnapshot } from "./queue-snapshot"
+export * from "./checkpoint"

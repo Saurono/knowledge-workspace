@@ -1,0 +1,13 @@
+
+> llm-wiki@0.6.13 test:mocks
+> vitest run --exclude='**/*.real-llm.test.ts' --exclude='**/mcp-server/**'
+
+
+ RUN  v4.1.4 /workspace/llm_wiki
+
+
+ Test Files  194 passed (194)
+      Tests  2313 passed (2313)
+   Start at  10:25:27
+   Duration  76.20s (transform 4.90s, setup 1.18s, import 13.37s, tests 36.47s, environment 15ms)
+

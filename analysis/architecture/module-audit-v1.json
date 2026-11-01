@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 477,
+  "productionFiles": 480,
   "moduleCount": 18,
   "modules": [
     {
@@ -125,8 +125,8 @@
     },
     {
       "id": "ingestion",
-      "productionFiles": 10,
-      "testFiles": 3,
+      "productionFiles": 12,
+      "testFiles": 5,
       "publicEntrypoints": [
         {
           "path": "index.ts",
@@ -134,7 +134,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 4
+          "productionImporters": 8
         },
         {
           "path": "application/index.ts",
@@ -328,16 +328,17 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 16
+          "productionImporters": 17
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 9
+          "productionImporters": 10
         }
       ],
       "dependencies": [
         "domains",
         "identity",
+        "ingestion",
         "memory",
         "wiki"
       ],

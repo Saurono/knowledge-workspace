@@ -12,6 +12,8 @@ import type { ExecutionGateway } from "./resource-tools"
 import { AuthError, IdentityError, globalPermissions, requireContextPermission } from "@/modules/identity/domain"
 import type { ProjectPermission, SessionIdentity, AccessContext } from "@/modules/identity/domain"
 import type { AccountAuthentication } from "./auth-http"
+import { createDocumentCheckpointRepository } from "./ingestion-checkpoints"
+import { summarizeIngestion } from "@/modules/ingestion/domain"
 export interface ServiceOptions { repository: SqliteRepository; authentication: AccountAuthentication; executions?: ExecutionGateway; maxJsonBytes?: number; uploads?: UploadStorage; maxUploadBytes?: number; webRoot?: string }
 export function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -78,6 +80,7 @@ export function createServiceHttp(options: ServiceOptions) {
       const guarded = createAuthorizedRepository(options.repository, access, id => options.repository.memoryGrants.list(id), options.authentication.now)
       const service = createSharedService(guarded, { id: randomUUID, now: options.authentication.now })
       const receiver = options.uploads ? createDocumentReceiver(guarded, options.uploads, { id: randomUUID, now: options.authentication.now, hash: bytes => createHash("sha256").update(bytes).digest("hex") }) : null
+      const checkpoints = createDocumentCheckpointRepository(guarded, options.authentication.now)
       if (url.pathname === "/api/v1/projects") {
         if (method === "GET") { const page = await service.projects(url.searchParams.get("limit"), url.searchParams.get("cursor")); return send(200, page.items, page.nextCursor) }
         if (method === "POST") {
@@ -95,6 +98,15 @@ export function createServiceHttp(options: ServiceOptions) {
       if (!part) requireContextPermission(context, "project.read")
       if (part?.startsWith("wiki")) requireContextPermission(context, method === "GET" ? "wiki.read" : "wiki.write")
       if (part?.startsWith("documents")) requireContextPermission(context, method === "GET" ? "documents.read" : "documents.write")
+      const ingestion = part?.match(/^documents\/([^/]+)\/ingestion$/)
+      if (ingestion && method === "GET") {
+        let documentId: string
+        try { documentId = decodeURIComponent(ingestion[1]) } catch { throw new ServiceError("invalid_argument", "Invalid document identifier") }
+        const value = await checkpoints.read(id, documentId)
+        if (!value) throw new ServiceError("not_found", "Document not found")
+        response.setHeader("ETag", etag(value.revision))
+        return send(200, { ...value, summary: summarizeIngestion(value.checkpoint) })
+      }
       if (part === "memories" && method === "GET") { requireContextPermission(context, "memory.read"); return send(200, (await service.readWorkspace(id)).data) }
       if ((part === "retrieval" || part === "search") && method === "POST") { requireContextPermission(context, "wiki.read"); return send(200, await keywordSearch(guarded, id, await json())) }
       let executionInput: Record<string, unknown> | undefined

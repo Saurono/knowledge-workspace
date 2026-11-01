@@ -1,0 +1,1 @@
+{"result":"passed","checks":["real CLI write/read","CLI readonly denial without secret echo","MCP stdio handshake and tools","MCP read/write scope","MCP project pin","revocation while connected","service restart without bootstrap key","session Token content and audit persistence"]}

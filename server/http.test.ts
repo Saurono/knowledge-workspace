@@ -11,7 +11,8 @@ const token = "integration-fixture-service-key-only"
 const cleanups: Array<() => Promise<void>> = []
 async function fixture(maxJsonBytes?: number) {
   const directory = mkdtempSync(join(tmpdir(), "kw-http-"))
-  let repository = new SqliteRepository(directory), authentication = createAccountAuthentication(repository, token), http = createServiceHttp({ repository, authentication, maxJsonBytes })
+  const uploads = { write: async () => {}, read: async () => new Uint8Array([1]), remove: async () => {} }
+  let repository = new SqliteRepository(directory), authentication = createAccountAuthentication(repository, token), http = createServiceHttp({ repository, authentication, maxJsonBytes, uploads })
   await authentication.auth.bootstrap({ handle: "admin", displayName: "Admin", password: "Fixture-password-1234" })
   const cookie = `kw_session=${(await authentication.auth.login("admin", "Fixture-password-1234", "fixture")).secret}`
   let url = ""
@@ -21,7 +22,7 @@ async function fixture(maxJsonBytes?: number) {
   cleanups.push(async () => { await close(); rmSync(directory, { recursive: true, force: true }) })
   const request = (path: string, init: RequestInit = {}) => fetch(url + "/api/v1" + path, { ...init, headers: { Cookie: cookie, "X-KW-CSRF": "1", "Content-Type": "application/json", ...init.headers } })
   const create = async (name = "Project") => (await (await request("/projects", { method: "POST", body: JSON.stringify({ name }) })).json()).data as { id: string; name: string }
-  return { request, create, anonymous: (path: string) => fetch(url + "/api/v1" + path), restart: async () => { await close(); repository = new SqliteRepository(directory); authentication = createAccountAuthentication(repository, token); http = createServiceHttp({ repository, authentication, maxJsonBytes }); await listen() }, client: createSharedClient({ request: (method, path, options) => fetch(url + path, { method, headers: { Cookie: cookie, "X-KW-CSRF": "1", "Content-Type": "application/json", ...options.headers }, ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }), signal: options.signal }) }) }
+  return { request, create, anonymous: (path: string) => fetch(url + "/api/v1" + path), restart: async () => { await close(); repository = new SqliteRepository(directory); authentication = createAccountAuthentication(repository, token); http = createServiceHttp({ repository, authentication, maxJsonBytes, uploads }); await listen() }, client: createSharedClient({ request: (method, path, options) => fetch(url + path, { method, headers: { Cookie: cookie, "X-KW-CSRF": "1", "Content-Type": "application/json", ...options.headers }, ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }), signal: options.signal }) }) }
 }
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup() })
 describe("shared service HTTP and SQLite", () => {
@@ -61,6 +62,22 @@ describe("shared service HTTP and SQLite", () => {
     await f.restart()
     expect((await f.client.readWiki(project.id, "wiki/a.md")).data).toMatchObject({ revision: 1, data: { content: "persistent content" } })
     expect((await f.client.events(project.id)).data).toEqual(before.data)
+  })
+  it("uploads only a received checkpoint and serves its protected read-only summary with the resource ETag", async () => {
+    const f = await fixture(), project = await f.create()
+    const upload = await f.request(`/projects/${project.id}/documents`, { method: "POST", headers: { "Content-Type": "text/markdown", "X-File-Name": "note.md" }, body: new Uint8Array([97, 98, 99]) })
+    expect(upload.status).toBe(201)
+    const uploaded = (await upload.json()).data, path = `/projects/${project.id}/documents/${uploaded.data.id}/ingestion`
+    const response = await f.request(path), value = await response.json()
+    const viaSdk = await f.client.documentIngestion(project.id, uploaded.data.id)
+    expect(viaSdk.data).toEqual(value.data)
+    expect(response.headers.get("etag")).toBe('"v1"')
+    expect(value.data.summary).toMatchObject({ status: "received", contentReady: false, knowledgeReady: false, feedbackDelivered: false, complete: false })
+    expect(value.data.checkpoint.stages).toMatchObject({ receive: { status: "succeeded" }, parse: { status: "pending" }, compile: { status: "pending" }, index: { status: "pending" }, feedback: { status: "skipped" } })
+    expect((await f.anonymous(path)).status).toBe(401)
+    expect((await f.request(`/projects/${project.id}/documents/%ZZ/ingestion`)).status).toBe(400)
+    await f.restart()
+    expect((await (await f.request(path)).json()).data.checkpoint).toEqual(value.data.checkpoint)
   })
   it("validates workspace references and refuses stale updates through the shared SDK", async () => {
     const f = await fixture(), project = await f.create(), initial = (await f.client.workspace(project.id)).data

@@ -1,0 +1,168 @@
+
+ RUN  v4.1.4 /workspace/llm_wiki
+
+ ❯ analysis/evaluation/d01-acceptance.test.ts (16 tests | 5 failed) 769ms
+     × summarizes a blocked parse as waiting 7ms
+     × summarizes successful parse with compile pending as waiting 1ms
+     × summarizes successful compile and cancelled index as partial with ready content 3ms
+     × rejects time inversion between parse finish and compile start 1ms
+     × additional hardening: refuses to turn legacy metadata without reliable receipt evidence into a successful receive 165ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  analysis/evaluation/d01-acceptance.test.ts > D01 ingestion checkpoint acceptance > summarizes a blocked parse as waiting
+AssertionError: expected 'failed' to be 'waiting' // Object.is equality
+
+Expected: "waiting"
+Received: "failed"
+
+ ❯ analysis/evaluation/d01-acceptance.test.ts:146:53
+    144|     const parseRunning = beginStage(initial, "parse", { attemptId: "pa…
+    145|     const parseBlocked = finishStage(parseRunning, "parse", { attempt:…
+    146|     expect(summarizeIngestion(parseBlocked).status).toBe("waiting")
+       |                                                     ^
+    147|   })
+    148|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  analysis/evaluation/d01-acceptance.test.ts > D01 ingestion checkpoint acceptance > summarizes successful parse with compile pending as waiting
+AssertionError: expected 'processing' to be 'waiting' // Object.is equality
+
+Expected: "waiting"
+Received: "processing"
+
+ ❯ analysis/evaluation/d01-acceptance.test.ts:152:47
+    150|     const initial = received({ feedbackPolicy: "required" })
+    151|     const parsed = complete(initial, "parse", "parse-ready", t1)
+    152|     expect(summarizeIngestion(parsed).status).toBe("waiting")
+       |                                               ^
+    153|   })
+    154|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  analysis/evaluation/d01-acceptance.test.ts > D01 ingestion checkpoint acceptance > summarizes successful compile and cancelled index as partial with ready content
+AssertionError: expected { status: 'cancelled', …(4) } to match object { status: 'partial', …(2) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "contentReady": true,
+    "knowledgeReady": false,
+-   "status": "partial",
++   "status": "cancelled",
+  }
+
+ ❯ analysis/evaluation/d01-acceptance.test.ts:160:48
+    158|     const indexRunning = beginStage(compiled, "index", { attemptId: "i…
+    159|     const indexCancelled = finishStage(indexRunning, "index", { attemp…
+    160|     expect(summarizeIngestion(indexCancelled)).toMatchObject({ status:…
+       |                                                ^
+    161|   })
+    162|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  analysis/evaluation/d01-acceptance.test.ts > D01 ingestion checkpoint acceptance > rejects time inversion between parse finish and compile start
+AssertionError: expected [Function] to throw an error
+ ❯ analysis/evaluation/d01-acceptance.test.ts:167:48
+    165|     const inverted = structuredClone(compiled) as unknown as { stages:…
+    166|     inverted.stages.compile = { ...compiled.stages.compile, startedAt:…
+    167|     expect(() => validateCheckpoint(inverted)).toThrow()
+       |                                                ^
+    168|   })
+    169| })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  analysis/evaluation/d01-acceptance.test.ts > D01 shared document checkpoint persistence and read-only HTTP > additional hardening: refuses to turn legacy metadata without reliable receipt evidence into a successful receive
+AssertionError: promise resolved "{ revision: 2, checkpoint: { …(7) } }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "checkpoint": {
++     "createdAt": "2026-11-01T00:00:00.000Z",
++     "documentId": "missing-receipt-evidence",
++     "policy": {
++       "feedback": "disabled",
++       "index": "required",
++     },
++     "projectId": "6ba900d7-6654-45ed-a499-91a8029a3508",
++     "schemaVersion": 1,
++     "stages": {
++       "compile": {
++         "attempt": 0,
++         "attemptId": null,
++         "error": null,
++         "evidence": [],
++         "finishedAt": null,
++         "startedAt": null,
++         "status": "pending",
++       },
++       "feedback": {
++         "attempt": 0,
++         "attemptId": null,
++         "error": null,
++         "evidence": [],
++         "finishedAt": null,
++         "startedAt": null,
++         "status": "skipped",
++       },
++       "index": {
++         "attempt": 0,
++         "attemptId": null,
++         "error": null,
++         "evidence": [],
++         "finishedAt": null,
++         "startedAt": null,
++         "status": "pending",
++       },
++       "parse": {
++         "attempt": 0,
++         "attemptId": null,
++         "error": null,
++         "evidence": [],
++         "finishedAt": null,
++         "startedAt": null,
++         "status": "pending",
++       },
++       "receive": {
++         "attempt": 1,
++         "attemptId": null,
++         "error": null,
++         "evidence": [
++           "uploads/legacy.bin",
++         ],
++         "finishedAt": "2026-11-01T00:00:00.000Z",
++         "startedAt": "2026-11-01T00:00:00.000Z",
++         "status": "succeeded",
++       },
++     },
++     "updatedAt": "2026-11-01T00:00:00.000Z",
++   },
++   "revision": 2,
+  }
+
+ ❯ analysis/evaluation/d01-acceptance.test.ts:226:72
+    224|     await expect(adapter.read(project.id, doc)).rejects.toThrow()
+    225|     const attemptedCheckpoint = createReceivedCheckpoint({ projectId: …
+    226|     await expect(adapter.save(project.id, doc, 1, attemptedCheckpoint)…
+       |                                                                        ^
+    227|     expect(await f.repository.get(project.id, "document", doc)).toMatc…
+    228|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 11 passed (16)
+   Start at  10:15:11
+   Duration  1.36s (transform 340ms, setup 45ms, import 414ms, tests 769ms, environment 0ms)
+

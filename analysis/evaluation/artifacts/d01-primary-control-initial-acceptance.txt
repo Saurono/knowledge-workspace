@@ -1,0 +1,9 @@
+
+ RUN  v4.1.4 /tmp/kw-d01-control
+
+
+ Test Files  1 passed (1)
+      Tests  16 passed (16)
+   Start at  10:15:11
+   Duration  1.29s (transform 306ms, setup 24ms, import 367ms, tests 778ms, environment 0ms)
+

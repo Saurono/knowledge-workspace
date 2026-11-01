@@ -1,0 +1,13 @@
+
+> llm-wiki@0.6.13 typecheck
+> tsc --build --pretty
+
+[96mserver/ingestion-checkpoints.test.ts[0m:[93m104[0m:[93m67[0m - [91merror[0m[90m TS2352: [0mConversion of type '{ projectId: string; permissions: "documents.read"[]; }' to type 'AccessContext' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Type '{ projectId: string; permissions: "documents.read"[]; }' is missing the following properties from type 'AccessContext': id, actorId, effectiveAccountId, workRoleId, and 3 more.
+
+[7m104[0m   const guarded = createAuthorizedRepository(f.repo, async () => ({ projectId: f.project, permissions: ["documents.read"] } as AccessContext), async () => [], () => now)
+[7m   [0m [91m                                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m
+
+
+Found 1 error.
+
