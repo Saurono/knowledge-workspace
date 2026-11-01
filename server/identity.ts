@@ -23,6 +23,9 @@ export function createSqliteIdentityRepository(db: DatabaseSync): IdentityReposi
         const next = validateIdentityCatalog(change(current.catalog))
         const serialized = JSON.stringify(next)
         if (serialized === before) { db.exec("COMMIT"); return current }
+        for (const account of next.accounts) if (account.status === "disabled" && current.catalog.accounts.find(previous => previous.id === account.id)?.status !== "disabled") {
+          db.prepare("UPDATE login_sessions SET data=json_set(data,'$.revokedAt',?) WHERE account_id=?").run(account.updatedAt, account.id)
+        }
         const revision = current.revision + 1
         db.prepare("UPDATE identity_catalog SET data=?,revision=? WHERE id=1").run(serialized, revision)
         db.exec("COMMIT")

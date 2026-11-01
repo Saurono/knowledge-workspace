@@ -7,10 +7,14 @@ import type { SharedRepository } from "@/modules/service-api/application"
 import type { IdentityRepository } from "@/modules/identity/application"
 import { emptyIdentityCatalog } from "@/modules/identity/domain"
 import { createSqliteIdentityRepository } from "./identity"
+import { createAuthenticationRepository } from "./auth-store"
+import type { AuthenticationRepository } from "@/modules/identity/application"
+export const SERVICE_SCHEMA_VERSION = 3
 type Row = Record<string, string | number | null>
 export class SqliteRepository implements SharedRepository {
   private db: DatabaseSync
   readonly identities: IdentityRepository
+  readonly authentication: AuthenticationRepository
   constructor(directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const file = join(directory, "service.sqlite")
@@ -18,7 +22,7 @@ export class SqliteRepository implements SharedRepository {
     if (process.platform !== "win32") chmodSync(file, 0o600)
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
     const version = Number((this.db.prepare("PRAGMA user_version").get() as Row).user_version)
-    if (version > 2) { this.db.close(); throw new Error("Unsupported service database schema; original database preserved") }
+    if (version > SERVICE_SCHEMA_VERSION) { this.db.close(); throw new Error("Unsupported service database schema; original database preserved") }
     if (version === 0) this.db.exec(`BEGIN IMMEDIATE;
       CREATE TABLE projects(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL);
       CREATE TABLE resources(project_id TEXT NOT NULL REFERENCES projects(id), kind TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL, revision INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(project_id,kind,key));
@@ -31,6 +35,14 @@ export class SqliteRepository implements SharedRepository {
         this.db.prepare("INSERT INTO identity_catalog(id,data,revision) VALUES(1,?,1)").run(JSON.stringify(emptyIdentityCatalog()))
         this.db.exec("PRAGMA user_version=2")
       })
+      if (version < 3) this.transaction(() => {
+        this.db.exec(`CREATE TABLE passwords(account_id TEXT PRIMARY KEY, hash TEXT NOT NULL);
+          CREATE TABLE login_sessions(id TEXT PRIMARY KEY, account_id TEXT NOT NULL, digest TEXT UNIQUE NOT NULL, data TEXT NOT NULL);
+          CREATE TABLE login_attempts(key TEXT NOT NULL, attempted_at TEXT NOT NULL);
+          CREATE INDEX login_attempts_key ON login_attempts(key,attempted_at);
+          PRAGMA user_version=3;`)
+      })
+      this.authentication = createAuthenticationRepository(this.db)
       this.identities = createSqliteIdentityRepository(this.db)
     } catch (error) { this.db.close(); throw error }
   }

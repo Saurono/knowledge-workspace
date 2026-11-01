@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createIdentityCatalogService } from "@/modules/identity/application"
 import { evaluateProjectPermission } from "@/modules/identity/domain"
-import { SqliteRepository } from "./repository"
+import { SqliteRepository, SERVICE_SCHEMA_VERSION } from "./repository"
 const now = "2026-11-01T00:00:00.000Z"
 const cleanups: (() => void)[] = []
 afterEach(() => { for (const cleanup of cleanups.splice(0).reverse()) cleanup() })
@@ -89,7 +89,7 @@ describe("persisted identity catalog", () => {
     expect(await repo.get("p", "wiki", "wiki/a.md")).toMatchObject({ revision: 7, data: { content: "preserved" } })
     repo.close()
     const reopened = new DatabaseSync(join(path, "service.sqlite"))
-    expect(reopened.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 2 })
+    expect(reopened.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: SERVICE_SCHEMA_VERSION })
     expect({ projects: reopened.prepare("SELECT * FROM projects").all(), resources: reopened.prepare("SELECT * FROM resources").all(), events: reopened.prepare("SELECT * FROM events").all() }).toEqual(before)
     reopened.close()
   })
@@ -100,7 +100,7 @@ describe("persisted identity catalog", () => {
     expect(() => new SqliteRepository(path)).toThrow("Unsupported service database schema")
     db = new DatabaseSync(join(path, "service.sqlite"))
     expect(db.prepare("PRAGMA user_version").get()).toMatchObject({ user_version: 99 })
-    db.exec("PRAGMA user_version=2")
+    db.exec(`PRAGMA user_version=${SERVICE_SCHEMA_VERSION}`)
     db.prepare("UPDATE identity_catalog SET data=?").run('{"schemaVersion":999}')
     db.close()
     expect(() => new SqliteRepository(path)).toThrow("Unsupported identity catalog")

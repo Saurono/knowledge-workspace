@@ -1,6 +1,6 @@
 export const API_VERSION = "v1"
-export type ErrorCode = "invalid_argument" | "unauthenticated" | "forbidden" | "not_found" | "conflict" | "precondition_required" | "too_large" | "unsupported" | "internal"
-export const ERROR_STATUS: Record<ErrorCode, number> = { invalid_argument: 400, unauthenticated: 401, forbidden: 403, not_found: 404, conflict: 409, precondition_required: 428, too_large: 413, unsupported: 501, internal: 500 }
+export type ErrorCode = "invalid_argument" | "unauthenticated" | "forbidden" | "not_found" | "conflict" | "precondition_required" | "too_large" | "unsupported" | "internal" | "too_many_requests"
+export const ERROR_STATUS: Record<ErrorCode, number> = { invalid_argument: 400, unauthenticated: 401, forbidden: 403, not_found: 404, conflict: 409, precondition_required: 428, too_large: 413, unsupported: 501, internal: 500, too_many_requests: 429 }
 export class ServiceError extends Error {
   constructor(public readonly code: ErrorCode, message: string, public readonly details?: Record<string, unknown>) { super(message); this.name = "ServiceError" }
 }

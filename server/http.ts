@@ -6,7 +6,9 @@ import { randomUUID, timingSafeEqual, createHash } from "node:crypto"
 import { createSharedService, createDocumentReceiver, type UploadStorage } from "@/modules/service-api/application"
 import { ServiceError, ERROR_STATUS, parsePrecondition, etag, API_VERSION } from "@/modules/service-api/domain"
 import type { SharedRepository } from "@/modules/service-api/application"
-export interface ServiceOptions { repository: SharedRepository; token: string; maxJsonBytes?: number; uploads?: UploadStorage; maxUploadBytes?: number; webRoot?: string }
+import { AuthError, IdentityError } from "@/modules/identity/domain"
+import type { AccountAuthentication } from "./auth-http"
+export interface ServiceOptions { repository: SharedRepository; token: string; authentication?: AccountAuthentication; maxJsonBytes?: number; uploads?: UploadStorage; maxUploadBytes?: number; webRoot?: string }
 export function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     let size = 0, failed = false
@@ -50,12 +52,15 @@ export function createServiceHttp(options: ServiceOptions) {
     const version = () => parsePrecondition({ match: request.headers["if-match"] as string | undefined, noneMatch: request.headers["if-none-match"] as string | undefined })
     try {
       const url = new URL(request.url ?? "/", "http://service"), method = request.method ?? "GET"
-      if (method === "GET" && url.pathname === "/api/v1/health") return send(200, { apiVersion: API_VERSION, authentication: "service-key", accountLogin: false, capabilities: { uploads: !!receiver, events: true, localBridge: false } })
+      if (method === "GET" && url.pathname === "/api/v1/health") return send(200, { apiVersion: API_VERSION, authentication: options.authentication ? "accounts" : "service-key", accountLogin: !!options.authentication, capabilities: { uploads: !!receiver, events: true, localBridge: false } })
       if (!url.pathname.startsWith("/api/") && method === "GET" && options.webRoot && await serveWeb(options.webRoot, url.pathname, response)) return
       if (!url.pathname.startsWith("/api/v1/")) throw new ServiceError("not_found", "Route not found")
-      authenticate(request)
       const origin = request.headers.origin
       if (origin && origin !== `http://${request.headers.host}` && origin !== `https://${request.headers.host}`) throw new ServiceError("forbidden", "Cross-origin access is not enabled")
+      if (!["GET", "HEAD"].includes(method) && request.headers.cookie && request.headers["x-kw-csrf"] !== "1") throw new ServiceError("forbidden", "A same-origin mutation header is required")
+      if (options.authentication && await options.authentication.handle(request, response, url.pathname, json, send)) return
+      if (options.authentication) await options.authentication.authenticate(request)
+      else authenticate(request)
       if (url.pathname === "/api/v1/projects") {
         if (method === "GET") { const page = await service.projects(url.searchParams.get("limit"), url.searchParams.get("cursor")); return send(200, page.items, page.nextCursor) }
         if (method === "POST") return send(201, await service.createProject((await json()).name))
@@ -105,7 +110,7 @@ export function createServiceHttp(options: ServiceOptions) {
       if (part === "events" && method === "GET") return send(200, await service.events(id, Number(url.searchParams.get("after") ?? 0), Number(url.searchParams.get("limit") ?? 100)))
       throw new ServiceError("not_found", "Route not found")
     } catch (error) {
-      const failure = error instanceof ServiceError ? error : new ServiceError("internal", "Service request failed")
+      const failure = error instanceof ServiceError ? error : error instanceof AuthError ? new ServiceError(error.code, error.message) : error instanceof IdentityError ? new ServiceError(error.code === "last_admin" ? "conflict" : error.code, error.message) : new ServiceError("internal", "Service request failed")
       response.writeHead(ERROR_STATUS[failure.code], { "Content-Type": "application/json; charset=utf-8" })
       response.end(JSON.stringify({ error: { code: failure.code, message: failure.message, requestId, ...(failure.details ? { details: failure.details } : {}) } }))
     }
