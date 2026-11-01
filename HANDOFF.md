@@ -1,12 +1,12 @@
 # 新会话交接
 
-> 当前状态：用户已恢复 B 系列，B15 已完成，继续 B16。
+> 当前状态：本轮 B10–B16 已完成并推送。B 系列仅 B07/B07c 因 C02/I02 依赖保持未完成，当前未开始 C 系列。
 
 ## 先读与工作约定
 
 1. 读本文件、[TASKS](TASKS.md)、[WORKLOG](WORKLOG.md)、[ARCHITECTURE](ARCHITECTURE.md)。检查实际 Git 分支、状态和日志，不假设旧后台进程存在。
 2. TASKS 是状态入口。完成一项就勾选、追加 WORKLOG（实现/验证/限制）、更新本交接点并提交；不能只更新复选框。
-3. 用户最新指令是**继续运行 B 系列**；完成一项记录和提交后继续下一项，B07c 的共享 API/MCP 依赖仍未实现。
+3. 用户最新指令是**继续运行 B 系列**，本轮已逐项完成到 B16。B07c 依赖 C02/I02；未在本轮扩展实现 C/I 新后端，不得将 B07 总项勾选。
 4. 保持小批次可回归迁移，业务放模块，通过公开 API 和端口组合。旧调用者迁完才删兼容入口；新模块不得依赖旧 Store/Tauri/文件系统。
 5. 后续仓库默认公开，推送到用户 origin；不加入真实笔记、凭据或机密。当前工作目录 `/workspace/llm_wiki`，新环境路径变化时重新定位。
 
@@ -63,23 +63,32 @@ B14 已完成：settings 拥有配置类型、预设/路由/推理/Azure 策略�
 
 B15 已完成：聊天/审阅/检查更新器和默认配置归对应模块，Zustand 仅注入 React 状态/时钟/ID/文案；Wiki Store 仍保留导航/文件索引/当前配置投影。Wiki 图与关联检索服务注入文件/解析/worker，缓存按实例隔离，传递调用时版本；场景组装归 star-map application，组件只组装输入和交互。项目切换使旧图失效。删除零引用 memory-sea-scene 旧入口；仍被契约测试或生产代码引用的 facade 保留。
 
-下一项 B16：公开入口/依赖/说明与全树审计，最后完整回归和浏览器复核。B07c 仍依赖 C02/I02，不开始账号/API/MCP 新后端来冒充 B07c 完成。
+B16 已完成：全树审计覆盖 415 个生产源文件、15 个模块（模块内 149 个生产文件）、33 个仍有调用/测试的兼容入口。所有模块无 legacy 例外、无私有入口绕用或依赖环；补充领域直接调用平台 I/O 的检查。审计脚本和 JSON 报告可复现，CI 检查报告一致性。详细证据见 `analysis/architecture/module-boundary-audit.md` 和 `module-audit-v1.json`。
+
+## 当前交接点
+
+- 本轮提交：B10 `62787f5`，B11 `86e3445`，B12 `8642f2a`，B13 `acf0d5e`，B14 `deeed74`，B15 `7e4318f`，B16 以 Git 日志为准。均推送 origin 开发分支，未合并 main。
+- B07c 未完成，需要先实现 C02 共享 API 和 I02 新 MCP 的文档注册链路。原有本地监听/手动/定时导入接入不等于新增服务端路径已完成。
+- 当前没有启动 C 系列。用户要求继续全项目时，从 C01 本地/Web 边界、C02 API/持久适配推进；之后才能验收 B07c。
+- 部分旧 lib 仍负责解析/编译、模型传输或平台兼容组合；新模块不反向导入这些实现。静态模块审计不是生产权限、安全沙箱或完整运行时证明。
+- 源文件/导入/公开契约变化后执行 `npm run audit:modules` 并提交报告，CI 的 `audit:modules:check` 检查其一致性。
 
 ## 验证与启动
 
 ```bash
 npm ci
 npm run check:modules
+npm run audit:modules:check
 npm run typecheck
 npm run test:mocks
 npm run build
 npm run build:preview
 ```
 
-最新完整模拟回归：177 文件 / 2228 项通过。十五模块边界、类型、正式/预览构建通过。新增提交/发布、条件编辑、元数据和检索端口测试通过。Chromium 验证正常保存/冲突保留草稿/显式重载、本地搜索/迟到结果丢弃/证据引用；最新检索脚本页面异常及外部请求均为 0，先前历史/项目 ABA、对话/审阅发布验证记录保留。
+最新完整模拟回归：178 文件 / 2231 项通过。十五模块边界、全树审计、类型、正式/预览构建通过；边界/审计脚本独立 2 文件/10 项通过。Chromium 七组验证全部通过，覆盖编辑/冲突、历史与 ABA、发布、检索与迟到结果、任务页、Wiki/64 条模拟记忆切换、单页批量纠错一次写入、设置能力提示；页面异常为 0。
 
 - 真实模型、真实 Vault、原生 Rust/watcher/桌面安装包尚未验收；本环境此前没有 cargo，新环境重新检查。
 - `npm run dev` 是前端；桌面需 `npm run tauri dev` 与 Rust/Tauri 依赖。
 - 显式沙箱入口 preview.html / src/preview，构建为 dist-preview/preview.html，使用模拟文件系统和合成数据。
-- 可复现浏览器脚本在 analysis/implementation：smoke-task-ui.mjs、smoke-wiki-repository.mjs、smoke-file-history.mjs、smoke-generated-pages.mjs、smoke-wiki-conflict.mjs、smoke-retrieval.mjs；需要 PLAYWRIGHT_MODULE、CHROMIUM_PATH 与 Vite。禁止将夹具脚本指向真实知识库。
+- 可复现浏览器脚本在 analysis/implementation：smoke-task-ui.mjs、smoke-wiki-repository.mjs、smoke-file-history.mjs、smoke-generated-pages.mjs、smoke-wiki-conflict.mjs、smoke-retrieval.mjs、smoke-modular-features.mjs；需要 PLAYWRIGHT_MODULE、CHROMIUM_PATH 与 Vite。禁止将夹具脚本指向真实知识库。
 - `/tmp` 工具、端口与 `/workspace/artifacts` 预览是环境临时产物，不保证新会话存在。新增测试避免放进被忽略的 tests/ 目录。

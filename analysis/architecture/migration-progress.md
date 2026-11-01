@@ -53,7 +53,7 @@ flowchart TD
 - Chromium 在线与加载后断网预览均通过：记忆创建保存、搜索、任务切换、Wiki 模式切换和星图交互，无页面运行异常。
 - 模拟验证不代表原生 Tauri 或真实模型已验收；当前环境没有 Rust 工具链。
 
-导入队列现已通过执行器运行（B02），队列状态机/恢复/持久化端口已抽离（B03）；研究执行器与受控任务 UI 已完成（B04/B05），下一批优先项目/文档仓储（B06/B07），再逐步迁移 Wiki 仓储与 Obsidian 回执适配。identity/AccessContext 及共享记忆后端需要新增实现，不作为本批代码搬迁已完成项。移除兼容入口之前，应先迁移全部调用者与对应测试。
+B01–B06、B07a/B07b、B08–B16 已完成既有本地链路的模块化批次。Agent/CLI、检查/审阅、Obsidian、设置、星图查询与 Store 业务更新已迁出，通过应用端口接入旧原生能力。B07c 仍依赖 C02/I02 的新共享 API/MCP，B07 总项保持未完成。identity/AccessContext、共享记忆和生产 Web 后端属于新增实现，不能作为本次代码搬迁已交付能力。部分解析/编译和模型传输仍在 lib 作为应用适配，详细范围见各模块说明。
 
 最新任务与验证以根目录 [TASKS](../../TASKS.md)、[WORKLOG](../../WORKLOG.md)、[HANDOFF](../../HANDOFF.md) 为准。上述首批测试数字是历史记录。
 
@@ -65,4 +65,4 @@ flowchart TD
 - 新增恢复 epoch 检查，避免旧异步读取污染后续项目或同项目新恢复；计时器支持注入的零值句柄。
 - 强持久化、损坏队列恢复与跨进程任务调度没有在本次实现；活动写入 best-effort 语义保持原样。
 
-当前 B15 已完成；用户已授权继续 B 系列，下一项 B16。最新精确状态见根目录 TASKS/WORKLOG/HANDOFF。
+当前 B10–B16 已完成；B 系列仅 B07/B07c 因 C02/I02 依赖保持未完成。全树审计见 [module-boundary-audit.md](module-boundary-audit.md)。最新精确状态见根目录 TASKS/WORKLOG/HANDOFF。

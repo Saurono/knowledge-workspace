@@ -17,7 +17,9 @@
     "tauri": "tauri",
     "dev:preview": "vite --host 0.0.0.0 --open /preview.html",
     "build:preview": "npm run check:modules && npm run typecheck && vite build --mode demo",
-    "check:modules": "node scripts/check-module-boundaries.mjs"
+    "check:modules": "node scripts/check-module-boundaries.mjs",
+    "audit:modules": "node scripts/audit-modules.mjs",
+    "audit:modules:check": "node scripts/audit-modules.mjs --check"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

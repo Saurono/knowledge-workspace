@@ -67,6 +67,23 @@ function importsOf(file) {
   visit(ast)
   return imports
 }
+function domainPlatformCalls(file) {
+  const ast = ts.createSourceFile(file, fs.readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true)
+  const calls = new Set()
+  const roots = new Set(["window", "document", "navigator", "localStorage", "sessionStorage", "process"])
+  const visit = (node) => {
+    if ((ts.isCallExpression(node) || ts.isNewExpression(node)) && ts.isIdentifier(node.expression)
+      && ["fetch", "Worker", "WebSocket", "XMLHttpRequest"].includes(node.expression.text)) calls.add(node.expression.text)
+    if ((ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) && ts.isIdentifier(node.expression)) {
+      if (roots.has(node.expression.text)) calls.add(node.expression.text)
+      if (node.expression.text === "globalThis" && ts.isPropertyAccessExpression(node)
+        && ["fetch", "window", "document", "navigator", "localStorage", "sessionStorage", "Worker", "WebSocket"].includes(node.name.text)) calls.add(`globalThis.${node.name.text}`)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+  return [...calls]
+}
 export function checkModuleBoundaries(root) {
   const sourceRoot = path.join(root, "src")
   const moduleRoot = path.join(sourceRoot, "modules")
@@ -106,6 +123,8 @@ export function checkModuleBoundaries(root) {
   for (const file of walk(sourceRoot).filter((file) => sourcePattern.test(file) && !isTest(file))) {
     const source = ownerOf(file)
     const layer = source ? normalize(path.relative(source.directory, file)).split("/")[0] : null
+    if (layer === "domain") for (const global of domainPlatformCalls(file))
+      errors.push(`${normalize(path.relative(root, file))}: ${global} — domain cannot call platform globals`)
     for (const specifier of importsOf(file)) {
       if (specifier === null) {
         if (source)

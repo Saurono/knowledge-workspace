@@ -20,6 +20,7 @@ Before submitting a change:
 
 ```sh
 npm run check:modules
+npm run audit:modules:check
 npm run typecheck
 # Run the module tests and any affected integration checks.
 ```
@@ -39,3 +40,9 @@ sequence are in [the architecture design](analysis/architecture/modular-design-v
 Task completion must update [TASKS](TASKS.md), append implementation and validation
 in [WORKLOG](WORKLOG.md), and refresh the next step in [HANDOFF](HANDOFF.md).
 Start a new session by reading those files and checking the actual Git state.
+
+B16 audits production callers across the source tree as well as feature manifests.
+The reproducible [boundary audit](analysis/architecture/module-boundary-audit.md)
+and [JSON inventory](analysis/architecture/module-audit-v1.json) document the exact
+scope. After changing source-file inventory, imports or public contracts, regenerate
+with `npm run audit:modules` and commit the report; CI checks its consistency.

@@ -52,6 +52,9 @@ jobs:
       - name: Check module boundaries
         run: npm run check:modules
 
+      - name: Check module audit snapshot
+        run: npm run audit:modules:check
+
       - name: Check frontend build
         run: npx vite build
 

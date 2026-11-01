@@ -1,0 +1,545 @@
+{
+  "schemaVersion": 1,
+  "scope": "src production imports and type imports; feature layers/manifests; compatibility facade references including tests",
+  "productionFiles": 415,
+  "moduleCount": 15,
+  "modules": [
+    {
+      "id": "agent",
+      "productionFiles": 11,
+      "testFiles": 2,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 10
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 4
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
+      "id": "cli",
+      "productionFiles": 11,
+      "testFiles": 1,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 7
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 4
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
+      "id": "documents",
+      "productionFiles": 8,
+      "testFiles": 0,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 9
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 6
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
+      "id": "domains",
+      "productionFiles": 6,
+      "testFiles": 1,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 1
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 3
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 1
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [
+        "react",
+        "react-i18next"
+      ],
+      "legacyExceptions": []
+    },
+    {
+      "id": "ingestion",
+      "productionFiles": 10,
+      "testFiles": 3,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 4
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 6
+        }
+      ],
+      "dependencies": [
+        "tasks"
+      ],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
+      "id": "memory",
+      "productionFiles": 6,
+      "testFiles": 1,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 1
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 2
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 1
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [
+        "react",
+        "react-i18next"
+      ],
+      "legacyExceptions": []
+    },
+    {
+      "id": "obsidian",
+      "productionFiles": 5,
+      "testFiles": 1,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 5
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 2
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
+      "id": "projects",
+      "productionFiles": 5,
+      "testFiles": 0,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 5
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 3
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
+      "id": "quality",
+      "productionFiles": 19,
+      "testFiles": 2,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 1
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 16
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 8
+        }
+      ],
+      "dependencies": [
+        "tasks",
+        "wiki"
+      ],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
+      "id": "research",
+      "productionFiles": 8,
+      "testFiles": 1,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 5
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 2
+        },
+        {
+          "path": "ui/index.ts",
+          "productionImporters": 1
+        }
+      ],
+      "dependencies": [
+        "tasks"
+      ],
+      "externalPackages": [
+        "lucide-react",
+        "react",
+        "react-i18next"
+      ],
+      "legacyExceptions": []
+    },
+    {
+      "id": "retrieval",
+      "productionFiles": 14,
+      "testFiles": 2,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 14
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 5
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
+      "id": "settings",
+      "productionFiles": 15,
+      "testFiles": 1,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 14
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 4
+        }
+      ],
+      "dependencies": [
+        "retrieval"
+      ],
+      "externalPackages": [],
+      "legacyExceptions": []
+    },
+    {
+      "id": "star-map",
+      "productionFiles": 8,
+      "testFiles": 3,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 1
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 6
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 2
+        }
+      ],
+      "dependencies": [
+        "domains",
+        "memory",
+        "retrieval"
+      ],
+      "externalPackages": [
+        "react",
+        "react-i18next"
+      ],
+      "legacyExceptions": []
+    },
+    {
+      "id": "tasks",
+      "productionFiles": 5,
+      "testFiles": 2,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 6
+        },
+        {
+          "path": "ui/index.ts",
+          "productionImporters": 1
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [
+        "react",
+        "react-i18next"
+      ],
+      "legacyExceptions": []
+    },
+    {
+      "id": "wiki",
+      "productionFiles": 18,
+      "testFiles": 3,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 0
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 13
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 6
+        },
+        {
+          "path": "ui/index.ts",
+          "productionImporters": 2
+        }
+      ],
+      "dependencies": [
+        "documents"
+      ],
+      "externalPackages": [
+        "lucide-react",
+        "react",
+        "react-i18next"
+      ],
+      "legacyExceptions": []
+    }
+  ],
+  "compatibility": [
+    {
+      "path": "src/lib/agent-file-activity.ts",
+      "productionImporters": 2,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/azure-openai.ts",
+      "productionImporters": 4,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/chat-agent-types.ts",
+      "productionImporters": 5,
+      "testImporters": 0
+    },
+    {
+      "path": "src/lib/claude-cli-transport.ts",
+      "productionImporters": 1,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/codex-cli-transport.ts",
+      "productionImporters": 1,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/deep-research.ts",
+      "productionImporters": 3,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/embedding.ts",
+      "productionImporters": 8,
+      "testImporters": 5
+    },
+    {
+      "path": "src/lib/graph-relevance.ts",
+      "productionImporters": 2,
+      "testImporters": 2
+    },
+    {
+      "path": "src/lib/ingest-commit-coordinator.ts",
+      "productionImporters": 0,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/ingest-queue.ts",
+      "productionImporters": 11,
+      "testImporters": 3
+    },
+    {
+      "path": "src/lib/ingest-receipts.ts",
+      "productionImporters": 6,
+      "testImporters": 3
+    },
+    {
+      "path": "src/lib/ingest-sanitize.ts",
+      "productionImporters": 2,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/lint-fixes.ts",
+      "productionImporters": 0,
+      "testImporters": 2
+    },
+    {
+      "path": "src/lib/lint-structural-core.ts",
+      "productionImporters": 1,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/lint.ts",
+      "productionImporters": 1,
+      "testImporters": 5
+    },
+    {
+      "path": "src/lib/llm-task-routing.ts",
+      "productionImporters": 8,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/maintenance-tasks.ts",
+      "productionImporters": 3,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/output-language-options.ts",
+      "productionImporters": 3,
+      "testImporters": 0
+    },
+    {
+      "path": "src/lib/page-merge.ts",
+      "productionImporters": 2,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/project-identity.ts",
+      "productionImporters": 3,
+      "testImporters": 0
+    },
+    {
+      "path": "src/lib/project-store.ts",
+      "productionImporters": 13,
+      "testImporters": 2
+    },
+    {
+      "path": "src/lib/reasoning-capabilities.ts",
+      "productionImporters": 6,
+      "testImporters": 2
+    },
+    {
+      "path": "src/lib/review-utils.ts",
+      "productionImporters": 0,
+      "testImporters": 3
+    },
+    {
+      "path": "src/lib/search.ts",
+      "productionImporters": 2,
+      "testImporters": 2
+    },
+    {
+      "path": "src/lib/source-identity.ts",
+      "productionImporters": 3,
+      "testImporters": 3
+    },
+    {
+      "path": "src/lib/sources-merge.ts",
+      "productionImporters": 5,
+      "testImporters": 2
+    },
+    {
+      "path": "src/lib/sweep-reviews.ts",
+      "productionImporters": 1,
+      "testImporters": 8
+    },
+    {
+      "path": "src/lib/text-chunker.ts",
+      "productionImporters": 0,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/wiki-filename.ts",
+      "productionImporters": 4,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/wiki-graph.ts",
+      "productionImporters": 7,
+      "testImporters": 4
+    },
+    {
+      "path": "src/lib/wiki-page-types.ts",
+      "productionImporters": 5,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/wikilink-transform.ts",
+      "productionImporters": 3,
+      "testImporters": 1
+    },
+    {
+      "path": "src/lib/workspace-data.ts",
+      "productionImporters": 1,
+      "testImporters": 1
+    }
+  ],
+  "errors": []
+}

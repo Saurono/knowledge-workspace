@@ -1,13 +1,9 @@
-# 文档与来源
+# 文档来源与版本
 
-`domain/` 保存既有来源路径/摘要文件名兼容规则，以及持久来源 ID、注册/首次入库时间和版本查询模型。路径身份仍是旧缓存/文件名键，不等同于耐久 UUID；移动/重命名需要额外的迁移工作流。
+`domain` 拥有来源原路径/稳定 ID/首次时间、已确认移动后的键迁移及既有摘要命名规则；`application` 注入目录仓储、修订哈希、版本查询和通用文件历史端口。模块不依赖 Store、Tauri、Wiki 或 Obsidian。
 
-`application/` 提供来源目录服务、仓储端口与兼容 SHA-256 修订键。版本查询读取项目内该来源 ID 的历史修订，保留未知首次入库时间；不制造旧时间。
+`app/document-records` 保持 ingest-records v1 聚合文件兼容，组合文档来源、Wiki 页面元数据与 Obsidian 回执。本地手动/监听/定时导入和已确认内容相同的移动链路已在 B07a/B07b 接入；移动保持稳定 sourceId、原始时间和历史回执，不把旧时间未知伪造为当前时间。
 
-`app/document-records` 是 v1 聚合文件兼容层：来源归 documents 模块，Wiki 时间与回执仍在应用组合层，统一在规范化的项目锁下更新 `.llm-wiki/ingest-records.json`。原 lib/ingest-receipts 和 source-identity 保留兼容入口；现有字段与 JSON 格式不变。
+B08c2 的通用文件历史模型供 Wiki/原文展示，app/wiki 适配原生命令并复用提交锁。生产 Web 版本存储与新 API/MCP 文档注册链路仍未实现（B07c 依赖 C02/I02）；没有跨文件事务、自动 Vault 移动同步或服务端授权。
 
-本批只完成已存在来源规则/仓储/版本查询迁移。所有导入入口、移动/重命名对齐及未来 API/MCP 接入属于 B07 的后续子任务；多用户授权、强事务与自动 Vault 移动同步尚未实现。
-
-B07b 已接入本地监听、队列入列与定时复制，批次登记单次写入，已知原路径不被副本覆盖。app/document-records/source-paths 在确认内容相同的移动后协调目录与 Wiki 引用/摘要时间；目标来源冲突拒绝覆盖、历史回执不改写。跨文件事务/失败自动恢复与新增 API/MCP 仍待后续任务。
-
-文件历史：domain/history 与 application/history 定义通用历史记录、项目相对路径和列表/恢复端口，app/wiki/history 复用原生库并在项目锁内恢复；历史服务不访问 Tauri 或全局 Store。
+旧 lib 入口与原 JSON 保留，目录/回执/移动/历史/路径碰撞测试验证兼容性。运行 `npm run check:modules`、`npm run typecheck`、`npm run test:mocks`。

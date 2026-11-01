@@ -105,4 +105,13 @@ describe("module architecture enforcement", () => {
     expect(errors.some((error) => error.includes("undeclared legacy"))).toBe(true)
     expect(errors.some((error) => error.includes("undeclared package"))).toBe(true)
   })
+  it("rejects direct platform globals in domain even without imports", () => {
+    const root = fixture()
+    module(root, "feature")
+    write(root, "src/modules/feature/domain/rules.ts", 'export const run = () => fetch("/api")\nexport const persist = () => window.localStorage.setItem("x", "y")\n')
+    const errors = checkModuleBoundaries(root).errors
+    expect(errors.some(error => error.includes("fetch — domain cannot call platform globals"))).toBe(true)
+    expect(errors.some(error => error.includes("window — domain cannot call platform globals"))).toBe(true)
+  })
+
 })
