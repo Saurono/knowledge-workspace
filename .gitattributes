@@ -1,3 +1,4 @@
 # Preserve literal diff/test evidence; production source whitespace stays checked.
 analysis/evaluation/artifacts/*.patch -whitespace
 analysis/evaluation/artifacts/*.txt -whitespace
+analysis/architecture/module-audit-v1.json text eol=lf

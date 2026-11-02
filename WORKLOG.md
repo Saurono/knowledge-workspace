@@ -377,3 +377,11 @@
 - 实际服务：Edge/Chromium 自动化的独立共享 Web **12 组通过，页面异常 0**；真正 CLI 子进程和 MCP stdio **8 组通过**，含读写范围、项目固定、连接中吊销和无初始化密钥重启后的持久化。全部使用随机凭据、合成资料和临时数据，结束清理测试服务与目录。
 - 限制：本地复制/catalog/Wiki/队列不是跨文件事务，互斥仅限同进程；输出落盘与回执登记间崩溃仍有恢复窗口，不能声称跨进程严格恰好一次。上传文件暂存与 SQLite 也不是跨介质事务，可留下未发布目录，自动清理/完整恢复属于后续工作。D03–D09、完整 B07c/I02/H 执行器、真实模型/Vault/原生桌面安装包与远端 CI 没有借本轮冒充验收。
 - 文档与交付：TASKS 勾选 D02，HANDOFF 更新 Windows 路径/运行方法/下一授权点 D03，运维与模块 README、`analysis/implementation/d02-source-idempotency.md`、审计 JSON 同步；CI 纳入两份独立 D02 evaluation 验收。提交与推送沿用开发分支，未合并 main；最终提交 SHA 以 Git 为准。
+
+## L041 · 2026-11-03 · 开发分支远端 CI 入口与 Windows 检出规则
+
+- 授权：用户同意按周报建议接续，范围为开发分支 CI 验证、D03/D04 交付和 D05 契约设计；继续主控调度审查、Luna 编码。
+- 入口提交：`757cb1c`。CI push 增加 codex/knowledge-workspace-v0.1，保留 main push/PR 并加入手动入口；前端依赖使用 npm ci，显式执行项目 typecheck；未删减三平台/Rust/共享服务/MCP 检查。
+- 真实运行：[41478285083](https://github.com/Saurono/knowledge-workspace/actions/runs/41478285083)。Ubuntu 完整 job 成功；Windows 在审计快照失败，已读取真实日志；macOS 当时仍排队。不能以 Ubuntu 通过冒充整个矩阵通过，J04 保持未完成。
+- Windows 修正：仅给生成的 module-audit-v1.json 设置 text eol=lf，保留归档 patch/txt 规则，不关闭审计或在 CI 自动重生成报告。Luna 在临时干净 checkout、core.autocrlf=true 下验证 i/lf w/lf、623 LF/0 CRLF，基线审计 18 模块/481 生产文件通过。主控核对并安全移除临时 Junction/worktree，原依赖目录保留。
+- 修正推送后的远端结果继续收集；D03 工作区源清单变化需要按正常流程刷新报告，与本次 Windows 换行问题分开处理。
