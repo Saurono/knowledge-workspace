@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, codex/knowledge-workspace-v0.1]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   check:
@@ -47,7 +48,7 @@ jobs:
           node-version: 24
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm ci
 
       - name: Check module boundaries
         run: npm run check:modules
@@ -56,7 +57,7 @@ jobs:
         run: npm run audit:modules:check
 
       - name: Check frontend build
-        run: npx vite build
+        run: npm run typecheck && npx vite build
 
       - name: Check shared Web build
         run: npm run build:web
