@@ -13,7 +13,8 @@ import type { LlmConfig } from "@/stores/wiki-store"
 import { enqueueBatch } from "@/lib/ingest-queue"
 import { hasUsableLlm } from "@/lib/has-usable-llm"
 import { getTaskLlmConfig } from "@/lib/llm-task-routing"
-import { getFileName, getFileStem, getRelativePath, normalizePath } from "@/lib/path-utils"
+import { getFileName, getFileStem, getRelativePath, isAbsolutePath, normalizePath } from "@/lib/path-utils"
+import { moveSourceKey } from "@/modules/documents/domain"
 import {
   sourceIdentityForPath,
   sourceReferenceIdentity,
@@ -40,9 +41,10 @@ import { naturalCompare } from "@/lib/natural-sort"
 import type { SourceWatchConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useActivityStore } from "@/stores/activity-store"
-import { registerImportedSource, registerObservedSourcePaths, migrateSourceMetadata } from "@/lib/ingest-receipts"
+import { reserveImportedSource, confirmImportedSource, registerObservedSourcePaths, migrateSourceMetadata, documents } from "@/lib/ingest-receipts"
 import { preprocessSourceFiles } from "@/lib/source-preprocess"
 import { moveParsedMarkdown, removeParsedMarkdown } from "@/lib/parsed-source-output"
+import { withProjectLock } from "@/lib/project-mutex"
 
 export const INGESTABLE_SOURCE_EXTENSIONS = new Set([
   "md",
@@ -136,7 +138,23 @@ export interface DeleteSourcesResult {
  * is an unchanged file move. The caller must establish content identity from
  * watcher hashes; this function intentionally does not infer moves by name.
  */
-export async function migrateSourcePath(
+export function migrateSourcePath(
+  projectPath: string,
+  oldSourcePath: string,
+  newSourcePath: string,
+): Promise<number> {
+  const pp = normalizePath(projectPath)
+  return withProjectLock(`source-import\0${pp}`, async () => {
+    const oldKey = isAbsolutePath(oldSourcePath) ? normalizePath(oldSourcePath) : `${pp}/${normalizePath(oldSourcePath)}`
+    const source = (await documents.list(pp))[oldKey]
+    const migrate = () => migrateSourcePathUnlocked(pp, oldSourcePath, newSourcePath)
+    return source
+      ? withProjectLock(`ingest-source\0${pp}\0${source.id}`, migrate)
+      : migrate()
+  })
+}
+
+async function migrateSourcePathUnlocked(
   projectPath: string,
   oldSourcePath: string,
   newSourcePath: string,
@@ -147,6 +165,24 @@ export async function migrateSourcePath(
   // Cache keys preserve spelling, so case-only renames still require a
   // migration even on case-insensitive filesystems.
   if (oldIdentity === newIdentity) return 0
+
+  const oldKey = isAbsolutePath(oldSourcePath) ? normalizePath(oldSourcePath) : `${pp}/${normalizePath(oldSourcePath)}`
+  const newKey = isAbsolutePath(newSourcePath) ? normalizePath(newSourcePath) : `${pp}/${normalizePath(newSourcePath)}`
+  const sourceCatalog = await documents.list(pp)
+  const oldSource = sourceCatalog[oldKey]
+  const destinationSource = sourceCatalog[newKey]
+  if (oldSource && destinationSource && oldSource.id !== destinationSource.id) {
+    const destinationHasReceipt = (await documents.revisions(pp, newKey)).length > 0
+    if (destinationSource.originalPath?.replace(/\\/g, "/") !== newKey ||
+        destinationSource.ingestedAt !== null || destinationHasReceipt) {
+      throw new Error("Cannot migrate a source over an independently registered destination")
+    }
+  }
+  // Run the identity collision rule before touching summary pages, cache keys,
+  // parsed output, or page frontmatter.
+  const moveCandidate = { ...sourceCatalog }
+  if (oldSource && destinationSource && oldSource.id !== destinationSource.id) delete moveCandidate[newKey]
+  moveSourceKey(moveCandidate, oldKey, newKey)
 
   const allMd = flattenMd(await listDirectory(`${pp}/wiki`))
   const oldBaseName = getFileName(oldIdentity).toLowerCase()
@@ -195,6 +231,7 @@ export async function migrateSourcePath(
 
   const completedWrites: typeof writes = []
   let newSummaryCreated = false
+  let preserveMigratedContent = false
   try {
     for (const write of writes) {
       await writeFile(write.path, write.migrated)
@@ -208,6 +245,7 @@ export async function migrateSourcePath(
       await deleteFile(oldSummaryPath)
       summaryMoves.set(oldSummaryRel, newSummaryRel)
     }
+    preserveMigratedContent = true
     await moveIngestCacheEntry(pp, oldIdentity, newIdentity, summaryMoves)
     try {
       await moveParsedMarkdown(pp, oldSourcePath, newSourcePath)
@@ -219,10 +257,12 @@ export async function migrateSourcePath(
     // files after the cache/summary move has already completed.
     try { await migrateSourceMetadata(pp, oldSourcePath, newSourcePath, summaryMoves) }
     catch (error) {
-      useActivityStore.getState().addItem({type:"ingest",title:"Source metadata migration",status:"error",detail:String(error),filesWritten:[newSourcePath]})
+      useActivityStore.getState().addItem({ type: "ingest", title: "Source metadata migration", status: "error", detail: `The moved source and its Wiki references were preserved, but identity metadata failed. Retry the file sync after fixing the metadata error: ${String(error)}`, filesWritten: [newSourcePath] })
+      throw error
     }
     return writes.length
   } catch (err) {
+    if (preserveMigratedContent) throw err
     if (newSummaryCreated) {
       try {
         await deleteFile(newSummaryPath)
@@ -314,6 +354,33 @@ export interface SourceImportResult {
   skipped: SkippedSourceImport[]
 }
 
+async function registerAndCopySource(
+  projectPath: string,
+  originalPath: string,
+  chooseTarget: (catalog: Awaited<ReturnType<typeof documents.list>>) => Promise<string>,
+  copyInto: (target: string) => Promise<void>,
+): Promise<string> {
+  return withProjectLock(`source-import\0${projectPath}`, async () => {
+    const catalog = await documents.list(projectPath)
+    const existing = await documents.pathForOriginalSource(projectPath, originalPath)
+    const target = existing ?? await chooseTarget(catalog)
+    const targetOwner = Object.entries(catalog).find(([path]) => normalizedCatalogPath(path) === normalizedCatalogPath(target))?.[1]
+    if (targetOwner && targetOwner.originalPath?.replace(/\\/g, "/") !== originalPath.replace(/\\/g, "/"))
+      throw new Error("Import target is reserved by a different source origin")
+    // Reserve the target in the catalog before copying. A failed/crashed copy
+    // can then be retried into the same slot without a dated duplicate.
+    await reserveImportedSource(projectPath, target, originalPath)
+    const source = (await documents.list(projectPath))[target]
+    if (!source || !/^[A-Za-z0-9_-]{1,128}$/.test(source.id))
+      throw new Error("Source identity could not be established before copying")
+    await withProjectLock(`ingest-source\0${projectPath}\0${source.id}`, async () => {
+      await copyInto(target)
+      await confirmImportedSource(projectPath, target)
+    })
+    return target
+  })
+}
+
 function formatMegabytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
@@ -366,11 +433,10 @@ export async function importSourceFiles(
       continue
     }
 
-    const destPath = await getUniqueDestPath(`${pp}/raw/sources`, originalName)
     try {
-      await copyFile(sourcePath, destPath)
-      try { await registerImportedSource(pp, destPath, sourcePath) }
-      catch (error) { useActivityStore.getState().addItem({ type: "ingest", title: "Source provenance", status: "error", detail: `${originalName}: ${String(error)}`, filesWritten: [] }) }
+      const destPath = await registerAndCopySource(pp, sourcePath,
+        async (catalog) => getUniqueDestPath(`${pp}/raw/sources`, originalName, Object.keys(catalog)),
+        (target) => copyFile(sourcePath, target))
       importedPaths.push(destPath)
     } catch (err) {
       console.error(`Failed to import ${originalName}:`, err)
@@ -397,10 +463,12 @@ export async function importSourceFolder(
     throw new Error("Cannot import the project folder or a folder inside the current project.")
   }
   const folderName = getFileName(selectedFolder) || "imported"
-  const destDir = `${pp}/raw/sources/${folderName}`
+  const sourceRootPrefix = `${sourceRoot.replace(/\/+$/, "")}/`
+  const preferredDestDir = `${pp}/raw/sources/${folderName}`
   const cfg = normalizeSourceWatchConfig(sourceWatchConfig)
   const maxBytes = cfg.maxFileSizeMb * 1024 * 1024
   const allowedFiles: string[] = []
+  let resolvedDestDir = preferredDestDir
   const skipped: SkippedSourceImport[] = []
   // include hidden: a user importing a folder into raw/sources may
   // legitimately want dotfolder notes. Config-like files under known
@@ -411,7 +479,6 @@ export async function importSourceFolder(
   for (const file of sourceFiles) {
     const relativeSourcePath = getRelativePath(file.path, sourceRoot)
     const displayName = relativeSourcePath || file.name
-    const destPath = `${destDir}/${relativeSourcePath}`
     const relPath = `raw/sources/${folderName}/${relativeSourcePath}`
     if (isSensitiveConfigSourceFile(file.path)) {
       skipped.push({ name: displayName, reason: "sensitive-config" })
@@ -432,12 +499,30 @@ export async function importSourceFolder(
       continue
     }
     try {
-      const parent = parentPath(destPath)
-      if (parent) await createDirectory(parent)
-      await copyFile(file.path, destPath)
-      try { await registerImportedSource(pp, destPath, file.path) }
-      catch (error) { useActivityStore.getState().addItem({ type: "ingest", title: "Source provenance", status: "error", detail: `${displayName}: ${String(error)}`, filesWritten: [] }) }
-      allowedFiles.push(destPath)
+      const target = await registerAndCopySource(pp, file.path, async (catalog) => {
+        const knownRootEntry = Object.entries(catalog).find(([sourcePath, source]) => {
+          const origin = source.originalPath?.replace(/\\/g, "/")
+          if (!origin?.startsWith(sourceRootPrefix)) return false
+          const relative = origin.slice(sourceRootPrefix.length)
+          return sourcePath.replace(/\\/g, "/").endsWith(`/${relative}`)
+        })
+        const knownRoot = knownRootEntry ? (() => {
+          const relative = knownRootEntry[1].originalPath!.replace(/\\/g, "/").slice(sourceRootPrefix.length)
+          const projectPath = knownRootEntry[0].replace(/\\/g, "/")
+          return projectPath.slice(0, -relative.length - 1)
+        })() : null
+        let root = knownRoot ?? preferredDestDir
+        if (!knownRoot && ((await fileExists(root)) || isCatalogImportRootReserved(catalog, root, sourceRoot)))
+          root = await getUniqueDestPath(`${pp}/raw/sources`, folderName, reservedImportRoots(catalog))
+        return `${root}/${relativeSourcePath}`
+      }, async (destination) => {
+        const parent = parentPath(destination)
+        if (parent) await createDirectory(parent)
+        await copyFile(file.path, destination)
+      })
+      const suffix = `/${relativeSourcePath}`
+      if (target.endsWith(suffix)) resolvedDestDir = target.slice(0, -suffix.length)
+      allowedFiles.push(target)
     } catch (err) {
       console.error(`Failed to import ${displayName}:`, err)
       skipped.push({ name: displayName, reason: "copy-failed", detail: errorDetail(err) })
@@ -445,12 +530,12 @@ export async function importSourceFolder(
   }
 
   const naturallyOrderedFiles = [...allowedFiles].sort((a, b) =>
-    naturalCompare(getRelativePath(a, destDir), getRelativePath(b, destDir)),
+    naturalCompare(getRelativePath(a, resolvedDestDir), getRelativePath(b, resolvedDestDir)),
   )
 
   if (hasUsableLlm(getTaskLlmConfig("ingest", llmConfig))) {
     await enqueueSourceIngest(project, naturallyOrderedFiles, llmConfig, {
-      sourceRoot: destDir,
+      sourceRoot: resolvedDestDir,
       rootContext: folderName,
       parsingConcurrency: cfg.parsingConcurrency,
     })
@@ -676,10 +761,28 @@ export async function cleanupDeletedWikiPages(
   }
 }
 
-export async function getUniqueDestPath(dir: string, fileName: string): Promise<string> {
-  const basePath = `${dir}/${fileName}`
+function normalizedCatalogPath(path: string): string { return normalizePath(path).toLowerCase() }
 
-  if (!(await fileExists(basePath))) {
+function isCatalogImportRootReserved(catalog: Awaited<ReturnType<typeof documents.list>>, root: string, sourceRoot: string): boolean {
+  const rootPrefix = `${normalizedCatalogPath(root)}/`
+  const originPrefix = `${normalizePath(sourceRoot).replace(/\\/g, "/").replace(/\/+$/, "/")}`.toLowerCase()
+  return Object.entries(catalog).some(([sourcePath, source]) => {
+    if (!normalizedCatalogPath(sourcePath).startsWith(rootPrefix)) return false
+    const origin = source.originalPath?.replace(/\\/g, "/").toLowerCase()
+    return !origin?.startsWith(originPrefix)
+  })
+}
+
+function reservedImportRoots(catalog: Awaited<ReturnType<typeof documents.list>>): string[] {
+  return Object.keys(catalog).map(sourcePath => sourcePath.replace(/\\/g, "/").split("/").slice(0, -1).join("/"))
+}
+
+export async function getUniqueDestPath(dir: string, fileName: string, reservedPaths: readonly string[] = []): Promise<string> {
+  const basePath = `${dir}/${fileName}`
+  const reserved = new Set(reservedPaths.map(normalizedCatalogPath))
+  const available = async (candidate: string) => !reserved.has(normalizedCatalogPath(candidate)) && !(await fileExists(candidate))
+
+  if (await available(basePath)) {
     return basePath
   }
 
@@ -688,18 +791,20 @@ export async function getUniqueDestPath(dir: string, fileName: string): Promise<
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, "")
 
   const withDate = `${dir}/${nameWithoutExt}-${date}${ext}`
-  if (!(await fileExists(withDate))) {
+  if (await available(withDate)) {
     return withDate
   }
 
   for (let i = 2; i <= 99; i++) {
     const withCounter = `${dir}/${nameWithoutExt}-${date}-${i}${ext}`
-    if (!(await fileExists(withCounter))) {
+    if (await available(withCounter)) {
       return withCounter
     }
   }
 
-  return `${dir}/${nameWithoutExt}-${date}-${Date.now()}${ext}`
+  const fallback = `${dir}/${nameWithoutExt}-${date}-${Date.now()}${ext}`
+  if (await available(fallback)) return fallback
+  throw new Error(`Cannot allocate an unreserved destination for ${fileName}`)
 }
 
 async function appendSourceDeleteLog(

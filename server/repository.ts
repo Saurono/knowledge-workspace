@@ -1,8 +1,7 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { DatabaseSync } from "node:sqlite"
 import { mkdirSync, chmodSync } from "node:fs"
 import { join } from "node:path"
-import { ServiceError } from "@/modules/service-api/domain"
 import type { ProjectRecord, ResourceKind, ResourceRecord, ProjectEvent } from "@/modules/service-api/domain"
 import type { SharedRepository } from "@/modules/service-api/application"
 import type { IdentityRepository } from "@/modules/identity/application"
@@ -16,9 +15,13 @@ import { createContextRepository } from "./context-store"
 import type { ContextRepository } from "@/modules/identity/application"
 import { createMemoryGrantRepository } from "./memory-grants"
 import { createAuditRepository } from "./audit"
-export const SERVICE_SCHEMA_VERSION = 7
+import type { UploadRegistration, UploadRegistry, ReceivedDocument } from "@/modules/service-api/application"
+import { ServiceError } from "@/modules/service-api/domain"
+export const SERVICE_SCHEMA_VERSION = 8
 type Row = Record<string, string | number | null>
-export class SqliteRepository implements SharedRepository {
+const uploadSemanticHash = (name: string, mediaType: string, byteRevision: string, size: number) =>
+  createHash("sha256").update(JSON.stringify([name, mediaType, byteRevision, size]), "utf8").digest("hex")
+export class SqliteRepository implements SharedRepository, UploadRegistry {
   private db: DatabaseSync
   readonly identities: IdentityRepository
   readonly authentication: AuthenticationRepository
@@ -65,6 +68,18 @@ export class SqliteRepository implements SharedRepository {
       if (version < 7) this.transaction(() => {
         this.db.exec("CREATE TABLE audit_log(sequence INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT, actor_id TEXT, data TEXT NOT NULL); CREATE INDEX audit_scope ON audit_log(project_id,actor_id,sequence); PRAGMA user_version=7;")
       })
+      const currentVersion = Number((this.db.prepare("PRAGMA user_version").get() as Row).user_version)
+      if (currentVersion < 8) this.transaction(() => {
+        this.db.exec(`CREATE TABLE upload_sources(project_id TEXT NOT NULL REFERENCES projects(id), source_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(project_id,source_id));
+          CREATE TABLE upload_revisions(project_id TEXT NOT NULL, source_id TEXT NOT NULL, byte_revision TEXT NOT NULL, request_hash TEXT NOT NULL, name TEXT NOT NULL, media_type TEXT NOT NULL, size INTEGER NOT NULL, document_id TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL,
+            PRIMARY KEY(project_id,source_id,byte_revision), UNIQUE(project_id,document_id),
+            FOREIGN KEY(project_id,source_id) REFERENCES upload_sources(project_id,source_id));
+          CREATE TABLE upload_idempotency(project_id TEXT NOT NULL REFERENCES projects(id), key_hash TEXT NOT NULL, source_id TEXT NOT NULL, byte_revision TEXT NOT NULL, binding_hash TEXT NOT NULL,
+            PRIMARY KEY(project_id,key_hash),
+            FOREIGN KEY(project_id,source_id,byte_revision) REFERENCES upload_revisions(project_id,source_id,byte_revision));
+          CREATE INDEX upload_revisions_document ON upload_revisions(project_id,document_id);
+          PRAGMA user_version=8;`)
+      })
       this.audit = createAuditRepository(this.db)
       this.memoryGrants = createMemoryGrantRepository(this.db)
       this.authentication = createAuthenticationRepository(this.db)
@@ -110,6 +125,86 @@ export class SqliteRepository implements SharedRepository {
   async get(project: string, kind: ResourceKind, key: string) {
     const row = this.db.prepare("SELECT * FROM resources WHERE project_id=? AND kind=? AND key=? AND deleted=0").get(project, kind, key) as Row | undefined
     return row ? this.resource(row) : null
+  }
+  async read(projectId: string, documentId: string): Promise<ResourceRecord<ReceivedDocument> | null> {
+    const value = await this.get(projectId, "document", documentId)
+    if (!value) return null
+    const data = value.data as Partial<ReceivedDocument>
+    const byteRevision = data.sourceRevision ?? data.sha256
+    if (data.id !== documentId || typeof data.sourceId !== "string" || !/^[a-f0-9]{64}$/.test(String(byteRevision)) || data.sha256 !== byteRevision || (data.byteSha256 !== undefined && data.byteSha256 !== byteRevision))
+      throw new ServiceError("internal", "Upload document is invalid")
+    return value as ResourceRecord<ReceivedDocument>
+  }
+  async register(input: UploadRegistration) {
+    return this.transaction(() => {
+      const project = this.db.prepare("SELECT 1 FROM projects WHERE id=?").get(input.projectId)
+      if (!project) throw new ServiceError("not_found", "Project not found")
+      const priorKey = this.db.prepare(`SELECT r.*,i.binding_hash FROM upload_idempotency i JOIN upload_revisions r
+        ON r.project_id=i.project_id AND r.source_id=i.source_id AND r.byte_revision=i.byte_revision
+        WHERE i.project_id=? AND i.key_hash=?`).get(input.projectId, input.idempotencyHash) as Row | undefined
+      if (priorKey) {
+        const record = this.uploadRecord(priorKey)
+        const matches = String(priorKey.request_hash) === input.requestHash && String(priorKey.binding_hash) === input.bindingHash
+        return { status: matches ? "existing" as const : "conflict" as const, record }
+      }
+      const source = this.db.prepare("SELECT 1 FROM upload_sources WHERE project_id=? AND source_id=?").get(input.projectId, input.sourceId)
+      let sourceExists = Boolean(source)
+      if (!sourceExists) {
+        const legacyRows = this.db.prepare("SELECT * FROM resources WHERE project_id=? AND kind='document' AND deleted=0").all(input.projectId) as Row[]
+        const legacy = legacyRows.map(row => this.resource(row)).find(record => {
+          const data = record.data as Partial<ReceivedDocument>
+          return data?.id === input.sourceId || data?.sourceId === input.sourceId
+        })
+        if (!legacy && !input.createSource) throw new ServiceError("not_found", "Source identity is not registered in this project")
+        if (legacy) {
+        const data = legacy.data as Partial<ReceivedDocument>
+        const legacyRevision = data.sourceRevision ?? data.sha256
+        if (data.id !== legacy.key || data.sourceId !== input.sourceId || typeof legacyRevision !== "string" || !/^[a-f0-9]{64}$/.test(legacyRevision) || data.sha256 !== legacyRevision || typeof data.name !== "string" || !data.name || data.name !== data.name.normalize("NFC").trim() || typeof data.mediaType !== "string" || !data.mediaType || !Number.isSafeInteger(data.size) || (data.sourceRevision !== undefined && data.sourceRevision !== legacyRevision) || (data.byteSha256 !== undefined && data.byteSha256 !== legacyRevision) || (data.revisionKind !== undefined && data.revisionKind !== "raw-bytes-sha256") || (data.parsedTextRevision !== undefined && data.parsedTextRevision !== null) || data.status !== "received" || data.sourceIngestedAt !== null)
+          throw new ServiceError("internal", "Legacy source identity is invalid")
+        this.db.prepare("INSERT INTO upload_sources(project_id,source_id,created_at) VALUES(?,?,?)").run(input.projectId, input.sourceId, legacy.createdAt)
+        this.db.prepare(`INSERT INTO upload_revisions(project_id,source_id,byte_revision,request_hash,name,media_type,size,document_id,data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+          .run(input.projectId, input.sourceId, legacyRevision, uploadSemanticHash(data.name, data.mediaType, legacyRevision, Number(data.size)), data.name, data.mediaType, Number(data.size), legacy.key, JSON.stringify(legacy.data), legacy.createdAt)
+        sourceExists = true
+        }
+      }
+      if (!sourceExists) this.db.prepare("INSERT INTO upload_sources(project_id,source_id,created_at) VALUES(?,?,?)").run(input.projectId, input.sourceId, input.now)
+      const priorRevision = this.db.prepare("SELECT * FROM upload_revisions WHERE project_id=? AND source_id=? AND byte_revision=?").get(input.projectId, input.sourceId, input.byteRevision) as Row | undefined
+      if (priorRevision) {
+        const record = this.uploadRecord(priorRevision)
+        const sameSemantics = String(priorRevision.request_hash) === input.requestHash && String(priorRevision.name) === input.data.name && String(priorRevision.media_type) === input.data.mediaType && Number(priorRevision.size) === input.data.size
+        if (!sameSemantics) return { status: "conflict" as const, record }
+        this.db.prepare("INSERT INTO upload_idempotency(project_id,key_hash,source_id,byte_revision,binding_hash) VALUES(?,?,?,?,?)").run(input.projectId, input.idempotencyHash, input.sourceId, input.byteRevision, input.bindingHash)
+        return { status: "existing" as const, record }
+      }
+      this.db.prepare(`INSERT INTO resources(project_id,kind,key,data,revision,created_at,updated_at,deleted) VALUES(?,?,?,?,1,?,?,0)`)
+        .run(input.projectId, "document", input.documentId, JSON.stringify(input.data), input.now, input.now)
+      this.event(input.projectId, "resource.updated", "document", input.documentId, 1, input.now)
+      this.db.prepare(`INSERT INTO upload_revisions(project_id,source_id,byte_revision,request_hash,name,media_type,size,document_id,data,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`)
+        .run(input.projectId, input.sourceId, input.byteRevision, input.requestHash, input.data.name, input.data.mediaType, input.data.size, input.documentId, JSON.stringify(input.data), input.now)
+      this.db.prepare("INSERT INTO upload_idempotency(project_id,key_hash,source_id,byte_revision,binding_hash) VALUES(?,?,?,?,?)")
+        .run(input.projectId, input.idempotencyHash, input.sourceId, input.byteRevision, input.bindingHash)
+      return { status: "created" as const, record: { projectId: input.projectId, kind: "document" as const, key: input.documentId, data: input.data, revision: 1, createdAt: input.now, updatedAt: input.now } }
+    })
+  }
+  private uploadRecord(row: Row) {
+    const projectId = String(row.project_id), key = String(row.document_id)
+    const resource = this.db.prepare("SELECT * FROM resources WHERE project_id=? AND kind='document' AND key=? AND deleted=0").get(projectId, key) as Row | undefined
+    if (!resource) throw new ServiceError("internal", "Upload registry refers to a missing document")
+    const record = this.resource(resource)
+    const data = record.data as Partial<ReceivedDocument>
+    const storedData = JSON.parse(String(row.data)) as Partial<ReceivedDocument>
+    const byteRevision = data?.sourceRevision ?? data?.sha256
+    const byteHash = data?.byteSha256 ?? data?.sha256
+    const sizeIsValid = Number.isSafeInteger(data?.size) && Number(data?.size) >= 0
+    if (!data || !storedData || data.id !== key || data.sourceId !== row.source_id || byteRevision !== row.byte_revision || data.sha256 !== row.byte_revision || byteHash !== row.byte_revision ||
+        data.revisionKind !== "raw-bytes-sha256" && data.revisionKind !== undefined || data.parsedTextRevision !== null && data.parsedTextRevision !== undefined ||
+        typeof data.name !== "string" || !data.name || data.name !== data.name.normalize("NFC").trim() || typeof data.mediaType !== "string" || !data.mediaType || !sizeIsValid ||
+        data.status !== "received" || data.sourceIngestedAt !== null ||
+        storedData.id !== key || storedData.sourceId !== row.source_id || (storedData.sourceRevision ?? storedData.sha256) !== row.byte_revision || storedData.sha256 !== row.byte_revision ||
+        storedData.name !== row.name || storedData.mediaType !== row.media_type || storedData.size !== row.size || data.name !== row.name || data.mediaType !== row.media_type || data.size !== row.size ||
+        String(row.request_hash) !== uploadSemanticHash(String(row.name), String(row.media_type), String(row.byte_revision), Number(row.size)))
+      throw new ServiceError("internal", "Upload registry document is invalid")
+    return record as import("@/modules/service-api/domain").ResourceRecord<ReceivedDocument>
   }
   async list(project: string, kind: ResourceKind, after: string, limit: number) {
     return (this.db.prepare("SELECT * FROM resources WHERE project_id=? AND kind=? AND key>? AND deleted=0 ORDER BY key LIMIT ?").all(project, kind, after, limit) as Row[]).map(row => this.resource(row))

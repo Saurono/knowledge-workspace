@@ -1,9 +1,21 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
 
+const provenance = vi.hoisted(() => ({ catalog: {} as Record<string, { id: string; originalPath: string | null; receivedAt: string | null; ingestedAt: string | null }> }))
 vi.mock("@/lib/ingest-receipts", () => ({
-  registerImportedSource: vi.fn(async () => {}),
+  reserveImportedSource: vi.fn(async (_projectPath: string, sourcePath: string, originalPath: string) => {
+    provenance.catalog[sourcePath] ??= { id: `test-${Object.keys(provenance.catalog).length}`, originalPath, receivedAt: null, ingestedAt: null }
+  }),
+  confirmImportedSource: vi.fn(async (_projectPath: string, sourcePath: string) => {
+    const source = provenance.catalog[sourcePath]
+    if (source && source.receivedAt === null) source.receivedAt = "confirmed-time"
+  }),
   registerObservedSourcePaths: vi.fn(async () => {}),
   migrateSourceMetadata: vi.fn(async () => false),
+  documents: {
+    list: vi.fn(async () => provenance.catalog),
+    pathForOriginalSource: vi.fn(async (_projectPath: string, originalPath: string) =>
+      Object.entries(provenance.catalog).find(([, source]) => source.originalPath === originalPath)?.[0] ?? null),
+  },
 }))
 
 const mocks = vi.hoisted(() => ({
@@ -41,10 +53,14 @@ import {
   importSourceFiles,
   importSourceFolder,
   isIngestableSourcePath,
+  migrateSourcePath,
 } from "./source-lifecycle"
+import { createDeferred } from "@/test-helpers/deferred"
+import { withProjectLock } from "@/lib/project-mutex"
 
 beforeEach(() => {
   vi.clearAllMocks()
+  provenance.catalog = {}
   mocks.copyFile.mockResolvedValue(undefined)
   mocks.createDirectory.mockResolvedValue(undefined)
   mocks.deleteFile.mockResolvedValue(undefined)
@@ -56,6 +72,64 @@ beforeEach(() => {
 })
 
 describe("source-lifecycle path helpers", () => {
+  it("allocates independent targets around a failed-copy origin reservation and restores the original on retry", async () => {
+    const bytes = new Map<string, string>()
+    let failFirstCopy = true
+    mocks.copyFile.mockImplementation(async (origin: string, target: string) => {
+      if (origin === "/external/a/report.md" && failFirstCopy) {
+        failFirstCopy = false
+        throw new Error("temporary copy failure")
+      }
+      bytes.set(target, origin.endsWith("/a/report.md") ? "A" : "B")
+    })
+    const project = { id: "p1", name: "Project", path: "/project" }
+    const config = { provider: "openai", endpoint: "https://api.example.com/v1", apiKey: "key", model: "model", customModel: "", reasoning: { enabled: false, effort: "low" } } as never
+    const firstAttempt = await importSourceFiles(project, ["/external/a/report.md"], config)
+    expect(firstAttempt.imported).toEqual([])
+    const reservedId = provenance.catalog["/project/raw/sources/report.md"].id
+    expect(provenance.catalog["/project/raw/sources/report.md"].receivedAt).toBeNull()
+    const b = await importSourceFiles(project, ["/external/b/report.md"], config)
+    const aRetry = await importSourceFiles(project, ["/external/a/report.md"], config)
+    expect(b.imported).toHaveLength(1)
+    expect(aRetry.imported).toEqual(["/project/raw/sources/report.md"])
+    expect(b.imported[0]).not.toBe(aRetry.imported[0])
+    expect(bytes.get(b.imported[0])).toBe("B")
+    expect(bytes.get(aRetry.imported[0])).toBe("A")
+    expect(provenance.catalog[b.imported[0]].id).not.toBe(provenance.catalog[aRetry.imported[0]].id)
+    expect(provenance.catalog[aRetry.imported[0]].id).toBe(reservedId)
+    expect(provenance.catalog[aRetry.imported[0]].receivedAt).toBe("confirmed-time")
+  })
+
+  it("does not reuse a folder root reserved by another source origin", async () => {
+    provenance.catalog["/project/raw/sources/imported/keep.md"] = {
+      id: "reserved-by-a", originalPath: "/external/a/imported/keep.md", receivedAt: "time", ingestedAt: null,
+    }
+    mocks.listDirectory.mockResolvedValue([{ name: "keep.md", path: "/external/b/imported/keep.md", is_dir: false }])
+    const result = await importSourceFolder(
+      { id: "p1", name: "Project", path: "/project" }, "/external/b/imported",
+      { provider: "openai", endpoint: "https://api.example.com/v1", apiKey: "key", model: "model", customModel: "", reasoning: { enabled: false, effort: "low" } } as never,
+    )
+    expect(result.imported).toHaveLength(1)
+    expect(result.imported[0]).not.toBe("/project/raw/sources/imported/keep.md")
+    expect(mocks.copyFile).toHaveBeenCalledWith("/external/b/imported/keep.md", result.imported[0])
+  })
+
+  it("serializes source moves behind the source's active compile lock", async () => {
+    const oldPath = "/project/raw/sources/a.md"
+    provenance.catalog[oldPath] = { id: "moving-source", originalPath: oldPath, receivedAt: "time", ingestedAt: null }
+    const held = createDeferred<void>()
+    const started = createDeferred<void>()
+    const sourceRun = withProjectLock("ingest-source\0/project\0moving-source", async () => { started.resolve(); await held.promise })
+    await started.promise
+    let moved = false
+    const migrate = migrateSourcePath("/project", oldPath, "/project/raw/sources/b.md").then(value => { moved = true; return value })
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(moved).toBe(false)
+    held.resolve()
+    await sourceRun
+    await migrate
+    expect(moved).toBe(true)
+  })
   it("does not treat preprocessed cache files as ingestable sources", () => {
     expect(isIngestableSourcePath("raw/sources/.cache/report.pdf.txt")).toBe(false)
     expect(isIngestableSourcePath("/project/raw/sources/.cache/report.pdf.txt")).toBe(false)

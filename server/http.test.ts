@@ -11,7 +11,16 @@ const token = "integration-fixture-service-key-only"
 const cleanups: Array<() => Promise<void>> = []
 async function fixture(maxJsonBytes?: number) {
   const directory = mkdtempSync(join(tmpdir(), "kw-http-"))
-  const uploads = { write: async () => {}, read: async () => new Uint8Array([1]), remove: async () => {} }
+  const uploadBytes = new Map<string, Uint8Array>()
+  const uploads = {
+    write: async (projectId: string, id: string, bytes: Uint8Array) => { uploadBytes.set(`${projectId}/${id}`, bytes.slice()) },
+    read: async (projectId: string, id: string) => {
+      const bytes = uploadBytes.get(`${projectId}/${id}`)
+      if (!bytes) throw new Error("missing upload")
+      return bytes.slice()
+    },
+    remove: async (projectId: string, id: string) => { uploadBytes.delete(`${projectId}/${id}`) },
+  }
   let repository = new SqliteRepository(directory), authentication = createAccountAuthentication(repository, token), http = createServiceHttp({ repository, authentication, maxJsonBytes, uploads })
   await authentication.auth.bootstrap({ handle: "admin", displayName: "Admin", password: "Fixture-password-1234" })
   const cookie = `kw_session=${(await authentication.auth.login("admin", "Fixture-password-1234", "fixture")).secret}`
@@ -78,6 +87,39 @@ describe("shared service HTTP and SQLite", () => {
     expect((await f.request(`/projects/${project.id}/documents/%ZZ/ingestion`)).status).toBe(400)
     await f.restart()
     expect((await (await f.request(path)).json()).data.checkpoint).toEqual(value.data.checkpoint)
+  })
+  it("replays an idempotent upload across HTTP restart and conflicts when its request binding changes", async () => {
+    const f = await fixture(), project = await f.create(), path = `/projects/${project.id}/documents`
+    const headers = { "Content-Type": "text/markdown", "X-File-Name": "note.md", "Idempotency-Key": "retry-1" }
+    const firstResponse = await f.request(path, { method: "POST", headers, body: new Uint8Array([97, 98, 99]) })
+    const first = (await firstResponse.json()).data
+    expect(first.data).toMatchObject({ sourceId: expect.any(String), sourceRevision: first.data.sha256, byteSha256: first.data.sha256, revisionKind: "raw-bytes-sha256", parsedTextRevision: null, sourceIngestedAt: null })
+    await f.restart()
+    const replayResponse = await f.request(path, { method: "POST", headers, body: new Uint8Array([97, 98, 99]) })
+    const replay = (await replayResponse.json()).data
+    expect(replay.data.id).toBe(first.data.id)
+    const documents = await f.request(`/projects/${project.id}/documents`)
+    expect(documents.status).toBe(200)
+    expect((await documents.json()).data).toHaveLength(1)
+    const events = await (await f.request(`/projects/${project.id}/events`)).json()
+    expect(events.data.filter((event: { resource: { kind: string } }) => event.resource.kind === "document")).toHaveLength(1)
+    const conflict = await f.request(path, { method: "POST", headers, body: new Uint8Array([100, 101, 102]) })
+    expect(conflict.status).toBe(409)
+  })
+  it("keeps a project source identity across byte revisions and deduplicates one revision across request keys", async () => {
+    const f = await fixture(), project = await f.create(), path = `/projects/${project.id}/documents`
+    const first = await f.request(path, { method: "POST", headers: { "Content-Type": "text/markdown", "X-File-Name": "note.md", "Idempotency-Key": "source-create", "X-Source-Id": "stable-source", "X-Create-Source": "1" }, body: new Uint8Array([97]) })
+    expect(first.status).toBe(201)
+    const firstData = (await first.json()).data.data
+    const revision = await f.request(path, { method: "POST", headers: { "Content-Type": "text/markdown", "X-File-Name": "note.md", "Idempotency-Key": "source-revision", "X-Source-Id": "stable-source" }, body: new Uint8Array([98]) })
+    expect(revision.status).toBe(201)
+    const next = (await revision.json()).data.data
+    expect(next.sourceId).toBe(firstData.sourceId)
+    expect(next.id).not.toBe(firstData.id)
+    const duplicate = await f.request(path, { method: "POST", headers: { "Content-Type": "text/markdown", "X-File-Name": "note.md", "Idempotency-Key": "alternate-key", "X-Source-Id": "stable-source" }, body: new Uint8Array([98]) })
+    expect((await duplicate.json()).data.data.id).toBe(next.id)
+    const mismatch = await f.request(path, { method: "POST", headers: { "Content-Type": "text/plain", "X-File-Name": "other.md", "Idempotency-Key": "source-revision", "X-Source-Id": "stable-source" }, body: new Uint8Array([99]) })
+    expect(mismatch.status).toBe(409)
   })
   it("validates workspace references and refuses stale updates through the shared SDK", async () => {
     const f = await fixture(), project = await f.create(), initial = (await f.client.workspace(project.id)).data

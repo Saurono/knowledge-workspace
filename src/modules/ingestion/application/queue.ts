@@ -1,4 +1,5 @@
 import type { IngestTask } from "../domain/queue-task"
+import { isCanonicalIngestionIdempotencyKey } from "../domain/idempotency"
 import { decodeQueueSnapshot, encodeQueueSnapshot } from "../domain/queue-snapshot"
 import { IngestCommitCoordinator } from "./commit-coordinator"
 import type { IngestQueuePorts } from "./queue-ports"
@@ -72,6 +73,7 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
    *  step with `currentProjectId` by pauseQueue / restoreQueue so sync
    *  callers (saveQueue, cancelTask, etc.) don't need a registry lookup. */
   let currentProjectPath = ""
+  const invalidSnapshotPaths = new Set<string>()
   /** Task runs cancelled while still inside autoIngest. This is separate from
    * the persisted task status because the user may restart a retained task
    * before the old run observes its AbortSignal. In that case the old output
@@ -89,6 +91,7 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
     path: string
     snapshot: string
     resolve: () => void
+    reject?: (error: unknown) => void
   }
   const pendingActiveQueueWrites: QueueWriteRequest[] = []
   let activeQueueWriteRunning = false
@@ -109,17 +112,20 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
 
   // ── Persistence ───────────────────────────────────────────────────────────
 
-  async function saveQueue(projectPath: string): Promise<void> {
+  async function saveQueue(projectPath: string, strict = false): Promise<void> {
+    if (invalidSnapshotPaths.has(normalizePath(projectPath)))
+      throw new Error("Cannot overwrite an invalid ingest queue snapshot; restore it from a valid copy first")
     // Capture the snapshot now, then serialize writes so an older async write
     // can never land after a newer queue state.
     const toSave = queue.filter((t) => t.status !== "done")
     notifyQueueListeners()
     const snapshot = encodeQueueSnapshot(toSave)
-    await new Promise<void>((resolve) => {
+    await new Promise<void>((resolve, reject) => {
       pendingActiveQueueWrites.push({
         path: projectPath,
         snapshot,
         resolve,
+        ...(strict ? { reject } : {}),
       })
       void drainActiveQueueWrites()
     })
@@ -133,8 +139,10 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
     activeQueueWriteRunning = true
     try {
       await ports.snapshots.write(request.path, request.snapshot)
-    } catch {
-      // Queue persistence is best-effort; the in-memory queue remains authoritative.
+    } catch (error) {
+      // Ordinary status persistence remains best-effort. A trusted idempotency
+      // binding uses strict mode and must fail the task before compilation.
+      request.reject?.(error)
     } finally {
       request.resolve()
       if (epoch === activeQueueWriteEpoch) {
@@ -145,11 +153,23 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
   }
 
   async function loadQueue(projectPath: string, projectId: string): Promise<IngestTask[]> {
-    try {
-      const raw = await ports.snapshots.read(projectPath)
-      return decodeQueueSnapshot(raw, projectId)
-    } catch {
+    let raw: string | null
+    try { raw = await ports.snapshots.read(projectPath) }
+    catch (error) {
+      invalidSnapshotPaths.add(normalizePath(projectPath))
+      throw error
+    }
+    if (raw === null) {
+      invalidSnapshotPaths.delete(normalizePath(projectPath))
       return []
+    }
+    try {
+      const decoded = decodeQueueSnapshot(raw, projectId)
+      invalidSnapshotPaths.delete(normalizePath(projectPath))
+      return decoded
+    } catch (error) {
+      invalidSnapshotPaths.add(normalizePath(projectPath))
+      throw error
     }
   }
 
@@ -187,12 +207,35 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
     projectId: string,
     sourcePath: string,
     folderContext: string,
+    identity?: Pick<IngestTask, "sourceId" | "sourceRevision" | "idempotencyKey">,
   ): string {
+    if (invalidSnapshotPaths.has(normalizePath(currentProjectPath)))
+      throw new Error("Cannot enqueue while the project ingest queue snapshot is invalid")
     if (queue.length === 0 && activeRuns.size === 0) {
       resetQueueAccounting()
     }
     const normalizedSourcePath = normalizeSourcePathForQueue(sourcePath)
-    const pendingOrStopped = queue.find(
+    const hasIdentity = !!(identity?.sourceId || identity?.sourceRevision || identity?.idempotencyKey)
+    if (hasIdentity && !(identity?.sourceId && identity.sourceRevision && identity.idempotencyKey))
+      throw new Error("A queue idempotency identity must include source ID, revision, and key")
+    if (identity?.idempotencyKey) {
+      if (!isCanonicalIngestionIdempotencyKey(projectId, identity.sourceId!, identity.sourceRevision!, identity.idempotencyKey))
+        throw new Error("Queue idempotency key is not canonical")
+      const existing = queue.find((task) => task.projectId === projectId && task.idempotencyKey === identity.idempotencyKey)
+      if (existing) {
+        if (existing.sourceId !== identity.sourceId || existing.sourceRevision !== identity.sourceRevision)
+          throw new Error("Queue idempotency identity is inconsistent")
+        existing.sourcePath = normalizedSourcePath
+        existing.folderContext = folderContext || existing.folderContext
+        if (existing.status !== "processing") {
+          existing.status = "pending"
+          existing.error = null
+          existing.retryCount = 0
+        }
+        return existing.id
+      }
+    }
+    const pendingOrStopped = hasIdentity ? undefined : queue.find(
       (t) =>
         t.projectId === projectId &&
         (t.status === "pending" || t.status === "failed" || t.status === "cancelled") &&
@@ -205,10 +248,11 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
       pendingOrStopped.status = "pending"
       pendingOrStopped.error = null
       pendingOrStopped.retryCount = 0
+      if (identity?.sourceId) pendingOrStopped.sourceId = identity.sourceId
       return pendingOrStopped.id
     }
 
-    const processingTask = queue.find(
+    const processingTask = identity?.idempotencyKey ? undefined : queue.find(
       (t) =>
         t.projectId === projectId &&
         t.status === "processing" &&
@@ -231,6 +275,9 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
       id: generateId(),
       projectId,
       sourcePath: normalizedSourcePath,
+      sourceId: identity?.sourceId,
+      sourceRevision: identity?.sourceRevision,
+      idempotencyKey: identity?.idempotencyKey,
       folderContext,
       status: "pending",
       addedAt: clock.now(),
@@ -277,6 +324,7 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
     projectId: string,
     sourcePath: string,
     folderContext: string = "",
+    identity?: Pick<IngestTask, "sourceId" | "sourceRevision" | "idempotencyKey">,
   ): Promise<string> {
     if (!currentProjectId || currentProjectId !== projectId) {
       throw new Error(
@@ -284,7 +332,7 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
       )
     }
 
-    const id = upsertQueuedIngestTask(projectId, sourcePath, folderContext)
+    const id = upsertQueuedIngestTask(projectId, sourcePath, folderContext, identity)
     await saveQueue(currentProjectPath)
 
     processNext(currentProjectId)
@@ -298,7 +346,7 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
    */
   async function enqueueBatch(
     projectId: string,
-    files: Array<{ sourcePath: string; folderContext: string }>,
+    files: Array<{ sourcePath: string; folderContext: string } & Pick<IngestTask, "sourceId" | "sourceRevision" | "idempotencyKey">>,
   ): Promise<string[]> {
     if (!currentProjectId || currentProjectId !== projectId) {
       throw new Error(
@@ -308,7 +356,7 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
 
     const ids: string[] = []
     for (const file of files) {
-      ids.push(upsertQueuedIngestTask(projectId, file.sourcePath, file.folderContext))
+      ids.push(upsertQueuedIngestTask(projectId, file.sourcePath, file.folderContext, file))
     }
 
     await saveQueue(currentProjectPath)
@@ -326,7 +374,7 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
   async function enqueueInactiveProjectBatch(
     projectId: string,
     projectPath: string,
-    files: Array<{ sourcePath: string; folderContext: string }>,
+    files: Array<{ sourcePath: string; folderContext: string } & Pick<IngestTask, "sourceId" | "sourceRevision" | "idempotencyKey">>,
   ): Promise<string[]> {
     if (currentProjectId === projectId) {
       return enqueueBatch(projectId, files)
@@ -347,17 +395,26 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
         const sourcePath = normalizedSourcePath.startsWith(`${pp}/`)
           ? normalizedSourcePath.slice(pp.length + 1)
           : normalizedSourcePath
-        const existing = persisted.find(
+        const fileHasIdentity = !!(file.sourceId || file.sourceRevision || file.idempotencyKey)
+        if (fileHasIdentity && !(file.sourceId && file.sourceRevision && file.idempotencyKey))
+          throw new Error("An inactive queue identity must include source ID, revision, and key")
+        if (file.idempotencyKey && !isCanonicalIngestionIdempotencyKey(projectId, file.sourceId!, file.sourceRevision!, file.idempotencyKey))
+          throw new Error("Inactive queue idempotency key is not canonical")
+        const idempotent = file.idempotencyKey ? persisted.find(task => task.projectId === projectId && task.idempotencyKey === file.idempotencyKey) : undefined
+        if (idempotent && (idempotent.sourceId !== file.sourceId || idempotent.sourceRevision !== file.sourceRevision))
+          throw new Error("Persisted queue idempotency identity is inconsistent")
+        const existing = idempotent ?? (fileHasIdentity ? undefined : persisted.find(
           (task) =>
             task.projectId === projectId &&
             task.status !== "done" &&
             normalizePath(task.sourcePath) === sourcePath,
-        )
+        ))
         if (existing) {
-          existing.status = "pending"
           existing.error = null
           existing.retryCount = 0
           existing.folderContext = file.folderContext || existing.folderContext
+          existing.sourcePath = sourcePath
+          if (existing.status !== "processing") existing.status = "pending"
           ids.push(existing.id)
           continue
         }
@@ -365,6 +422,11 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
           id: generateId(),
           projectId,
           sourcePath,
+          ...(file.sourceId && file.sourceRevision && file.idempotencyKey ? {
+            sourceId: file.sourceId,
+            sourceRevision: file.sourceRevision,
+            idempotencyKey: file.idempotencyKey,
+          } : {}),
           folderContext: file.folderContext,
           status: "pending",
           addedAt: clock.now(),
@@ -384,6 +446,38 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
     })
     await operation
     return written ? ids : []
+  }
+
+  async function bindTaskIdempotency(
+    task: IngestTask,
+    run: ActiveIngestRun,
+    projectId: string,
+    projectPath: string,
+    identity: { sourceId: string; sourceRevision: string; idempotencyKey: string },
+  ): Promise<void> {
+    const expectedPath = normalizePath(projectPath)
+    const assertCurrent = () => {
+      if (run.controller.signal.aborted || currentProjectId !== projectId || currentProjectPath !== expectedPath ||
+          queueEpoch !== run.epoch || activeRuns.get(task.id) !== run || queue.find(candidate => candidate === task) !== task ||
+          task.projectId !== projectId || task.status !== "processing")
+        throw Object.assign(new Error("Ingest idempotency binding was cancelled or replaced"), { name: "TaskCancelledError", nonRetryable: true })
+    }
+    assertCurrent()
+    if (!isCanonicalIngestionIdempotencyKey(task.projectId, identity.sourceId, identity.sourceRevision, identity.idempotencyKey))
+      throw new Error("Prepared queue idempotency key is not canonical")
+    if (task.sourceId && task.sourceId !== identity.sourceId)
+      throw new Error("Prepared source identity does not match the queued source")
+    task.sourceId = identity.sourceId
+    task.sourceRevision = identity.sourceRevision
+    task.idempotencyKey = identity.idempotencyKey
+    queue = queue.filter(candidate => {
+      if (candidate === task || candidate.projectId !== task.projectId || candidate.idempotencyKey !== identity.idempotencyKey) return true
+      // Keep an already running attempt isolated; its source lock and durable
+      // receipt check will converge it. Drop only duplicate work not yet running.
+      return candidate.status === "processing"
+    })
+    await saveQueue(expectedPath, true)
+    assertCurrent()
   }
 
   /**
@@ -1079,8 +1173,13 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
     try {
       const writtenFiles = await ports.execute(
         {
+          projectId,
           projectPath,
           sourcePath: fullSourcePath,
+          sourceId: task.sourceId,
+          sourceRevision: task.sourceRevision,
+          idempotencyKey: task.idempotencyKey,
+          bindIdempotency: identity => bindTaskIdempotency(task, run, projectId, projectPath, identity),
           model: ports.models.read(),
           folderContext: task.folderContext,
           onFileWritten: trackWrittenFile,
@@ -1230,6 +1329,7 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
 
   async function processNext(projectId: string): Promise<void> {
     if (scheduling || currentProjectId !== projectId) return
+    if (invalidSnapshotPaths.has(normalizePath(currentProjectPath))) return
     if (paused) return
     if (blockedOnLlmConfig) {
       if (!ports.models.isUsable(ports.models.read())) return

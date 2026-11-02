@@ -20,10 +20,11 @@ export const documentRepository: DocumentRepository = {
         recordedAt: receipt.recordedAt,
         taskId: receipt.taskId,
         outputPaths: receipt.wikiResults.map((result) => result.path),
+        ...(receipt.idempotencyKey ? { idempotencyKey: receipt.idempotencyKey } : {}),
       })),
 }
 export const documents = createDocumentService(documentRepository, {
   createId: () => crypto.randomUUID(),
   now: () => new Date().toISOString(),
 })
-export const { registerImportedSource } = documents
+export const { registerImportedSource, reserveImportedSource, confirmImportedSource } = documents

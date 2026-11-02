@@ -31,7 +31,18 @@ export async function migrateSourceMetadata(
     const records = await loadIngestRecords(projectPath)
     const oldKey = absoluteSource(projectPath, from),
       newKey = absoluteSource(projectPath, to)
-    const catalog = moveSourceKey(records.sources, oldKey, newKey)
+    let sources = records.sources
+    const destination = sources[newKey], current = sources[oldKey]
+    if (destination && current && destination.id !== current.id) {
+      const hasHistory = Object.values(records.receipts).some(receipt => receipt.sourceId === destination.id)
+      if (destination.originalPath?.replace(/\\/g, "/") !== newKey || destination.ingestedAt !== null || hasHistory)
+        throw new Error("Cannot replace another source identity during a move")
+      // A proven move can arrive after a watcher recorded its empty destination.
+      // Remove that observation only here, where receipt history is available.
+      sources = { ...sources }
+      delete sources[newKey]
+    }
+    const catalog = moveSourceKey(sources, oldKey, newKey)
     if (catalog === records.sources) return false
     records.sources = catalog
     records.pages = moveWikiProvenance(records.pages, oldKey, newKey, pageMoves)

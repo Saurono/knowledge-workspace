@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 480,
+  "productionFiles": 481,
   "moduleCount": 18,
   "modules": [
     {
@@ -59,7 +59,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 9
+          "productionImporters": 10
         },
         {
           "path": "application/index.ts",
@@ -106,7 +106,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 22
+          "productionImporters": 23
         },
         {
           "path": "application/index.ts",
@@ -125,7 +125,7 @@
     },
     {
       "id": "ingestion",
-      "productionFiles": 12,
+      "productionFiles": 13,
       "testFiles": 5,
       "publicEntrypoints": [
         {
@@ -134,7 +134,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 8
+          "productionImporters": 10
         },
         {
           "path": "application/index.ts",
@@ -506,7 +506,7 @@
     {
       "path": "src/lib/ingest-receipts.ts",
       "productionImporters": 6,
-      "testImporters": 3
+      "testImporters": 4
     },
     {
       "path": "src/lib/ingest-sanitize.ts",

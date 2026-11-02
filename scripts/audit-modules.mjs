@@ -9,7 +9,9 @@ const walk = directory => fs.existsSync(directory) ? fs.readdirSync(directory, {
 function resolve(file, specifier, sourceRoot) {
   const base = specifier.startsWith("@/") ? path.join(sourceRoot, specifier.slice(2)) : specifier.startsWith(".") ? path.resolve(path.dirname(file), specifier) : null
   if (!base) return null
-  return [base, ...[".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx"].map(extension => base + extension)].find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile())
+  return [base, ...[".ts", ".tsx", ".js", ".jsx", "/index.ts", "/index.tsx"].map(extension => base + extension)]
+    .map(candidate => path.normalize(candidate))
+    .find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile())
 }
 export function auditModules(root) {
   const sourceRoot = path.join(root, "src"), moduleRoot = path.join(sourceRoot, "modules")

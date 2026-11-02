@@ -14,3 +14,7 @@ C05–C10 已替换早期部署连接密钥模式：HTTP 必须使用人员会�
 # D01 文档摄取状态
 
 真实文件上传会在文档资源中随接收元数据保存初始 ingestion 检查点，`sourceIngestedAt` 仍为空。`GET /api/v1/projects/:id/documents/:documentId/ingestion` 使用 documents.read 返回检查点、资源 revision 和结论，并通过 ETag 暴露资源版本。该端点只读；客户端不能自行报告解析、编译、索引或回传成功。旧 received 文档仅在接收元数据可靠时兼容为初始状态，损坏检查点不会被覆盖。
+
+## D02 来源和接收幂等
+
+`UploadRegistry` 是独立持久端口，Node 适配使用 schema 8 的来源、修订和请求键摘要表，同文档资源及事件在 SQLite 事务中提交。`createAuthorizedUploadRegistry` 在创建和重放时重新检查权限。上传支持 `Idempotency-Key`、`X-Source-Id` 和明确的新建来源意图；同源同修订复用，不合并独立来源。每个新字节修订有自己的文档资源和检查点，旧无键来源可继续修订。详见 [D02 契约](../../../analysis/implementation/d02-source-idempotency.md)。跨介质崩溃仍可留下未发布的字节目录，不自动清理真实用户数据。

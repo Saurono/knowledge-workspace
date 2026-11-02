@@ -1,5 +1,6 @@
 import { withWikiProjectCommit, type ProjectWikiCommit } from "@/app/wiki/commit"
 import type { IngestCommitRunner } from "@/modules/ingestion/application"
+import { ingestionIdempotencyKey } from "@/modules/ingestion/domain"
 import {
   createDirectory,
   deleteFile,
@@ -11,7 +12,7 @@ import {
   writeFile,
   listDirectory,
 } from "@/commands/fs"
-import { deliverObsidianReceipt, hashReceiptRevision, recordSuccessfulIngest } from "@/lib/ingest-receipts"
+import { deliverObsidianReceipt, hashReceiptRevision, recordSuccessfulIngest, registerImportedSource, documents } from "@/lib/ingest-receipts"
 import { streamChat } from "@/lib/llm-client"
 import type { LlmConfig, ReasoningConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -626,6 +627,9 @@ export interface AutoIngestOptions {
    */
   runCommit?: IngestCommitRunner
   taskId?: string
+  projectId?: string
+  bindIdempotency?: (identity: { sourceId: string; sourceRevision: string; idempotencyKey: string }) => Promise<void>
+  onPreparedSource?: (sourceContent: string, cachedFiles: string[] | null) => Promise<string[] | null>
 }
 
 export async function autoIngest(
@@ -639,8 +643,16 @@ export async function autoIngest(
 ): Promise<string[]> {
   const pp = normalizePath(projectPath)
   const sp = normalizePath(sourcePath)
+  let sourceRunIdentity = sp
+  if (options?.taskId) {
+    if (!options.projectId) throw new Error("Queued ingestion requires a stable project ID")
+    await registerImportedSource(pp, sp, sp)
+    const source = (await documents.list(pp))[sp]
+    if (!source || !/^[A-Za-z0-9_-]{1,128}$/.test(source.id)) throw new Error("Source identity could not be established before compilation")
+    sourceRunIdentity = source.id
+  }
   return withProjectLock(
-    `ingest-source\0${pp}\0${sp}`,
+    `ingest-source\0${pp}\0${sourceRunIdentity}`,
     async () => {
       // Queued imports capture provenance inside the source lock. Legacy
       // direct callers keep their existing behavior until given a task ID.
@@ -651,31 +663,51 @@ export async function autoIngest(
       const createdPages: Record<string, string> = {}
       if (options?.taskId) {
         throwIfIngestAborted(signal)
-        try {
-          const walk = (nodes: FileNode[]) => {
-            for (const node of nodes) { if (node.is_dir) walk(node.children ?? []); else existingPaths.add(normalizePath(node.path)) }
-          }
-          walk(await listDirectory(`${pp}/wiki`))
-          capturedExisting = true
-          const content = await readFile(sp)
-          revision = await hashReceiptRevision(content)
-          cacheHit = (await checkIngestCache(pp, sourceIdentityForPath(pp, sp), content)) !== null
-        } catch { /* Failed provenance capture must not hide a source/ingest error. */ }
+        const walk = (nodes: FileNode[]) => {
+          for (const node of nodes) { if (node.is_dir) walk(node.children ?? []); else existingPaths.add(normalizePath(node.path)) }
+        }
+        walk(await listDirectory(`${pp}/wiki`))
+        capturedExisting = true
         throwIfIngestAborted(signal)
       }
+      const onPreparedSource = options?.taskId ? async (sourceContent: string, cachedFiles: string[] | null) => {
+        revision = await hashReceiptRevision(sourceContent)
+        cacheHit = cachedFiles !== null
+        await documents.recordContentRevision(pp, sp, revision)
+        const source = (await documents.list(pp))[sp]
+        if (!source || !/^[A-Za-z0-9_-]{1,128}$/.test(source.id)) throw new Error("Source identity could not be established before compilation")
+        const idempotencyKey = ingestionIdempotencyKey(options.projectId!, source.id, revision)
+        if (!options.bindIdempotency) throw new Error("Queued ingestion cannot compile before its idempotency identity is persisted")
+        await options.bindIdempotency({ sourceId: source.id, sourceRevision: revision, idempotencyKey })
+        const prior = (await documents.revisions(pp, sp)).find((item) => item.revision === revision)
+        // Cache hits may still complete images. A cache miss with a verified
+        // successful receipt can skip model work if every output still exists.
+        if (cachedFiles === null && prior && prior.outputPaths.length > 0) {
+          const allPresent = await Promise.all(prior.outputPaths.map(async (path) => {
+            const fullPath = path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) ? path : `${pp}/${path}`
+            return fileExists(fullPath).catch(() => false)
+          }))
+          if (allPresent.every(Boolean)) return prior.outputPaths
+        }
+        return null
+      } : undefined
       const writtenPaths = await autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext,
         (path) => {
           onFileWritten?.(path)
           if (capturedExisting && !existingPaths.has(normalizePath(`${pp}/${path}`))) createdPages[normalizePath(path)] ??= new Date().toISOString()
-        }, options)
+        }, options ? { ...options, onPreparedSource } : undefined)
       if (options?.taskId && writtenPaths.length > 0 && !signal?.aborted) {
         try {
           if (!revision) throw new Error("Source revision unavailable; ingest receipt was not recorded")
-          const id = await recordSuccessfulIngest({ projectPath: pp, taskId: options.taskId, sourcePath: sp, revision, writtenPaths, createdPages, cacheHit })
+          const afterRevision = await hashReceiptRevision(await readFile(sp, { extractImages: false }))
+          if (afterRevision !== revision) throw new Error("Source changed during compilation; the older revision was not marked successful")
+          const idempotencyKey = ingestionIdempotencyKey(options.projectId!, sourceRunIdentity, revision)
+          const id = await recordSuccessfulIngest({ projectPath: pp, taskId: options.taskId, sourcePath: sp, revision, idempotencyKey, idempotencyProjectId: options.projectId, writtenPaths, createdPages, cacheHit })
           await deliverObsidianReceipt(pp, id)
           useWikiStore.getState().bumpDataVersion()
         } catch (error) {
           useActivityStore.getState().addItem({ type: "ingest", title: "Ingest receipt", status: "error", detail: String(error), filesWritten: writtenPaths })
+          throw error
         }
       }
       return writtenPaths
@@ -851,6 +883,11 @@ async function autoIngestImpl(
   // of when the file was first ingested.
   const cachedFiles = await checkIngestCache(pp, sourceIdentity, sourceContent)
   console.log(`[ingest:diag] cache check for "${sourceIdentity}":`, cachedFiles === null ? "MISS (full pipeline)" : `HIT (${cachedFiles.length} cached files)`)
+  const idempotentPaths = await options?.onPreparedSource?.(sourceContent, cachedFiles)
+  if (idempotentPaths !== null && idempotentPaths !== undefined) {
+    activity.updateItem(activityId, { status: "done", detail: `Already compiled — ${idempotentPaths.length} files from the recorded revision`, filesWritten: idempotentPaths })
+    return idempotentPaths
+  }
   if (cachedFiles !== null) {
     return runCommit(async (commit) => {
       throwIfIngestAborted(signal, activityId)

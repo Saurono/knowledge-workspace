@@ -4,7 +4,7 @@ import { streamProjectEvents } from "./events"
 import { createServer } from "node:http"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { randomUUID, createHash } from "node:crypto"
-import { createSharedService, createDocumentReceiver, createAuthorizedRepository, type UploadStorage } from "@/modules/service-api/application"
+import { createSharedService, createDocumentReceiver, createAuthorizedRepository, createAuthorizedUploadRegistry, type UploadStorage, type UploadRegistry } from "@/modules/service-api/application"
 import { ServiceError, ERROR_STATUS, parsePrecondition, etag, API_VERSION } from "@/modules/service-api/domain"
 import type { SqliteRepository } from "./repository"
 import { resourceTool, keywordSearch, executionPermission } from "./resource-tools"
@@ -14,7 +14,7 @@ import type { ProjectPermission, SessionIdentity, AccessContext } from "@/module
 import type { AccountAuthentication } from "./auth-http"
 import { createDocumentCheckpointRepository } from "./ingestion-checkpoints"
 import { summarizeIngestion } from "@/modules/ingestion/domain"
-export interface ServiceOptions { repository: SqliteRepository; authentication: AccountAuthentication; executions?: ExecutionGateway; maxJsonBytes?: number; uploads?: UploadStorage; maxUploadBytes?: number; webRoot?: string }
+export interface ServiceOptions { repository: SqliteRepository; authentication: AccountAuthentication; executions?: ExecutionGateway; maxJsonBytes?: number; uploads?: UploadStorage; uploadRegistry?: UploadRegistry; maxUploadBytes?: number; webRoot?: string }
 export function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     let size = 0, failed = false
@@ -79,7 +79,8 @@ export function createServiceHttp(options: ServiceOptions) {
       const access = async (project: string) => { await options.authentication.validatePrincipal(principal); const context = await options.authentication.contexts.resolve(principal, project, selectedContext); if (url.pathname !== "/api/v1/projects") observe(identity, context); return context }
       const guarded = createAuthorizedRepository(options.repository, access, id => options.repository.memoryGrants.list(id), options.authentication.now)
       const service = createSharedService(guarded, { id: randomUUID, now: options.authentication.now })
-      const receiver = options.uploads ? createDocumentReceiver(guarded, options.uploads, { id: randomUUID, now: options.authentication.now, hash: bytes => createHash("sha256").update(bytes).digest("hex") }) : null
+      const uploadRegistry = createAuthorizedUploadRegistry(options.uploadRegistry ?? options.repository, access)
+      const receiver = options.uploads ? createDocumentReceiver(guarded, options.uploads, { id: randomUUID, now: options.authentication.now, hash: bytes => createHash("sha256").update(bytes).digest("hex") }, uploadRegistry) : null
       const checkpoints = createDocumentCheckpointRepository(guarded, options.authentication.now)
       if (url.pathname === "/api/v1/projects") {
         if (method === "GET") { const page = await service.projects(url.searchParams.get("limit"), url.searchParams.get("cursor")); return send(200, page.items, page.nextCursor) }
@@ -145,7 +146,16 @@ export function createServiceHttp(options: ServiceOptions) {
         let name: string
         try { name = decodeURIComponent(String(request.headers["x-file-name"] ?? "")) } catch { throw new ServiceError("invalid_argument", "Invalid filename encoding") }
         const bytes = await readBody(request, options.maxUploadBytes ?? 16 * 1024 * 1024)
-        return send(201, await receiver.receive(id, name, String(request.headers["content-type"] ?? "application/octet-stream").split(";")[0], bytes))
+        const idempotencyKey = request.headers["idempotency-key"]
+        const sourceIdHeader = request.headers["x-source-id"]
+        const createSource = request.headers["x-create-source"] === "1"
+        if ((idempotencyKey !== undefined && typeof idempotencyKey !== "string") || (sourceIdHeader !== undefined && typeof sourceIdHeader !== "string") || (sourceIdHeader !== undefined && typeof idempotencyKey !== "string") || (createSource && typeof idempotencyKey !== "string"))
+          throw new ServiceError("invalid_argument", "Invalid upload idempotency or source identity headers")
+        return send(201, await receiver.receive(id, name, String(request.headers["content-type"] ?? "application/octet-stream").split(";")[0], bytes, {
+          ...(typeof idempotencyKey === "string" ? { idempotencyKey } : {}),
+          ...(typeof sourceIdHeader === "string" ? { sourceId: sourceIdHeader } : {}),
+          createSource,
+        }))
       }
       const document = part?.match(/^documents\/([^/]+)\/content$/)
       if (document && method === "GET") {

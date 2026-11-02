@@ -2,7 +2,8 @@ import type { IngestExecutionInput } from "./execute-ingest"
 
 /** Immutable serialized snapshots; adapter chooses storage location and transport. */
 export interface QueueSnapshotRepository {
-  read(projectPath: string): Promise<string>
+  /** Null means no prior queue file. Malformed existing snapshots must throw. */
+  read(projectPath: string): Promise<string | null>
   write(projectPath: string, snapshot: string): Promise<void>
 }
 export interface QueueClock {

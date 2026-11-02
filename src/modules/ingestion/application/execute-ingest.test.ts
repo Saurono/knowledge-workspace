@@ -8,6 +8,7 @@ import {
 } from "./execute-ingest"
 
 const input: IngestExecutionInput<string> = {
+  projectId: "project-id",
   projectPath: "/project",
   sourcePath: "/project/raw/source.md",
   model: "configured-model",

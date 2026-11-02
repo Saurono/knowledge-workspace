@@ -10,6 +10,7 @@ vi.mock("./ingest", () => ({
 vi.mock("@/commands/fs", () => ({
   readFile: vi.fn(),
   writeFile: vi.fn(),
+  fileExists: vi.fn(async (path: string) => path.endsWith("/.llm-wiki/ingest-queue.json")),
   listDirectory: vi.fn(),
   deleteFile: vi.fn(),
 }))
@@ -78,7 +79,7 @@ import {
   subscribeIngestQueue,
 } from "./ingest-queue"
 import { autoIngest } from "./ingest"
-import { deleteFile, readFile, writeFile } from "@/commands/fs"
+import { deleteFile, fileExists, readFile, writeFile } from "@/commands/fs"
 import { sweepResolvedReviews } from "./sweep-reviews"
 import { useWikiStore } from "@/stores/wiki-store"
 
@@ -86,6 +87,7 @@ const mockAutoIngest = vi.mocked(autoIngest)
 const mockReadFile = vi.mocked(readFile)
 const mockWriteFile = vi.mocked(writeFile)
 const mockDeleteFile = vi.mocked(deleteFile)
+const mockFileExists = vi.mocked(fileExists)
 const mockSweep = vi.mocked(sweepResolvedReviews)
 
 /** Simulate the app having opened `TEST_ID` at `TEST_PATH` so the queue
@@ -100,6 +102,7 @@ beforeEach(async () => {
   clearQueueState()
   mockAutoIngest.mockReset()
   mockReadFile.mockReset()
+  mockFileExists.mockReset()
   mockWriteFile.mockReset()
   mockDeleteFile.mockReset()
   mockDeleteFile.mockResolvedValue(undefined as unknown as void)
@@ -112,7 +115,8 @@ beforeEach(async () => {
   })
 
   // Default: persisted queue file doesn't exist
-  mockReadFile.mockRejectedValue(new Error("ENOENT"))
+  mockReadFile.mockResolvedValue("[]")
+  mockFileExists.mockImplementation(async (path: string) => path.endsWith("/.llm-wiki/ingest-queue.json"))
   mockWriteFile.mockResolvedValue(undefined as unknown as void)
 
   // Default: a valid LLM config so processNext doesn't reject.
@@ -959,7 +963,7 @@ describe("ingest-queue — restoreQueue", () => {
     expect(getQueue().length).toBeGreaterThan(0)
 
     // Now restore project B — should reset and load B's saved queue (empty)
-    mockReadFile.mockRejectedValue(new Error("ENOENT"))
+    mockReadFile.mockResolvedValue("[]")
     await restoreQueue(TEST_ID_B, TEST_PATH_B)
     expect(getQueue()).toHaveLength(0)
   })
@@ -1450,7 +1454,7 @@ describe("ingest-queue — pause/resume processing", () => {
     pauseProcessing()
     expect(isQueuePaused()).toBe(true)
 
-    mockReadFile.mockRejectedValue(new Error("ENOENT"))
+    mockReadFile.mockResolvedValue("[]")
     await restoreQueue(TEST_ID, TEST_PATH)
     expect(isQueuePaused()).toBe(false)
   })

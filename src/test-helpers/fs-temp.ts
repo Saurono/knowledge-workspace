@@ -49,12 +49,18 @@ async function buildTree(dir: string): Promise<FileNode[]> {
  * Import this from a test file that calls `vi.mock("@/commands/fs", ...)`.
  */
 export const realFs = {
-  readFile: async (p: string): Promise<string> => {
+  readFile: async (p: string, _options?: { extractImages?: boolean }): Promise<string> => {
     return fs.readFile(p, "utf-8")
   },
   writeFile: async (p: string, contents: string): Promise<void> => {
     await fs.mkdir(path.dirname(p), { recursive: true })
     await fs.writeFile(p, contents, "utf-8")
+  },
+  writeFileAtomic: async (p: string, contents: string): Promise<void> => {
+    await fs.mkdir(path.dirname(p), { recursive: true })
+    const temporary = `${p}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`
+    await fs.writeFile(temporary, contents, "utf-8")
+    await fs.rename(temporary, p)
   },
   listDirectory: async (p: string): Promise<FileNode[]> => {
     return buildTree(p)

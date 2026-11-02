@@ -4,8 +4,13 @@ import type { TaskExecutor } from "@/modules/tasks"
 export type IngestCommitRunner = <T>(operation: () => Promise<T>) => Promise<T>
 
 export interface IngestExecutionInput<Model> {
+  projectId: string
   projectPath: string
   sourcePath: string
+  sourceId?: string
+  sourceRevision?: string
+  idempotencyKey?: string
+  bindIdempotency?: (identity: { sourceId: string; sourceRevision: string; idempotencyKey: string }) => Promise<void>
   model: Model
   folderContext?: string
   runCommit?: IngestCommitRunner

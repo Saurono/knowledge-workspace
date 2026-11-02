@@ -122,6 +122,77 @@ describe("injected ingest queue service", () => {
     expect(ports.execute).not.toHaveBeenCalled()
   })
 
+  it("keeps a queue with an invalid restored snapshot empty and never executes after enqueue or resume", async () => {
+    const { queue, ports, files } = fixture()
+    vi.mocked(ports.models.read).mockReturnValue(true)
+    const corrupt = JSON.stringify([{
+      ...task("p"), sourceId: "source_12345678", sourceRevision: "not-a-sha", idempotencyKey: "forged",
+    }])
+    files.set("/p", corrupt)
+    await expect(queue.restoreQueue("p", "/p")).rejects.toThrow("Invalid ingestion idempotency identity")
+    expect(queue.getQueue()).toEqual([])
+
+    await expect(queue.enqueueIngest("p", "new.md")).rejects.toThrow("snapshot is invalid")
+    expect(queue.getQueue()).toEqual([])
+    queue.resumeProcessing()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    expect(queue.getQueue()).toEqual([])
+    expect(ports.execute).not.toHaveBeenCalled()
+  })
+
+  it("does not begin compilation when persisting the prepared idempotency binding fails", async () => {
+    const { queue, ports } = fixture()
+    vi.mocked(ports.models.read).mockReturnValue(true)
+    const compile = vi.fn(async () => ["wiki/result.md"])
+    vi.mocked(ports.execute).mockImplementation(async input => {
+      await input.bindIdempotency?.({
+        sourceId: "source_12345678",
+        sourceRevision: "a".repeat(64),
+        idempotencyKey: `ingest-v1:p:source_12345678:${"a".repeat(64)}:compile`,
+      })
+      return compile()
+    })
+    await queue.restoreQueue("p", "/p")
+    let writes = 0
+    vi.mocked(ports.snapshots.write).mockImplementation(async (_path, _snapshot) => {
+      writes++
+      if (writes >= 3) throw new Error("disk full")
+      // Keep enqueue durable; only the prepared idempotency binding fails.
+      if (writes !== 1) return
+      await Promise.resolve()
+    })
+    await queue.enqueueIngest("p", "source.md")
+    await waitFor(() => queue.getQueue()[0]?.status === "failed")
+    expect(compile).not.toHaveBeenCalled()
+  })
+
+  it.each(["project switch", "same-project ABA restore"] as const)("rejects a deferred prepared identity after %s without rebinding the replacement task", async mode => {
+    const { queue, ports } = fixture()
+    vi.mocked(ports.models.read).mockReturnValue(true)
+    const started = createDeferred<Parameters<IngestQueuePorts<boolean>["execute"]>[0]>()
+    const finish = createDeferred<string[]>()
+    vi.mocked(ports.execute).mockImplementation(async input => {
+      started.resolve(input)
+      return finish.promise
+    })
+    await queue.restoreQueue("p", "/p")
+    await queue.enqueueIngest("p", "source.md")
+    const oldInput = await started.promise
+
+    vi.mocked(ports.models.read).mockReturnValue(false)
+    const target = mode === "project switch" ? ["other", "/other"] as const : ["p", "/p"] as const
+    await queue.restoreQueue(target[0], target[1])
+    const writesBeforeLateBind = vi.mocked(ports.snapshots.write).mock.calls.length
+    await expect(oldInput.bindIdempotency?.({
+      sourceId: "source_12345678",
+      sourceRevision: "b".repeat(64),
+      idempotencyKey: `ingest-v1:p:source_12345678:${"b".repeat(64)}:compile`,
+    })).rejects.toMatchObject({ name: "TaskCancelledError" })
+    expect(vi.mocked(ports.snapshots.write).mock.calls).toHaveLength(writesBeforeLateBind)
+    expect(vi.mocked(ports.snapshots.write).mock.calls.slice(0, writesBeforeLateBind).every(([path]) => path === "/p")).toBe(true)
+    finish.resolve(["wiki/result.md"])
+  })
+
   it("recovers interrupted work, backfills legacy project IDs and drops foreign tasks", async () => {
     const { queue, files, ports } = fixture()
     const legacy: Partial<IngestTask> = { ...task("p"), status: "processing" }

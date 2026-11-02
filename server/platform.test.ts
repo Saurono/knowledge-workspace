@@ -35,6 +35,17 @@ it("uploads bytes through the Web adapter with honest received state and downloa
   await expect(f.platform.shell()).rejects.toMatchObject({ code: "unsupported" })
   await expect(f.platform.configureVault()).rejects.toMatchObject({ code: "unsupported" })
 })
+it("reuses a same-File retry key while keeping a distinct File upload independent", async () => {
+  const f = await fixture(), file = new File(["same bytes"], "retry.md", { type: "text/markdown" })
+  const first = await f.platform.upload(f.project.id, file)
+  const replay = await f.platform.upload(f.project.id, file)
+  expect(replay.data.key).toBe(first.data.key)
+  expect((await f.platform.api.documents(f.project.id)).data).toHaveLength(1)
+
+  const independent = await f.platform.upload(f.project.id, new File(["same bytes"], "retry.md", { type: "text/markdown" }))
+  expect(independent.data.key).not.toBe(first.data.key)
+  expect((await f.platform.api.documents(f.project.id)).data).toHaveLength(2)
+})
 it("rejects traversal filenames and over-limit uploads before publishing metadata", async () => {
   const f = await fixture(8)
   expect((await f.request("/documents", { method: "POST", headers: { "X-File-Name": encodeURIComponent("../outside.md") }, body: "body" })).status).toBe(400)

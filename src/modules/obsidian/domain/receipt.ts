@@ -11,6 +11,8 @@ export interface IngestReceipt {
   revisionIngestedAt: string | null
   wikiResults: { path: string; wikiCreatedAt: string | null }[]
   recordedAt: string
+  idempotencyKey?: string
+  idempotencyProjectId?: string
   status: "content_ingested"
   indexStatus: "unknown"
   delivery: "not_connected" | "pending" | "delivered"
@@ -24,6 +26,8 @@ export function makeIngestReceipt(input: {
   id: string; taskId: string; source: { id: string; originalPath: string | null; ingestedAt: string | null }
   sourcePath: string; revision: string; cacheHit: boolean; recordedAt: string; vaultPath: string | null
   previous?: IngestReceipt; wikiResults: IngestReceipt["wikiResults"]
+  idempotencyKey?: string
+  idempotencyProjectId?: string
 }): IngestReceipt {
   return {
     schemaVersion: 1, id: input.id, taskId: input.taskId, sourceId: input.source.id,
@@ -31,6 +35,8 @@ export function makeIngestReceipt(input: {
     sourceRevision: input.revision, sourceIngestedAt: input.source.ingestedAt,
     revisionIngestedAt: input.previous?.revisionIngestedAt ?? (input.cacheHit ? null : input.recordedAt),
     wikiResults: input.wikiResults, recordedAt: input.recordedAt,
+    ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+    ...(input.idempotencyProjectId ? { idempotencyProjectId: input.idempotencyProjectId } : {}),
     status: "content_ingested", indexStatus: "unknown",
     delivery: input.previous?.delivery === "delivered" ? "delivered"
       : input.vaultPath && receiptBelongsToVault(input.source, input.vaultPath) ? "pending" : "not_connected",

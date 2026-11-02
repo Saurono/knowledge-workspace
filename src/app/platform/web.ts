@@ -14,6 +14,7 @@ export function createWebPlatform(baseUrl: string, token = "", transport: typeof
   const base = new URL(baseUrl)
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash || base.pathname !== "/") throw new Error("Use the service origin as the connection address")
   const origin = base.origin
+  const fileIdempotencyKeys = new WeakMap<File, Map<string, string>>()
   const send = (path: string, init: RequestInit = {}) => transport(origin + path, { ...init, redirect: "error", credentials: token ? "omit" : "same-origin", headers: { "X-KW-CSRF": "1", ...(contextId ? { "X-KW-Context": contextId } : {}), ...init.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } })
   const api = createSharedClient({ request: (method, path, options) => send(path, { method, signal: options.signal, headers: { "Content-Type": "application/json", ...options.headers }, ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }) }) })
   const unsupported = () => Promise.reject(new CapabilityError("unsupported", "This Web connection does not have a local machine bridge"))
@@ -22,9 +23,14 @@ export function createWebPlatform(baseUrl: string, token = "", transport: typeof
     identity: createIdentityClient({ request: async <T>(method: string, path: string, body?: unknown, headers?: Record<string, string>) => (await api.request<T>(method, path, body, undefined, undefined, headers)).data }),
     capabilities: Object.freeze({ localFiles: false, watcher: false, shell: false, vault: false, upload: true, events: true }),
     readLocal: unsupported, shell: unsupported, configureVault: unsupported,
-    async upload(projectId: string, file: File, signal?: AbortSignal): Promise<ApiSuccess<ResourceRecord<ReceivedDocument>>> {
+    async upload(projectId: string, file: File, signal?: AbortSignal, request: { idempotencyKey?: string; sourceId?: string; createSource?: boolean } = {}): Promise<ApiSuccess<ResourceRecord<ReceivedDocument>>> {
       if (!file.size || file.size > 16 * 1024 * 1024) throw new Error("Choose a non-empty document up to 16 MiB")
-      const response = await send(`/api/v1/projects/${encodeURIComponent(projectId)}/documents`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "X-File-Name": encodeURIComponent(file.name) }, body: file, signal })
+      const scope = JSON.stringify([projectId, request.sourceId ?? null, request.createSource === true])
+      let keys = fileIdempotencyKeys.get(file)
+      if (!keys) { keys = new Map(); fileIdempotencyKeys.set(file, keys) }
+      const idempotencyKey = request.idempotencyKey ?? keys.get(scope) ?? crypto.randomUUID()
+      if (!request.idempotencyKey) keys.set(scope, idempotencyKey)
+      const response = await send(`/api/v1/projects/${encodeURIComponent(projectId)}/documents`, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream", "X-File-Name": encodeURIComponent(file.name), "Idempotency-Key": idempotencyKey, ...(request.sourceId ? { "X-Source-Id": request.sourceId } : {}), ...(request.createSource ? { "X-Create-Source": "1" } : {}) }, body: file, signal })
       const value = await response.json()
       if (!response.ok) { const failure = value as ApiFailure; throw new ApiClientError(failure.error.code, failure.error.message, response.status, failure.error.requestId, failure.error.details) }
       return value

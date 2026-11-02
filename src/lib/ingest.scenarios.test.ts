@@ -36,11 +36,21 @@ vi.mock("./llm-client", () => ({
   }),
 }))
 
+const mineruMock = vi.hoisted(() => ({ parse: vi.fn() }))
+vi.mock("@/lib/mineru", () => ({ parseWithMineruResult: mineruMock.parse }))
+
 import { autoIngest } from "./ingest"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useReviewStore } from "@/stores/review-store"
 import { useActivityStore } from "@/stores/activity-store"
 import { useChatStore } from "@/stores/chat-store"
+import { hashReceiptRevision, loadIngestRecords } from "./ingest-receipts"
+import { migrateSourcePath } from "./source-lifecycle"
+
+const scenarioResponses = async (scenario: IngestScenario) => [
+  await fs.readFile(path.join(FIXTURES_ROOT, scenario.name, "llm-analysis.txt"), "utf-8"),
+  await fs.readFile(path.join(FIXTURES_ROOT, scenario.name, "llm-generation.txt"), "utf-8"),
+]
 
 const FIXTURES_ROOT = path.join(
   process.cwd(),
@@ -61,6 +71,7 @@ beforeEach(() => {
   pendingResponses = []
   streamCallCount = 0
   afterStreamToken = null
+  mineruMock.parse.mockReset()
   useReviewStore.setState({ items: [] })
   useActivityStore.setState({ items: [] })
   useChatStore.setState({
@@ -285,6 +296,110 @@ describe("ingest scenarios (fixture-driven)", () => {
     expect(secondWritten).toEqual(firstWritten)
     const activities = useActivityStore.getState().items
     expect(activities.some((item) => item.detail.includes("Skipped (unchanged)"))).toBe(true)
+  })
+
+  it("binds actual parser text revisions to durable source receipts across retries, edits, missing outputs and moves", async () => {
+    const scenario = ingestScenarios[0]
+    ctx = await setup(scenario)
+    const projectPath = ctx.tmp.path
+    const sourcePath = path.join(projectPath, scenario.source.path).replace(/\\/g, "/")
+    const projectId = "compile-project"
+    const bindIdempotency = vi.fn(async () => {})
+    const options = (taskId: string) => ({ taskId, projectId, bindIdempotency })
+    const first = await autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("attempt-one"))
+    const firstRecords = await loadIngestRecords(projectPath)
+    const firstSource = firstRecords.sources[sourcePath]
+    const sourceId = firstSource.id
+    const firstRevision = await hashReceiptRevision(await readFileRaw(sourcePath))
+    expect(firstSource?.id).toBe(sourceId)
+    expect(firstSource?.contentRevision).toBe(firstRevision)
+    expect(Object.values(firstRecords.receipts)).toContainEqual(expect.objectContaining({ id: `${sourceId}-${firstRevision}`, sourceRevision: firstRevision, idempotencyKey: `ingest-v1:${projectId}:${sourceId}:${firstRevision}:compile` }))
+    expect(streamCallCount).toBe(2)
+
+    await autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("attempt-two"))
+    expect(streamCallCount).toBe(2)
+    expect(bindIdempotency).toHaveBeenLastCalledWith({ sourceId, sourceRevision: firstRevision, idempotencyKey: `ingest-v1:${projectId}:${sourceId}:${firstRevision}:compile` })
+
+    await writeFileRaw(sourcePath, `${await readFileRaw(sourcePath)}\nrevision update\n`)
+    pendingResponses = await scenarioResponses(scenario)
+    const revisedOutputs = await autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("attempt-three"))
+    expect(streamCallCount).toBe(4)
+    const secondRevision = await hashReceiptRevision(await readFileRaw(sourcePath))
+    expect(secondRevision).not.toBe(firstRevision)
+    expect((await loadIngestRecords(projectPath)).receipts[`${sourceId}-${secondRevision}`]).toBeDefined()
+
+    const output = revisedOutputs[0] ?? first[0]
+    const outputPath = path.isAbsolute(output) ? output : path.join(projectPath, output)
+    await fs.rm(outputPath, { force: true })
+    pendingResponses = await scenarioResponses(scenario)
+    await autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("attempt-four"))
+    expect(streamCallCount).toBe(6)
+    expect(await fileExists(outputPath)).toBe(true)
+
+    const movedPath = sourcePath.replace(/([^/]+)$/, "moved-$1")
+    await fs.mkdir(path.dirname(movedPath), { recursive: true })
+    await fs.rename(sourcePath, movedPath)
+    await migrateSourcePath(projectPath, sourcePath, movedPath)
+    expect((await loadIngestRecords(projectPath)).sources[movedPath]?.id).toBe(sourceId)
+    await autoIngest(projectPath, movedPath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("attempt-five"))
+    expect(streamCallCount).toBe(6)
+    expect((await loadIngestRecords(projectPath)).sources[movedPath]?.id).toBe(sourceId)
+  })
+
+  it("rejects when a compiled revision cannot be durably receipted", async () => {
+    const scenario = ingestScenarios[0]
+    ctx = await setup(scenario)
+    const projectPath = ctx.tmp.path
+    const sourcePath = path.join(projectPath, scenario.source.path).replace(/\\/g, "/")
+    const options = { taskId: "receipt-failure", projectId: "compile-project", bindIdempotency: vi.fn(async () => {}) }
+    await autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options)
+    const changedContent = `${await readFileRaw(sourcePath)}\nreceipt failure revision\n`
+    await writeFileRaw(sourcePath, changedContent)
+    pendingResponses = await scenarioResponses(scenario)
+    let recordWrites = 0
+    const originalWrite = realFs.writeFileAtomic
+    const writeAtomic = vi.spyOn(realFs, "writeFileAtomic")
+    writeAtomic.mockImplementation(async (target, content) => {
+      if (target.endsWith("/.llm-wiki/ingest-records.json") && ++recordWrites === 2)
+        throw new Error("receipt store unavailable")
+      await originalWrite(target, content)
+    })
+    try {
+      await expect(autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options))
+        .rejects.toThrow("receipt store unavailable")
+      expect(streamCallCount).toBe(4)
+      const revision = await hashReceiptRevision(changedContent)
+      const sourceId = Object.values((await loadIngestRecords(projectPath)).sources).find(source => source.originalPath === sourcePath)?.id
+      expect((await loadIngestRecords(projectPath)).receipts[`${sourceId}-${revision}`]).toBeUndefined()
+    } finally {
+      writeAtomic.mockRestore()
+    }
+  })
+
+  it("keys a PDF compile from the parser text read after MinerU preparation", async () => {
+    const scenario = ingestScenarios[0]
+    ctx = await setup(scenario)
+    const sourcePath = `${ctx.tmp.path}/raw/sources/parser-input.pdf`
+    const parserText = "PDFium parser output chosen for the actual compile input"
+    await writeFileRaw(sourcePath, "original pdf bytes")
+    await useWikiStore.getState().setMineruConfig({ enabled: true, backend: "local", localEndpoint: "http://127.0.0.1:8000", token: "", modelVersion: "vlm" } as never)
+    mineruMock.parse.mockResolvedValue({ markdown: "MinerU normalized content", savedImages: [] })
+    const realRead = realFs.readFile
+    const readSpy = vi.spyOn(realFs, "readFile").mockImplementation(async (target, options) =>
+      target === sourcePath && options?.extractImages === false ? parserText : realRead(target, options))
+    const bound = vi.fn(async () => {})
+    try {
+      await autoIngest(ctx.tmp.path, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, {
+        taskId: "pdf-parser-revision", projectId: "compile-project", bindIdempotency: bound,
+      })
+      const source = (await loadIngestRecords(ctx.tmp.path)).sources[sourcePath]
+      const expected = await hashReceiptRevision(parserText)
+      expect(mineruMock.parse).toHaveBeenCalledOnce()
+      expect(source.contentRevision).toBe(expected)
+      expect(bound).toHaveBeenCalledWith({ sourceId: source.id, sourceRevision: expected, idempotencyKey: `ingest-v1:compile-project:${source.id}:${expected}:compile` })
+    } finally {
+      readSpy.mockRestore()
+    }
   })
 
   it("drops generated pages whose frontmatter type disagrees with schema routing", async () => {

@@ -1,6 +1,10 @@
 import {
   registerSource,
+  reserveSource,
+  confirmSourceReceived,
   normalizeSourceKey,
+  setSourceContentRevision,
+  sourcePathForOrigin,
   type SourceCatalog,
   type DocumentRevision,
 } from "../domain"
@@ -21,6 +25,10 @@ export function createDocumentService(
           now: clock.now(),
         }),
       ),
+    reserveImportedSource: (projectPath: string, sourcePath: string, originalPath: string) =>
+      repository.update(projectPath, (catalog) => reserveSource(catalog, sourcePath, originalPath, { createId: clock.createId })),
+    confirmImportedSource: (projectPath: string, sourcePath: string) =>
+      repository.update(projectPath, (catalog) => confirmSourceReceived(catalog, sourcePath, clock.now())),
     registerImportedSources: (
       projectPath: string,
       sources: readonly { sourcePath: string; originalPath: string }[],
@@ -37,6 +45,10 @@ export function createDocumentService(
         )
       }),
     list: (projectPath: string) => repository.read(projectPath),
+    pathForOriginalSource: async (projectPath: string, originalPath: string) =>
+      sourcePathForOrigin(await repository.read(projectPath), originalPath),
+    recordContentRevision: (projectPath: string, sourcePath: string, revision: string) =>
+      repository.update(projectPath, (catalog) => setSourceContentRevision(catalog, sourcePath, revision)),
     revisions: async (projectPath: string, sourcePath: string) => {
       const catalog = await repository.read(projectPath)
       const key = normalizeSourceKey(sourcePath)
@@ -49,5 +61,11 @@ export function createDocumentService(
 /** SHA-256 remains compatible with existing receipt revision keys. */
 export async function hashContentRevision(content: string): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content))
+  return [...new Uint8Array(hash)].map((n) => n.toString(16).padStart(2, "0")).join("")
+}
+
+/** SHA-256 of original uploaded bytes; distinct from parser-text revisions. */
+export async function hashSourceBytes(bytes: Uint8Array): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes))
   return [...new Uint8Array(hash)].map((n) => n.toString(16).padStart(2, "0")).join("")
 }

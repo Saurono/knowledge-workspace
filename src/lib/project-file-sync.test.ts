@@ -5,6 +5,7 @@ vi.mock("@/lib/ingest-receipts", () => ({
   registerImportedSource: vi.fn(async () => {}),
   registerObservedSourcePaths: vi.fn(async () => {}),
   migrateSourceMetadata: vi.fn(async () => false),
+  documents: { list: vi.fn(async () => ({})) },
 }))
 
 const mocks = vi.hoisted(() => {

@@ -17,7 +17,7 @@ const executor = createIngestExecutor<LlmConfig>({
       context.signal,
       input.folderContext,
       context.onFileWritten,
-      { runCommit: input.runCommit, taskId: context.taskId },
+      { runCommit: input.runCommit, taskId: context.taskId, projectId: input.projectId, bindIdempotency: input.bindIdempotency },
     ),
 })
 

@@ -5,6 +5,7 @@ vi.mock("@/lib/ingest", () => ({ autoIngest: compile }))
 import { runQueuedIngest } from "./ingestion"
 
 const input = {
+  projectId: "project-id",
   projectPath: "/project",
   sourcePath: "/project/raw/a.md",
   model: {} as LlmConfig,
@@ -28,7 +29,7 @@ describe("ingest runtime platform wiring", () => {
       expect.any(AbortSignal),
       "folder",
       expect.any(Function),
-      { taskId: "logical-task", runCommit },
+      { taskId: "logical-task", projectId: input.projectId, runCommit },
     )
   })
 

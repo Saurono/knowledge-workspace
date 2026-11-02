@@ -1,12 +1,12 @@
 # 新会话交接
 
-> 当前状态：C01–C10、D01 已完成。用户要求完成当前节点后移交新会话；本会话停在 D01 收尾，不进入 D02。新会话从 D02 开始，继续主控拆分/调度/审查、Luna 编码。
+> 当前状态：C01–C10、D01、D02 已完成。D02 程序与测试由 Luna 编写，主控调度、审查并独立验证。下一项 D03 尚未启动；本次授权只接续 D02。
 
 ## 工作约定
 
 1. 先读本文件、TASKS、WORKLOG、ARCHITECTURE，检查真实 Git 状态/日志，不假设旧端口或进程仍在。
 2. 每项完成需勾选 TASKS、追加 WORKLOG（实现/验证/限制）、更新交接、提交并推送，不能只勾选。
-3. 本轮 D01 试运行与报告已完成，不自动进入 D02。继续指令从 D02 开始，默认仍由主控调度/审查、Luna 编码。对照只为评估，不能把对照 patch 混入产品。
+3. D01 试运行与对照报告已归档，D02 已完成；后续授权从 D03 接续，默认仍由主控调度/审查、Luna 编码。D01 对照只为评估，不能把对照 patch 混入产品。
 4. 业务归独立模块，经公开入口和端口组合。领域不依赖 React/Tauri/Store；server/app 不绕过模块公开接口。
 5. 源文件清单/依赖/公开契约变更后运行 audit:modules 并提交报告。所有后续仓库默认公开，不提交真实笔记、凭据或私人数据。
 
@@ -22,7 +22,7 @@
 
 ## 仓库与固定需求
 
-- 路径 /workspace/llm_wiki；公开 origin https://github.com/Saurono/knowledge-workspace ，upstream 保留 nashsu/llm_wiki。
+- 当前 Windows 路径 `C:\Users\D1761\Documents\ChatGPT\LLM WIKI\knowledge-workspace`；旧 Linux 交接路径 `/workspace/llm_wiki` 不适用于本机。公开 origin https://github.com/Saurono/knowledge-workspace ，upstream 保留 nashsu/llm_wiki。
 - 分支 codex/knowledge-workspace-v0.1；已推该分支，没有合并 main；最新 SHA 以 Git 为准。
 - GPL-3.0，保留上游及星图 MIT 声明。
 - 桌面独立与共享 Web 两种模式，无隐式同步。人员 user/admin 使用会话，agent 使用 API Token，工作角色与已授权有效身份同时切换。
@@ -68,7 +68,7 @@ Node.js 24，npm ci；可选共享 MCP 先 npm --prefix mcp-server ci。npm run 
 
 首次启动通过运行环境注入 KW_BOOTSTRAP_KEY（至少 24 字符），页面创建首位 admin 后可移除。旧 KW_SERVICE_TOKEN 只是初始化别名，不再授予数据访问；已有密码后无初始化密钥也可启动。HTTPS 设置 KW_SECURE_COOKIE=1。凭据不得放 URL/命令行参数/Git/笔记中。
 
-数据库 schema 7，支持 schema 1 起顺序升级，保留原资源/事件/墓碑。未知未来版本或损坏身份目录拒绝启动，不重置。C04 已有无口令 admin 可同 handle 初始化，保持 ID 和成员关系。升级/回退前停服备份完整数据目录；旧版本不直接打开 schema 7。
+数据库 schema 8，支持 schema 1 起顺序升级，保留原资源/事件/墓碑；D02 增加上传来源、修订和幂等登记。未知未来版本或损坏身份目录拒绝启动，不重置。C04 已有无口令 admin 可同 handle 初始化，保持 ID 和成员关系。升级/回退前停服备份完整数据目录；schema 7 及更早程序不能直接打开 schema 8。
 
 共享 CLI：node dist-service/cli.mjs <项目ID> <操作>，JSON 从 stdin 输入；环境 KW_API_URL、KW_AGENT_TOKEN，可选 KW_ACCESS_CONTEXT。共享 MCP：node mcp-server/dist/src/shared.js，同样环境，可选 KW_PROJECT_ID。旧 MCP index.js 与原桌面仍为独立本机信任域，不回退到共享服务或自动同步。
 
@@ -92,10 +92,22 @@ Node.js 24，npm ci；可选共享 MCP 先 npm --prefix mcp-server ci。npm run 
 - 评估报告 analysis/evaluation/d01-luna-trial-report.md；共同任务书、16项独立验收、两组首版与审查后patch/日志、文本计量脚本和JSON均在 analysis/evaluation。基线 f4c9bb2，实际产品代码由 gpt-6-luna 生成；主控模型仅在隔离目录做对照。
 - 首版合同验收：Luna11/15、对照15/15；额外硬化0/1与1/1。独立重放类型检查则Luna通过、对照首版失败；不能只信代理自测声明。审查后双方16/16并类型通过；产品两轮功能返修后交付。
 - 真实input/output/reasoning/cache/total Tokens均未由工具暴露，不可给实际费用或节省率。o200k_base可见实现+测试文本：首版Luna7217/对照8443，审查后11189/10117；只是快照文字，非累计生成量或计费。测量依赖在项目外安装，通过D01_TOKENIZER_MODULE配置，不依赖临时路径永久存在。
-- D02稳定来源/版本/幂等，D04全入口时间，D05实际索引，D06回执及H/I执行器未完成。用户最终记忆分类、真实模型/Vault/原生验证仍待后续。试验不会自动推进D02。
+- D01 交付时 D02 尚未启动；本轮 D02 结果见下一节。D04全入口时间、D05实际索引、D06回执及H/I执行器仍未完成。用户最终记忆分类、真实模型/Vault/原生验证仍待后续。
+
+## D02 / L040 最新交付
+
+- 来源稳定 ID 与位置分离。文件/文件夹重复导入复用原来源；同名异源及失败复制的预留不会互相覆盖。预留 `receivedAt=null`，复制成功才确认，失败可沿原 ID 重试。
+- 实际解析/MinerU 准备之后，以真正编译文本生成修订和 `projectId/sourceId/revision/compile` 任务键。队列持久绑定成功才继续；绑定校验原任务对象、run/epoch、项目/路径和取消状态，拒绝切换项目或同项目 ABA 后迟到的旧绑定。
+- 成功回执用于重复修订复用，输出缺失允许修复；保留首份成功证据、时间和历史位置。源变化或回执写入失败会拒绝成功。已确认移动与复制使用一致的来源锁；移动元数据失败保留已迁移内容并明确报错，不做危险删除回滚。
+- 本地 v1 catalog/queue/receipt 兼容可选字段，记录项目根位置供确定性迁移；有歧义旧路径和损坏记录不静默重置。坏队列恢复后禁止入列/继续执行，修复并成功恢复后才能解除。
+- 共享上传支持 Idempotency-Key、显式来源及新修订。schema 8 事务唯一登记来源/修订/请求键摘要/资源/事件；同源同字节复用、异源不合并，同键改变语义返回冲突。重放重新授权并校验已发布字节。旧无键来源可继续改版；上传仍仅报告 received。
+- 主控独立完整回归：197 文件 / 2356 项通过；CI 同口径 23 文件 / 130 项通过。18 模块 / 481 生产文件边界与审计、项目 `tsc --build` 通过；共享 Web/服务/CLI、桌面前端和预览构建通过。独立 HTTP/本地导入/数据库故障验收共 23 项通过；MCP 自身 25 项通过；真实浏览器 12 组无页面异常、CLI/MCP 8 组通过。记录见 L040。
+- 限制：本地复制/catalog/队列/Wiki 不是跨文件事务，锁只覆盖同进程；输出与回执之间崩溃仍有恢复窗口。上传文件与 SQLite 不是跨介质事务，可留未发布目录。本阶段不声称跨进程严格恰好一次、真实模型/Vault/原生桌面安装包或远端 CI 已验收。
+- 协议与验收边界：`analysis/implementation/d02-source-idempotency.md`。本机 Node 24 可用，无全局 npm；已在项目外工具缓存取得 npm，可用 `pnpm --package=npm@11 dlx npm run <script>`。直接运行测试可用 `node node_modules/vitest/vitest.mjs`；不要在 npm 安装树上使用会重新整理依赖的 pnpm exec。
+- 此 checkout 为浅历史/按需 blob 克隆，已补最近四条提交供核对。需要更早历史时再 fetch deepen。网络重试使用命令级代理 `-c http.proxy=http://127.0.0.1:7890 -c http.sslBackend=openssl -c http.version=HTTP/1.1`，不关闭证书验证。
 
 ## 新会话启动指令
 
-继续 knowledge-workspace：先读取 HANDOFF.md、TASKS.md、WORKLOG.md、ARCHITECTURE.md 和 analysis/evaluation/d01-luna-trial-report.md，检查真实 Git 状态/日志及 origin/codex/knowledge-workspace-v0.1。D01 已完成，接续 D02（来源稳定ID、内容修订、任务幂等，避免重复导入/重试/移动重建）。由主控拆分/调度/审查及验收，Luna（gpt-6-luna）生成代码与测试；本次对照模型生成仅是已结束的试验，不改变默认分工。每项完成更新任务/日志/交接并提交推送；未获真实 usage 时不得给虚构 Token/费用。先限定 D02 的验收边界，不扩大到未授权的整个 D 系列。
+继续 knowledge-workspace：先读取 HANDOFF.md、TASKS.md、WORKLOG.md、ARCHITECTURE.md 和 analysis/implementation/d02-source-idempotency.md，检查真实 Git 状态/日志及 origin/codex/knowledge-workspace-v0.1。D02 已完成，若获用户继续授权则从 D03（文档/Wiki 多领域归类、筛选和未分类处理）接续。由主控拆分/调度/审查及验收，Luna（gpt-6-luna）生成代码与测试。每项完成更新任务/日志/交接并提交推送；未获真实 usage 时不得给虚构 Token/费用。不自动扩大到整个 D 系列。
 
-本轮保留了 /tmp/kw-d01-control、/tmp/kw-d01-initial-luna、/tmp/kw-d01-initial-primary 三个隔离实验 worktree，仅供核查；它们不是产品工作目录，数据已归档到评估 artifacts，不应在新会话继续编码或并入产品。计量依赖和 /tmp 日志可能消失，优先使用已提交报告与快照。跨会话工具 list_projects 当前连接失败，未声称已自动创建新会话。
+旧 Linux 会话曾保留 /tmp/kw-d01-control、/tmp/kw-d01-initial-luna、/tmp/kw-d01-initial-primary 三个隔离实验 worktree，仅供核查；本机未使用这些目录。数据已归档到评估 artifacts，不应继续编码或并入产品。计量依赖和 /tmp 日志可能消失，优先使用已提交报告与快照。本轮未创建新聊天。

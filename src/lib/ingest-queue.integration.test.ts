@@ -230,13 +230,18 @@ describe("ingest-queue persistence — restore round-trip", () => {
     expect(getQueue()).toEqual([])
   })
 
-  it("returns empty queue when the file is corrupted JSON", async () => {
+  it("preserves a corrupted queue snapshot and refuses to enqueue over it", async () => {
     await writeFileRaw(
       `${tmp.path}/.llm-wiki/ingest-queue.json`,
       "{not valid json at all",
     )
-    await restoreQueue(TEST_ID_A, tmp.path)
+    const queuePath = `${tmp.path}/.llm-wiki/ingest-queue.json`
+    await expect(restoreQueue(TEST_ID_A, tmp.path)).rejects.toThrow()
     expect(getQueue()).toEqual([])
+    await expect(enqueueBatch(TEST_ID_A, [
+      { sourcePath: "raw/sources/new.md", folderContext: "" },
+    ])).rejects.toThrow()
+    expect(await readFileRaw(queuePath)).toBe("{not valid json at all")
   })
 
   it("round-trips Unicode + folder context correctly", async () => {
