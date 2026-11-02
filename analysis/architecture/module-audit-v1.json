@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 481,
+  "productionFiles": 482,
   "moduleCount": 18,
   "modules": [
     {
@@ -72,8 +72,8 @@
     },
     {
       "id": "domains",
-      "productionFiles": 6,
-      "testFiles": 1,
+      "productionFiles": 7,
+      "testFiles": 3,
       "publicEntrypoints": [
         {
           "path": "index.ts",

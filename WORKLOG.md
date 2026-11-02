@@ -385,3 +385,10 @@
 - 真实运行：[41478285083](https://github.com/Saurono/knowledge-workspace/actions/runs/41478285083)。Ubuntu 完整 job 成功；Windows 在审计快照失败，已读取真实日志；macOS 当时仍排队。不能以 Ubuntu 通过冒充整个矩阵通过，J04 保持未完成。
 - Windows 修正：仅给生成的 module-audit-v1.json 设置 text eol=lf，保留归档 patch/txt 规则，不关闭审计或在 CI 自动重生成报告。Luna 在临时干净 checkout、core.autocrlf=true 下验证 i/lf w/lf、623 LF/0 CRLF，基线审计 18 模块/481 生产文件通过。主控核对并安全移除临时 Junction/worktree，原依赖目录保留。
 - 修正推送后的远端结果继续收集；D03 工作区源清单变化需要按正常流程刷新报告，与本次 Windows 换行问题分开处理。
+
+## L042 · 2026-11-03 · D03 分节点交付
+
+- 当前只完成 D03a，D03 总项尚未完成。主控固定 `analysis/implementation/d03-domain-classification.md`，Luna 实现、冻结后集中审查。
+- D03a：项目内扁平多选，Wiki 相对路径和稳定来源逻辑键 raw/documents/sourceId；canonical 显式空归类优先于同源旧路径，旧关联只读时不清理。ANY/ALL、无筛选、独立未分类、未知查询拒绝，原始 Wiki tags 不当作领域。
+- 一次 setResourceDomains 更新只改规范键，校验新领域 ID、去重，保留 legacy/无关及扩展字段；源 ID 安全规则与 D02 一致，拒绝危险路径和控制字符，非法输入返回结构化错误。
+- 主控独立验证：domains 3 文件/8 项通过，项目 tsc --build、18 模块边界通过；审计刷新到 482 生产源文件。D03b 服务接入和 D03c UI 尚未交付，不以纯规则测试冒充实际链路。
