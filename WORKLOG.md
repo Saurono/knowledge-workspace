@@ -385,10 +385,26 @@
 - 真实运行：[41478285083](https://github.com/Saurono/knowledge-workspace/actions/runs/41478285083)。Ubuntu 完整 job 成功；Windows 在审计快照失败，已读取真实日志；macOS 当时仍排队。不能以 Ubuntu 通过冒充整个矩阵通过，J04 保持未完成。
 - Windows 修正：仅给生成的 module-audit-v1.json 设置 text eol=lf，保留归档 patch/txt 规则，不关闭审计或在 CI 自动重生成报告。Luna 在临时干净 checkout、core.autocrlf=true 下验证 i/lf w/lf、623 LF/0 CRLF，基线审计 18 模块/481 生产文件通过。主控核对并安全移除临时 Junction/worktree，原依赖目录保留。
 - 修正推送后的远端结果继续收集；D03 工作区源清单变化需要按正常流程刷新报告，与本次 Windows 换行问题分开处理。
+- 后续真实结果：修正提交 817af47 的 Windows/Ubuntu 成功；D03a 提交 fda24b5 的 [41480210881](https://github.com/Saurono/knowledge-workspace/actions/runs/41480210881) 三个平台全部成功，包含完整 Rust build、共享 HTTP/持久化和 CLI/MCP 检查。J04 仍有安装包/部署等范围，未因 cargo build 成功就勾选总项。
 
 ## L042 · 2026-11-03 · D03 分节点交付
 
-- 当前只完成 D03a，D03 总项尚未完成。主控固定 `analysis/implementation/d03-domain-classification.md`，Luna 实现、冻结后集中审查。
+- D03a 与 D03b 已完成，D03 总项等待 D03c。主控固定 `analysis/implementation/d03-domain-classification.md`，Luna 实现、冻结后集中审查。
 - D03a：项目内扁平多选，Wiki 相对路径和稳定来源逻辑键 raw/documents/sourceId；canonical 显式空归类优先于同源旧路径，旧关联只读时不清理。ANY/ALL、无筛选、独立未分类、未知查询拒绝，原始 Wiki tags 不当作领域。
 - 一次 setResourceDomains 更新只改规范键，校验新领域 ID、去重，保留 legacy/无关及扩展字段；源 ID 安全规则与 D02 一致，拒绝危险路径和控制字符，非法输入返回结构化错误。
 - 主控独立验证：domains 3 文件/8 项通过，项目 tsc --build、18 模块边界通过；审计刷新到 482 生产源文件。D03b 服务接入和 D03c UI 尚未交付，不以纯规则测试冒充实际链路。
+
+### 2026-11-05 · D03b 接续
+
+- 本地和 GitHub 开发分支起点均为 fda24b5，保留未提交工作后审查。服务列表接入重复 domainId、domainMatch 和 unclassified，严格校验；SDK、资源工具、关键词检索复用规则。先授权再筛选，过滤后分页，游标绑定规范领域条件。
+- 新分类目标校验真实 Wiki/来源存在，既有删除目标可清空；工作区 CAS 与隐藏内容保护保留。本地显式 domain.set 才为已存在文件登记身份，读取不分配来源 ID；POSIX 绝对路径、穿越与大小写边界已补测。
+- 来源移动把已证明同源旧路径分类转到稳定键，显式空分类优先；拒绝折叠带分类的目标来源，并在生产迁移写入前预检。records/workspace/body 仍非跨文件事务，失败明确上抛，不能声称跨进程事务一致性。
+- D03c UI 尚未接入；候选组件未落入产品，不把设计算完成。
+
+## L043 · 2026-11-05 · D04a Wiki 创建时间共同写入边界
+
+- 生成/研究/审查/修复经 commit，编辑经 pages，历史恢复经 history，在实际写入成功后记录 Wiki provenance。已有创建值（含 null）保留；旧文件无证据继续未知。恢复已删除历史文件也不标为今天新建；移动元数据不以目的页时间补原页未知值。
+- 生成更新保留 YAML 顶层 created（含多行值），旧缺失时不补今天；正文 created 文本不误改。手动编辑与明确历史恢复不重写用户正文。元数据保存失败拒绝成功，已写正文保留；锁顺序项目 Wiki→records。
+- Luna 提供实现与补丁，主控审查应用并独立验证。部分代理当前缺文件工具，未静默切换编码模型。更新旧测试的 sidecar mock，保留正文并发/CAS断言；回执失败按目标 revision 证据注入，避免依赖偶然写入次数。
+- 验证：完整回归 **203 文件 / 2386 项通过**；项目 tsc --build、18 模块边界与 **485 生产文件**审计通过；共享 Web/服务/CLI 构建通过。真实共享浏览器 **12 组、页面异常 0**，实际 CLI/MCP **8 组**通过。沿用合成资料/临时数据，不代表真实模型、Vault、原生 watcher 或安装包验收。
+- D04b 来源入口和 D04c 时间展示保持待办，D04 总项未完成。D05 契约已归档，未接实际索引提交/验证端口，因此无 ready/succeeded 实现交付。

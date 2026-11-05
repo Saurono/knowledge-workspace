@@ -3,3 +3,5 @@ export { emptyWorkspaceData, validateWorkspaceData, removeDomain, removeMemory }
 export type { WorkspaceData, MemoryRecord, DomainTag } from "./snapshot"
 export { executeWorkspaceCommand } from "./services"
 export type { WorkspaceCommand } from "./services"
+export { resolveLocalDomainResource } from "./resource-domains"
+export type { LocalDomainResource, ResolvedLocalDomainResource } from "./resource-domains"

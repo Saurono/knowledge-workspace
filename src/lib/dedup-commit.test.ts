@@ -14,6 +14,8 @@ vi.mock("@/commands/fs", () => ({
     return state.files.get(path)
   },
   writeFile: state.write,
+  createDirectory: async () => {},
+  writeFileAtomic: async (path: string, content: string) => { state.files.set(path, content) },
   fileExists: async (path: string) => state.files.has(path),
   deleteFile: async (path: string) => {
     state.files.delete(path)

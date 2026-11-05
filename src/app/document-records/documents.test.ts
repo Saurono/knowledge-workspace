@@ -194,6 +194,48 @@ describe("observed source and move metadata workflow", () => {
     ).rejects.toThrow("another source")
     expect(JSON.stringify(await documents.list("/p"))).toBe(before)
   })
+  it("moves legacy source classification to the stable source key and preserves an explicit canonical clear", async () => {
+    const { migrateSourceMetadata } = await import("./source-paths")
+    const { loadWorkspaceData, updateWorkspaceData } = await import("@/app/workspace/json-repository")
+    await registerImportedSource("/p", input.sourcePath, "/vault/a.md")
+    const sourceId = (await documents.list("/p"))[input.sourcePath].id
+    await updateWorkspaceData("/p", data => ({
+      ...data,
+      domains: [{ id: "research", name: "Research" }],
+      resourceDomains: { "raw/sources/a.md": ["research"] },
+    }))
+    const moved = "/p/raw/sources/moved.md"
+    await migrateSourceMetadata("/p", input.sourcePath, moved)
+    let workspace = await loadWorkspaceData("/p")
+    expect(workspace.resourceDomains[`raw/documents/${sourceId}`]).toEqual(["research"])
+    expect(workspace.resourceDomains).not.toHaveProperty("raw/sources/a.md")
+
+    await updateWorkspaceData("/p", data => ({
+      ...data,
+      resourceDomains: { ...data.resourceDomains, [`raw/documents/${sourceId}`]: [], "raw/sources/moved.md": ["research"] },
+    }))
+    await migrateSourceMetadata("/p", moved, "/p/raw/sources/final.md")
+    workspace = await loadWorkspaceData("/p")
+    expect(workspace.resourceDomains[`raw/documents/${sourceId}`]).toEqual([])
+    expect(workspace.resourceDomains).not.toHaveProperty("raw/sources/moved.md")
+  })
+  it("refuses to merge a destination source with its own classification, even before ingest history", async () => {
+    const { migrateSourceMetadata } = await import("./source-paths")
+    const { loadWorkspaceData, updateWorkspaceData } = await import("@/app/workspace/json-repository")
+    await registerImportedSource("/p", input.sourcePath, "/vault/a.md")
+    await registerImportedSource("/p", "/p/raw/sources/b.md", "/p/raw/sources/b.md")
+    const destinationId = (await documents.list("/p"))["/p/raw/sources/b.md"].id
+    await updateWorkspaceData("/p", data => ({
+      ...data,
+      domains: [{ id: "research", name: "Research" }],
+      resourceDomains: { "raw/sources/b.md": ["research"], [`raw/documents/${destinationId}`]: [] },
+    }))
+    const beforeCatalog = JSON.stringify(await documents.list("/p"))
+    const beforeWorkspace = await loadWorkspaceData("/p")
+    await expect(migrateSourceMetadata("/p", input.sourcePath, "/p/raw/sources/b.md")).rejects.toThrow(/domain classification/)
+    expect(JSON.stringify(await documents.list("/p"))).toBe(beforeCatalog)
+    expect(await loadWorkspaceData("/p")).toEqual(beforeWorkspace)
+  })
 })
 
 it("registers a watcher batch in one write and avoids rewriting unchanged sources", async () => {

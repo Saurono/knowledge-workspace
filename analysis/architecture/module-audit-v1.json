@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 482,
+  "productionFiles": 485,
   "moduleCount": 18,
   "modules": [
     {
@@ -81,7 +81,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 4
+          "productionImporters": 9
         },
         {
           "path": "application/index.ts",
@@ -319,8 +319,8 @@
     },
     {
       "id": "service-api",
-      "productionFiles": 11,
-      "testFiles": 1,
+      "productionFiles": 12,
+      "testFiles": 2,
       "publicEntrypoints": [
         {
           "path": "index.ts",
@@ -328,7 +328,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 17
+          "productionImporters": 18
         },
         {
           "path": "application/index.ts",
@@ -430,7 +430,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 14
+          "productionImporters": 16
         },
         {
           "path": "application/index.ts",

@@ -136,4 +136,88 @@ describe("shared service HTTP and SQLite", () => {
     expect((await f.client.wiki(project.id)).data).toEqual([])
     expect((await f.client.events(project.id)).data).toHaveLength(1)
   })
+  it("filters shared Wiki lists and keyword evidence with ANY/ALL/unclassified and filter-scoped cursors", async () => {
+    const f = await fixture(), project = await f.create()
+    const pages = [
+      ["wiki/a.md", "domain alpha common token"],
+      ["wiki/b.md", "domain beta common token"],
+      ["wiki/c.md", "domain alpha beta common token"],
+      ["wiki/d.md", "unclassified common token"],
+    ] as const
+    for (const [path, content] of pages) await f.client.saveWiki(project.id, path, content, null)
+    const workspace = (await f.client.workspace(project.id)).data
+    const assigned = {
+      ...workspace.data,
+      domains: [{ id: "alpha", name: "Alpha" }, { id: "beta", name: "Beta" }],
+      resourceDomains: {
+        "wiki/a.md": ["alpha"], "wiki/b.md": ["beta"], "wiki/c.md": ["alpha", "beta"],
+      },
+    }
+    await f.client.saveWorkspace(project.id, assigned, workspace.revision)
+    const staleWrite = await f.request(`/projects/${project.id}/workspace`, { method: "PUT", headers: { "If-Match": `"v${workspace.revision}"` }, body: JSON.stringify(assigned) })
+    expect(staleWrite.status).toBe(409)
+    expect((await f.client.workspace(project.id)).data.data.resourceDomains).toMatchObject({ "wiki/a.md": ["alpha"], "wiki/c.md": ["alpha", "beta"] })
+
+    const first = await f.client.wiki(project.id, "?limit=1", { domainIds: ["beta", "alpha", "alpha"], match: "any", unclassified: false })
+    expect(first.data.map(value => value.key)).toHaveLength(1)
+    const cursor = first.meta.page?.nextCursor
+    expect(cursor).toBeTruthy()
+    const seen = new Set(first.data.map(value => value.key))
+    let next = cursor
+    while (next) {
+      const page = await f.client.wiki(project.id, `?limit=1&cursor=${encodeURIComponent(next)}`, { domainIds: ["alpha", "beta"], match: "any", unclassified: false })
+      for (const value of page.data) seen.add(value.key)
+      next = page.meta.page?.nextCursor ?? null
+    }
+    expect([...seen].sort()).toEqual(["wiki/a.md", "wiki/b.md", "wiki/c.md"])
+
+    const all = await f.client.wiki(project.id, "", { domainIds: ["alpha", "beta"], match: "all", unclassified: false })
+    expect(all.data.map(value => value.key)).toEqual(["wiki/c.md"])
+    const unclassified = await f.client.wiki(project.id, "", { domainIds: [], match: "any", unclassified: true })
+    expect(unclassified.data.map(value => value.key)).toEqual(["wiki/d.md"])
+    const changedFilterCursor = await f.request(`/projects/${project.id}/wiki?limit=1&domainId=beta&cursor=${encodeURIComponent(cursor!)}`)
+    expect(changedFilterCursor.status).toBe(400)
+
+    for (const query of ["domainId=", "domainId=missing", "domainMatch=maybe", "domainMatch=any&domainMatch=all", "unclassified=2", "unclassified=1&domainId=alpha", "unclassified=0&unclassified=1"])
+      expect((await f.request(`/projects/${project.id}/wiki?${query}`)).status).toBe(400)
+
+    const search = await f.request(`/projects/${project.id}/retrieval`, { method: "POST", body: JSON.stringify({ query: "common token", domainFilter: { domainIds: ["alpha"], match: "any", unclassified: false } }) })
+    expect((await search.json()).data.results.map((item: { path: string }) => item.path).sort()).toEqual(["wiki/a.md", "wiki/c.md"])
+    const tool = await f.request(`/projects/${project.id}/mcp`, { method: "POST", body: JSON.stringify({ tool: "wiki.list", domainFilter: { domainIds: ["beta"], match: "any", unclassified: false } }) })
+    expect((await tool.json()).data.items.map((item: { key: string }) => item.key).sort()).toEqual(["wiki/b.md", "wiki/c.md"])
+
+    const latest = (await f.client.workspace(project.id)).data
+    const deletedDomain = { ...latest.data, domains: [{ id: "beta", name: "Beta" }], resourceDomains: { "wiki/a.md": [], "wiki/b.md": ["beta"], "wiki/c.md": ["beta"] } }
+    await f.client.saveWorkspace(project.id, deletedDomain, latest.revision)
+    expect((await f.client.workspace(project.id)).data.data.resourceDomains["wiki/a.md"]).toEqual([])
+  })
+  it("shares a document classification across byte revisions and validates real targets without changing resource revisions", async () => {
+    const f = await fixture(), project = await f.create(), uploadPath = `/projects/${project.id}/documents`
+    const upload = async (body: number, key: string, create = false) => f.request(uploadPath, { method: "POST", headers: { "Content-Type": "text/plain", "X-File-Name": "source.txt", "Idempotency-Key": key, "X-Source-Id": "stable-source", ...(create ? { "X-Create-Source": "1" } : {}) }, body: new Uint8Array([body]) })
+    const first = await upload(97, "first-revision", true), firstRecord = (await first.json()).data
+    const second = await upload(98, "second-revision"), secondRecord = (await second.json()).data
+    const workspace = (await f.client.workspace(project.id)).data
+    const classified = { ...workspace.data, domains: [{ id: "research", name: "Research" }], resourceDomains: { "raw/documents/stable-source": ["research"] } }
+    await f.client.saveWorkspace(project.id, classified, workspace.revision)
+    const listed = await f.client.documents(project.id, "", { domainIds: ["research"], match: "any", unclassified: false })
+    expect(listed.data.map(item => item.key).sort()).toEqual([firstRecord.data.id, secondRecord.data.id].sort())
+
+    const currentWorkspace = (await f.client.workspace(project.id)).data
+    const absentTarget = { ...currentWorkspace.data, resourceDomains: { ...currentWorkspace.data.resourceDomains, "raw/documents/not-uploaded": [] } }
+    const rejected = await f.request(`/projects/${project.id}/workspace`, { method: "PUT", headers: { "If-Match": `"v${currentWorkspace.revision}"` }, body: JSON.stringify(absentTarget) })
+    expect(rejected.status).toBe(404)
+    expect((await f.client.workspace(project.id)).data.revision).toBe(currentWorkspace.revision)
+
+    const otherProject = await f.create("Other project")
+    const foreignUpload = await f.request(`/projects/${otherProject.id}/documents`, { method: "POST", headers: { "Content-Type": "text/plain", "X-File-Name": "foreign.txt", "Idempotency-Key": "foreign-source", "X-Source-Id": "foreign-source-id", "X-Create-Source": "1" }, body: new Uint8Array([99]) })
+    expect(foreignUpload.status).toBe(201)
+    const afterForeign = (await f.client.workspace(project.id)).data
+    const crossProject = { ...afterForeign.data, resourceDomains: { ...afterForeign.data.resourceDomains, "raw/documents/foreign-source-id": ["research"] } }
+    const crossProjectResponse = await f.request(`/projects/${project.id}/workspace`, { method: "PUT", headers: { "If-Match": `"v${afterForeign.revision}"` }, body: JSON.stringify(crossProject) })
+    expect(crossProjectResponse.status).toBe(404)
+
+    const search = await f.request(`/projects/${project.id}/wiki?domainId=research`)
+    expect(search.status).toBe(200)
+    expect(secondRecord.data.id).not.toBe(firstRecord.data.id)
+  })
 })

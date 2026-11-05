@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createDeferred, flushMicrotasks } from "@/test-helpers/deferred"
 const native = vi.hoisted(() => ({ list: vi.fn(), restore: vi.fn() }))
 vi.mock("@/commands/fs", () => ({
+  fileExists: async () => false,
+  createDirectory: async () => {},
+  readFile: async () => { throw new Error("ENOENT") },
+  writeFileAtomic: async () => {},
   listFileHistory: native.list,
   restoreFileHistory: native.restore,
 }))

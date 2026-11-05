@@ -3,6 +3,7 @@ import { ServiceError, pageInput, pageCursor, requireId } from "../domain"
 import type { ProjectRecord, ResourceKind, ResourceRecord, WikiContent } from "../domain"
 import type { SharedRepository } from "./ports"
 import { emptySharedWorkspace, validateSharedWorkspace } from "./workspace"
+import { canonicalDomainResourceKey, filterMatches, normalizeDomainFilter, type DomainFilter } from "@/modules/domains/domain"
 export function createSharedService(repository: SharedRepository, context: { id(): string; now(): string }) {
   const project = async (id: string) => {
     requireId(id)
@@ -28,11 +29,47 @@ export function createSharedService(repository: SharedRepository, context: { id(
       const items: ProjectRecord[] = values.slice(0, input.limit)
       return { items, nextCursor: values.length > input.limit ? pageCursor("projects", items[items.length - 1].id) : null }
     },
-    async list(id: string, kind: ResourceKind, limit?: string | null, cursor?: string | null) {
+    async list(id: string, kind: ResourceKind, limit?: string | null, cursor?: string | null, domainFilter?: DomainFilter) {
       await project(id)
-      const scope = `${id}:${kind}`, input = pageInput(scope, limit, cursor)
-      const values = await repository.list(id, kind, input.after, input.limit + 1), items = values.slice(0, input.limit)
-      return { items, nextCursor: values.length > input.limit ? pageCursor(scope, items[items.length - 1].key) : null }
+      if (!domainFilter) {
+        const scope = `${id}:${kind}`, input = pageInput(scope, limit, cursor)
+        const values = await repository.list(id, kind, input.after, input.limit + 1), items = values.slice(0, input.limit)
+        return { items, nextCursor: values.length > input.limit ? pageCursor(scope, items[items.length - 1].key) : null }
+      }
+
+      // Workspace read is deliberately first: the guarded adapter requires project.read
+      // and returns only domain links the caller may observe. The resource scan then
+      // independently requires the corresponding wiki.read/documents.read permission.
+      const workspace = (await read(id, "workspace", "default")).data as ReturnType<typeof validateSharedWorkspace>
+      let normalizedFilter: DomainFilter
+      try { normalizedFilter = normalizeDomainFilter(workspace, domainFilter) }
+      catch (error) { throw new ServiceError("invalid_argument", error instanceof Error ? error.message : "Invalid domain filter") }
+      const filterScope = JSON.stringify(normalizedFilter)
+      const scope = `${id}:${kind}:domains:${filterScope}`
+      const input = pageInput(scope, limit, cursor)
+      const items: ResourceRecord[] = []
+      let after = input.after
+      while (items.length <= input.limit) {
+        const batch = await repository.list(id, kind, after, 200)
+        if (!batch.length) break
+        for (const resource of batch) {
+          after = resource.key
+          let resourceKey = ""
+          if (kind === "wiki") resourceKey = resource.key
+          else if (kind === "document") {
+            const sourceId = (resource.data as { sourceId?: unknown })?.sourceId
+            if (typeof sourceId !== "string") throw new ServiceError("internal", "Document is missing its stable source identity")
+            try { resourceKey = canonicalDomainResourceKey("document", sourceId) }
+            catch { throw new ServiceError("internal", "Document has an invalid stable source identity") }
+          }
+          if (filterMatches(workspace, resourceKey, normalizedFilter)) items.push(resource)
+          if (items.length > input.limit) break
+        }
+        if (items.length > input.limit || batch.length < 200) break
+      }
+      const hasMore = items.length > input.limit
+      const pageItems = items.slice(0, input.limit)
+      return { items: pageItems, nextCursor: hasMore ? pageCursor(scope, pageItems[pageItems.length - 1].key) : null }
     },
     readWiki: (id: string, path: string) => read(id, "wiki", wikiPath(path)) as Promise<ResourceRecord<WikiContent>>,
     async saveWiki(id: string, path: string, content: unknown, expected: number | null) {

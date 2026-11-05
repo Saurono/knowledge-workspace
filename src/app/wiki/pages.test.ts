@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 const files = vi.hoisted(() => new Map<string, string>())
-const io = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), exists: vi.fn() }))
+const io = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), metadataWrite: vi.fn(), exists: vi.fn() }))
 vi.mock("@/commands/fs", () => ({
   readFile: io.read,
-  writeFileAtomic: io.write,
+  writeFileAtomic: (path: string, value: string) => path.endsWith("/.llm-wiki/ingest-records.json") ? io.metadataWrite(path, value) : io.write(path, value),
   fileExists: io.exists,
   createDirectory: async () => {},
 }))
@@ -20,6 +20,7 @@ beforeEach(() => {
     files.set(path, value)
   })
   io.exists.mockImplementation(async (path: string) => files.has(path))
+  io.metadataWrite.mockImplementation(async (path: string, value: string) => { files.set(path, value) })
 })
 describe("Wiki page repository and revision contracts", () => {
   it("reads exact content with a deterministic revision and retains editor compatibility", async () => {

@@ -45,6 +45,7 @@ import { reserveImportedSource, confirmImportedSource, registerObservedSourcePat
 import { preprocessSourceFiles } from "@/lib/source-preprocess"
 import { moveParsedMarkdown, removeParsedMarkdown } from "@/lib/parsed-source-output"
 import { withProjectLock } from "@/lib/project-mutex"
+import { validateSourceDomainMove } from "@/app/document-records/source-paths"
 
 export const INGESTABLE_SOURCE_EXTENSIONS = new Set([
   "md",
@@ -183,6 +184,7 @@ async function migrateSourcePathUnlocked(
   const moveCandidate = { ...sourceCatalog }
   if (oldSource && destinationSource && oldSource.id !== destinationSource.id) delete moveCandidate[newKey]
   moveSourceKey(moveCandidate, oldKey, newKey)
+  await validateSourceDomainMove(pp, oldKey, newKey, oldSource?.id, destinationSource?.id)
 
   const allMd = flattenMd(await listDirectory(`${pp}/wiki`))
   const oldBaseName = getFileName(oldIdentity).toLowerCase()

@@ -14,6 +14,7 @@ import type { ProjectPermission, SessionIdentity, AccessContext } from "@/module
 import type { AccountAuthentication } from "./auth-http"
 import { createDocumentCheckpointRepository } from "./ingestion-checkpoints"
 import { summarizeIngestion } from "@/modules/ingestion/domain"
+import { domainFilterFromQuery } from "@/modules/service-api/application"
 export interface ServiceOptions { repository: SqliteRepository; authentication: AccountAuthentication; executions?: ExecutionGateway; maxJsonBytes?: number; uploads?: UploadStorage; uploadRegistry?: UploadRegistry; maxUploadBytes?: number; webRoot?: string }
 export function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -109,11 +110,11 @@ export function createServiceHttp(options: ServiceOptions) {
         return send(200, { ...value, summary: summarizeIngestion(value.checkpoint) })
       }
       if (part === "memories" && method === "GET") { requireContextPermission(context, "memory.read"); return send(200, (await service.readWorkspace(id)).data) }
-      if ((part === "retrieval" || part === "search") && method === "POST") { requireContextPermission(context, "wiki.read"); return send(200, await keywordSearch(guarded, id, await json())) }
+      if ((part === "retrieval" || part === "search") && method === "POST") { requireContextPermission(context, "wiki.read"); return send(200, await keywordSearch(service, id, await json())) }
       let executionInput: Record<string, unknown> | undefined
       if ((part === "mcp" || part === "cli") && method === "POST") {
         const body = await json()
-        if (body.tool === "search") { requireContextPermission(context, "wiki.read"); return send(200, await keywordSearch(guarded, id, body)) }
+        if (body.tool === "search") { requireContextPermission(context, "wiki.read"); return send(200, await keywordSearch(service, id, body)) }
         if (body.tool === "memory.list") requireContextPermission(context, "memory.read")
         if (typeof body.tool === "string") return send(200, await resourceTool(service, id, body.tool, body))
         if (part === "mcp") throw new ServiceError("invalid_argument", "Choose a supported resource tool")
@@ -137,7 +138,7 @@ export function createServiceHttp(options: ServiceOptions) {
       if (part === "access" && method === "GET") return send(200, context)
       if (!part && method === "GET") return send(200, await service.project(id))
       if ((part === "wiki" || part === "documents") && method === "GET") {
-        const page = await service.list(id, part === "wiki" ? "wiki" : "document", url.searchParams.get("limit"), url.searchParams.get("cursor"))
+        const page = await service.list(id, part === "wiki" ? "wiki" : "document", url.searchParams.get("limit"), url.searchParams.get("cursor"), domainFilterFromQuery(url.searchParams))
         return send(200, page.items, page.nextCursor)
       }
       if (part === "documents" && method === "POST") {

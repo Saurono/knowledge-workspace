@@ -2,6 +2,8 @@ import { wikiStorage } from "./storage"
 import { normalizePath } from "@/lib/path-utils"
 import { withProjectLock } from "@/lib/project-mutex"
 import { createWikiCommitService, type WikiCommitRepository } from "@/modules/wiki/application"
+import { preserveWikiCreatedFrontmatter } from "@/modules/wiki/domain"
+import { recordCompletedWikiWrite } from "./provenance"
 
 const full = (projectPath: string, path: string) =>
   `${normalizePath(projectPath).replace(/\/+$/, "")}/${path}`
@@ -13,7 +15,16 @@ export const localWikiCommits: WikiCommitRepository = {
         exists: (path) => wikiStorage.exists(full(projectPath, path)),
         // Preserve the existing native generation/history behavior. The module
         // controls scope/locking; the platform adapter chooses its write primitive.
-        write: (path, content) => wikiStorage.write(full(projectPath, path), content),
+        write: async (path, content) => {
+          const target = full(projectPath, path)
+          const existed = await wikiStorage.exists(target)
+          const previous = existed && /^wiki\/.*\.md$/i.test(path) ? await wikiStorage.read(target) : ""
+          const protectedContent = existed && /^wiki\/.*\.md$/i.test(path)
+            ? preserveWikiCreatedFrontmatter(previous, content)
+            : content
+          await wikiStorage.write(target, protectedContent)
+          await recordCompletedWikiWrite({ projectPath, relativePath: path, existed })
+        },
       }),
     ),
 }

@@ -5,11 +5,18 @@ import type { LlmConfig } from "@/stores/wiki-store"
 vi.mock("./llm-client", () => ({
   streamChat: vi.fn(),
 }))
-vi.mock("@/commands/fs", () => ({
-  readFile: vi.fn(),
-  writeFile: vi.fn(),
-  listDirectory: vi.fn(),
-}))
+vi.mock("@/commands/fs", () => {
+  const writeFile = vi.fn()
+  return {
+    readFile: vi.fn(), writeFile, listDirectory: vi.fn(),
+    createDirectory: async () => {},
+    fileExists: async (path: string) => !path.endsWith("/.llm-wiki/ingest-records.json"),
+    writeFileAtomic: async (path: string, content: string) => {
+      if (path.endsWith("/.llm-wiki/ingest-records.json")) return
+      return writeFile(path, content)
+    },
+  }
+})
 
 import { enrichWithWikilinks } from "./enrich-wikilinks"
 import { streamChat } from "./llm-client"

@@ -18,6 +18,8 @@ vi.mock("@/lib/anytxt-search", () => ({
 }))
 vi.mock("@/lib/llm-client", () => ({ streamChat: deps.stream }))
 vi.mock("@/commands/fs", () => ({
+  createDirectory: async () => {},
+  writeFileAtomic: async () => {},
   fileExists: deps.exists,
   writeFile: deps.write,
   readFile: deps.read,

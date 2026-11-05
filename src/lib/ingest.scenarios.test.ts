@@ -356,11 +356,13 @@ describe("ingest scenarios (fixture-driven)", () => {
     const changedContent = `${await readFileRaw(sourcePath)}\nreceipt failure revision\n`
     await writeFileRaw(sourcePath, changedContent)
     pendingResponses = await scenarioResponses(scenario)
-    let recordWrites = 0
+    const revision = await hashReceiptRevision(changedContent)
     const originalWrite = realFs.writeFileAtomic
     const writeAtomic = vi.spyOn(realFs, "writeFileAtomic")
     writeAtomic.mockImplementation(async (target, content) => {
-      if (target.endsWith("/.llm-wiki/ingest-records.json") && ++recordWrites === 2)
+      if (target.endsWith("/.llm-wiki/ingest-records.json") &&
+          Object.values(JSON.parse(content).receipts ?? {}).some(receipt =>
+            (receipt as { sourceRevision?: string }).sourceRevision === revision))
         throw new Error("receipt store unavailable")
       await originalWrite(target, content)
     })
@@ -368,7 +370,6 @@ describe("ingest scenarios (fixture-driven)", () => {
       await expect(autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options))
         .rejects.toThrow("receipt store unavailable")
       expect(streamCallCount).toBe(4)
-      const revision = await hashReceiptRevision(changedContent)
       const sourceId = Object.values((await loadIngestRecords(projectPath)).sources).find(source => source.originalPath === sourcePath)?.id
       expect((await loadIngestRecords(projectPath)).receipts[`${sourceId}-${revision}`]).toBeUndefined()
     } finally {

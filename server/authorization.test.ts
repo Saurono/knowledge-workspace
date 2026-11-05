@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { accountFixture } from "./testing"
+import { createAuthorizedRepository, createSharedService } from "@/modules/service-api/application"
 import type { ExecutionGateway } from "./resource-tools"
 import type { ProjectPermission } from "@/modules/identity/domain"
 const closers: (() => Promise<void>)[] = []
@@ -10,10 +11,13 @@ async function fixture(executions?: ExecutionGateway) {
   let state = await f.authentication.catalog.read()
   await f.authentication.catalog.saveMembership(state.revision, { accountId: aliceAccount.id, projectId: project.id, permissionRole: "editor", workRoleIds: [] })
   const root = `/projects/${project.id}`
+  let tokenSequence = 0
   const token = async (permissions: ProjectPermission[]) => {
-    const agent = await f.createAccount(admin.cookie, "robot", "agent"), state = await f.authentication.catalog.read()
+    const agent = await f.createAccount(admin.cookie, `robot${++tokenSequence}`, "agent"), state = await f.authentication.catalog.read()
     await f.authentication.catalog.saveMembership(state.revision, { accountId: agent.id, projectId: project.id, permissionRole: "editor", workRoleIds: [] })
-    return (await f.json("/auth/tokens", "POST", { accountId: agent.id, projectId: project.id, label: "Fixture", workRoleId: null, permissions, expiresAt: "2026-11-02T00:00:00.000Z" }, admin.cookie)).data
+    const result = await f.json("/auth/tokens", "POST", { accountId: agent.id, projectId: project.id, label: "Fixture", workRoleId: null, permissions, expiresAt: "2026-11-02T00:00:00.000Z" }, admin.cookie)
+    if (result.response.status >= 400) throw new Error(`Token fixture failed: ${JSON.stringify(result.error)}`)
+    return result.data
   }
   return { ...f, admin, alice, aliceAccount, project, root, token }
 }
@@ -48,6 +52,35 @@ describe("shared service authorization across all resource entry points", () => 
     const events = (await f.json(f.root + "/events", "GET", undefined, "", headers)).data
     expect(JSON.stringify(events)).not.toContain("hidden-doc")
     expect((await f.request("/projects/other/mcp", "POST", { tool: "wiki.read", path: "wiki/a.md" }, "", headers)).status).toBe(403)
+  })
+  it("requires project and target-read scope for filtered lists while domain assignment needs no content-write scope", async () => {
+    const f = await fixture(), path = f.root + "/wiki/page?path=wiki/classified.md"
+    await f.request(path, "PUT", { content: "classified" }, f.admin.cookie, { "If-None-Match": "*" })
+    let workspace = (await f.json(f.root + "/workspace", "GET", undefined, f.admin.cookie)).data
+    await f.json(f.root + "/workspace", "PUT", { ...workspace.data, domains: [{ id: "d", name: "Domain" }] }, f.admin.cookie, { "If-Match": `"v${workspace.revision}"` })
+
+    const wikiOnly = await f.token(["project.read", "wiki.read"]), wikiOnlyHeaders = { Authorization: `Bearer ${wikiOnly.secret}` }
+    expect((await f.request(f.root + "/wiki", "GET", undefined, "", wikiOnlyHeaders)).status).toBe(200)
+    expect((await f.request(f.root + "/wiki?domainId=d", "GET", undefined, "", wikiOnlyHeaders)).status).toBe(200)
+
+    const domainManager = await f.token(["project.read", "wiki.read", "domains.manage"]), managerHeaders = { Authorization: `Bearer ${domainManager.secret}` }
+    workspace = (await f.json(f.root + "/workspace", "GET", undefined, "", managerHeaders)).data
+    const changed = { ...workspace.data, resourceDomains: { "wiki/classified.md": ["d"] } }
+    expect((await f.request(f.root + "/workspace", "PUT", changed, "", { ...managerHeaders, "If-Match": `"v${workspace.revision}"` })).status).toBe(200)
+    expect((await f.request(path, "PUT", { content: "content write denied" }, "", { ...managerHeaders, "If-Match": '"v1"' })).status).toBe(403)
+
+    const readonly = await f.token(["project.read", "wiki.read"]), readonlyHeaders = { Authorization: `Bearer ${readonly.secret}` }
+    workspace = (await f.json(f.root + "/workspace", "GET", undefined, "", readonlyHeaders)).data
+    expect((await f.request(f.root + "/workspace", "PUT", { ...workspace.data, resourceDomains: {} }, "", { ...readonlyHeaders, "If-Match": `"v${workspace.revision}"` })).status).toBe(403)
+
+    const access = async () => ({ projectId: "p", permissions: ["wiki.read"] } as unknown as import("@/modules/identity/domain").AccessContext)
+    const backing = {
+      createProject: async () => { throw new Error("unused") }, project: async () => ({ id: "p", name: "P", createdAt: "now" }),
+      projects: async () => [], get: async () => ({ projectId: "p", kind: "workspace" as const, key: "default", data: { version: 1, domains: [], resourceDomains: {}, memories: [] }, revision: 1, createdAt: "now", updatedAt: "now" }),
+      list: async () => [], save: async () => { throw new Error("unused") }, remove: async () => {}, events: async () => [],
+    }
+    const service = createSharedService(createAuthorizedRepository(backing, access, async () => [], () => "now"), { id: () => "id", now: () => "now" })
+    await expect(service.list("p", "wiki", undefined, undefined, { domainIds: [], match: "any", unclassified: true })).rejects.toMatchObject({ code: "forbidden" })
   })
   it("filters private memories and hidden relations, preserves them on visible saves and requires an actual-owner grant even for admin", async () => {
     const f = await fixture(), base = (await f.json(f.root + "/workspace", "GET", undefined, f.alice.cookie)).data

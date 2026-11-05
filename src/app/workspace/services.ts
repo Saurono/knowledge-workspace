@@ -10,6 +10,7 @@ import {
 } from "@/modules/domains/application"
 import { loadWorkspaceData, updateWorkspaceData } from "./json-repository"
 import { removeDomain, type WorkspaceData } from "./snapshot"
+import { resolveLocalDomainResource, type LocalDomainResource } from "./resource-domains"
 export const memoryRepository: MemoryRepository = {
   read: async (path) => (await loadWorkspaceData(path)).memories,
   update: async (path, change) =>
@@ -36,6 +37,7 @@ export type WorkspaceCommand =
   | { type: "memory.remove"; id: string }
   | { type: "domain.add"; tag: DomainTag }
   | { type: "domain.toggle"; resourcePath: string; domainId: string }
+  | { type: "domain.set"; resource: LocalDomainResource; domainIds: string[] }
   | { type: "domain.remove"; id: string }
 export async function executeWorkspaceCommand(
   path: string,
@@ -54,6 +56,12 @@ export async function executeWorkspaceCommand(
     case "domain.toggle":
       await domains.toggle(path, command.resourcePath, command.domainId)
       break
+    case "domain.set": {
+      const resolved = await resolveLocalDomainResource(path, command.resource, { registerExistingSource: true })
+      if (!resolved) throw Object.assign(new Error("Domain resource does not exist or has no registered source identity"), { code: "not_found" })
+      await domains.setResourceDomains(path, resolved.canonicalKey, command.domainIds, resolved.legacyKeys)
+      break
+    }
     case "domain.remove":
       return updateWorkspaceData(path, (data) => removeDomain(data, command.id))
   }

@@ -1,4 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest"
+const domainMoveCheck = vi.hoisted(() => vi.fn())
+vi.mock("@/app/document-records/source-paths", () => ({ validateSourceDomainMove: domainMoveCheck }))
 
 const provenance = vi.hoisted(() => ({ catalog: {} as Record<string, { id: string; originalPath: string | null; receivedAt: string | null; ingestedAt: string | null }> }))
 vi.mock("@/lib/ingest-receipts", () => ({
@@ -58,8 +60,20 @@ import {
 import { createDeferred } from "@/test-helpers/deferred"
 import { withProjectLock } from "@/lib/project-mutex"
 
+it("rejects a classified destination before source migration performs directory IO", async () => {
+  const sourcePath = "/p/raw/sources/a.md", destinationPath = "/p/raw/sources/b.md"
+  provenance.catalog[sourcePath] = { id: "source-a", originalPath: sourcePath, receivedAt: "2026-01-01T00:00:00.000Z", ingestedAt: null }
+  domainMoveCheck.mockRejectedValueOnce(new Error("Cannot merge another source's domain classification during a move"))
+  await expect(migrateSourcePath("/p", sourcePath, destinationPath)).rejects.toThrow(/domain classification/)
+  expect(domainMoveCheck).toHaveBeenCalledWith("/p", sourcePath, destinationPath, "source-a", undefined)
+  expect(mocks.listDirectory).not.toHaveBeenCalled()
+  expect(provenance.catalog[sourcePath]).toMatchObject({ id: "source-a" })
+  expect(provenance.catalog).not.toHaveProperty(destinationPath)
+})
+
 beforeEach(() => {
   vi.clearAllMocks()
+  domainMoveCheck.mockReset().mockResolvedValue(undefined)
   provenance.catalog = {}
   mocks.copyFile.mockResolvedValue(undefined)
   mocks.createDirectory.mockResolvedValue(undefined)

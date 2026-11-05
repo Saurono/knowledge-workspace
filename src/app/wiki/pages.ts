@@ -3,6 +3,7 @@ import { normalizePath } from "@/lib/path-utils"
 import { withProjectLock } from "@/lib/project-mutex"
 import { createWikiPageService, type WikiPageRepository } from "@/modules/wiki/application"
 import { hashContentRevision } from "@/modules/documents/application"
+import { recordCompletedWikiWrite } from "./provenance"
 const fullPath = (projectPath: string, path: string) =>
   `${normalizePath(projectPath).replace(/\/+$/, "")}/${path}`
 export const localWikiPages: WikiPageRepository = {
@@ -12,7 +13,10 @@ export const localWikiPages: WikiPageRepository = {
       const file = fullPath(projectPath, path)
       const previous = (await wikiStorage.exists(file)) ? await wikiStorage.read(file) : null
       const page = await change(previous)
-      if (page.content !== previous) await wikiStorage.writeAtomic(file, page.content)
+      if (page.content !== previous) {
+        await wikiStorage.writeAtomic(file, page.content)
+        await recordCompletedWikiWrite({ projectPath, relativePath: path, existed: previous !== null })
+      }
       return page
     }),
 }

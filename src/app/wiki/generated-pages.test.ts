@@ -5,6 +5,8 @@ vi.mock("@/commands/fs", () => ({
   readFile: io.read,
   writeFile: io.write,
   fileExists: async (path: string) => files.has(path),
+  createDirectory: async () => {},
+  writeFileAtomic: async (path: string, content: string) => { files.set(path, content) },
 }))
 import { saveGeneratedQuery, saveGeneratedReviewPages } from "./generated-pages"
 beforeEach(() => {
