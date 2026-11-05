@@ -38,7 +38,7 @@ pub struct ChunkSearchResult {
 /// chunk_index / chunk_text / heading_path; the Rust side is purely
 /// storage. `chunk_id` is always derived as `${page_id}#${chunk_index}`
 /// so we don't trust a client-supplied id.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ChunkUpsertInput {
     pub chunk_index: u32,
     pub chunk_text: String,
