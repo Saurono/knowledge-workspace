@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 485,
+  "productionFiles": 486,
   "moduleCount": 18,
   "modules": [
     {
@@ -81,7 +81,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 9
+          "productionImporters": 11
         },
         {
           "path": "application/index.ts",

@@ -9,6 +9,8 @@ import { normalizePath } from "@/lib/path-utils"
 import { resolveMarkdownImageSrc } from "@/lib/markdown-image-resolver"
 import { findRawSourceForImage, imageUrlToAbsolute } from "@/lib/raw-source-resolver"
 import { isImeComposing } from "@/lib/keyboard-utils"
+import { DomainFilter as DomainFilterControl } from "@/components/workspace/domain-filter"
+import { filterMatches, type DomainFilter } from "@/modules/domains/domain"
 
 /**
  * One image hit displayed in the Images section.
@@ -34,14 +36,35 @@ export function SearchView({ localOnly = false }: { localOnly?: boolean }) {
 
   const [query, setQuery] = useState("")
   const [allResults, setResults] = useState<SearchResult[]>([])
-  const [domain, setDomain] = useState("")
+  const [resultsProject, setResultsProject] = useState<{ id: string; path: string } | null>(null)
+  const [domainFilter, setDomainFilter] = useState<DomainFilter>({ domainIds: [], match: "any", unclassified: false })
+  const [removedDomainNotice, setRemovedDomainNotice] = useState(false)
   const domains = useWorkspaceStore((s) => s.data.domains)
   const resourceDomains = useWorkspaceStore((s) => s.data.resourceDomains)
+  const activeDomainFilter = useMemo(() => {
+    const knownIds = new Set(domains.map((item) => item.id))
+    const domainIds = domainFilter.domainIds.filter((id) => knownIds.has(id))
+    return domainIds.length === domainFilter.domainIds.length
+      ? domainFilter
+      : { ...domainFilter, domainIds }
+  }, [domainFilter, domains])
+  useEffect(() => {
+    if (activeDomainFilter.domainIds.length !== domainFilter.domainIds.length) {
+      setDomainFilter(activeDomainFilter)
+      setRemovedDomainNotice(true)
+    }
+  }, [activeDomainFilter, domainFilter])
   const results = useMemo(() => allResults.filter((result) => {
-    if (!domain || !project) return true
-    const path = normalizePath(result.path).replace(`${normalizePath(project.path)}/`, "")
-    return resourceDomains[path]?.includes(domain) ?? false
-  }), [allResults, domain, project, resourceDomains])
+    if (!project) return false
+    if (resultsProject?.id !== project.id || resultsProject.path !== project.path) return false
+    const hasDomainFilter = activeDomainFilter.domainIds.length > 0 || activeDomainFilter.unclassified
+    if (!hasDomainFilter) return true
+    const wikiPrefix = `${normalizePath(project.path).replace(/\/$/, "")}/wiki/`
+    const resultPath = normalizePath(result.path)
+    if (!resultPath.startsWith(wikiPrefix)) return false
+    const resourceKey = `wiki/${resultPath.slice(wikiPrefix.length)}`
+    return filterMatches({ domains, resourceDomains }, resourceKey, activeDomainFilter)
+  }), [allResults, activeDomainFilter, domains, project, resourceDomains, resultsProject])
   const [searching, setSearching] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   // Lightbox state — null when closed. Held inline rather than via
@@ -56,9 +79,12 @@ export function SearchView({ localOnly = false }: { localOnly?: boolean }) {
       activeRequest.current?.abort()
       activeRequest.current = null
       setResults([])
+      setResultsProject(null)
       setSearching(false)
       setHasSearched(false)
       setLightbox(null)
+      setDomainFilter({ domainIds: [], match: "any", unclassified: false })
+      setRemovedDomainNotice(false)
     }
     clear()
     const unsubscribe = useWikiStore.subscribe((next, previous) => {
@@ -73,6 +99,7 @@ export function SearchView({ localOnly = false }: { localOnly?: boolean }) {
       activeRequest.current = request
       if (!project || !q.trim()) {
         setResults([])
+        setResultsProject(null)
         setSearching(false)
         setHasSearched(false)
         return
@@ -81,11 +108,15 @@ export function SearchView({ localOnly = false }: { localOnly?: boolean }) {
       setHasSearched(true)
       try {
         const found = await searchWiki(normalizePath(project.path), q, { localOnly, signal: request.signal })
-        if (!request.signal.aborted) setResults(found)
+        if (!request.signal.aborted) {
+          setResults(found)
+          setResultsProject({ id: project.id, path: project.path })
+        }
       } catch (err) {
         if (request.signal.aborted) return
         console.error("Search failed:", err)
         setResults([])
+        setResultsProject(null)
       } finally {
         if (activeRequest.current === request) setSearching(false)
       }
@@ -213,7 +244,14 @@ export function SearchView({ localOnly = false }: { localOnly?: boolean }) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 border-b px-4 py-3">
-        <select aria-label={t("workspace.domains")} className="mb-2 rounded border bg-background p-1 text-xs" value={domain} onChange={(event) => setDomain(event.target.value)}><option value="">{t("workspace.allDomains")}</option>{domains.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+        <DomainFilterControl
+          domains={domains}
+          value={domainFilter}
+          onChange={setDomainFilter}
+        />
+        {removedDomainNotice && (
+          <p role="status" className="mb-2 text-xs text-muted-foreground">已移除已删除领域对应的筛选条件。</p>
+        )}
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
