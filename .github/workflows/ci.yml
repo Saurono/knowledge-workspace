@@ -79,3 +79,22 @@ jobs:
       - name: Check Rust build
         working-directory: src-tauri
         run: cargo build
+
+      - name: Check Rust tests
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: Build isolated Windows acceptance executable
+        if: matrix.platform == 'windows-latest'
+        working-directory: src-tauri
+        env:
+          TAURI_CONFIG: '{"identifier":"com.llmwiki.acceptance"}'
+        run: cargo build --features custom-protocol --target-dir target-acceptance
+
+      - name: Upload Windows debug executable
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-wiki-windows-acceptance
+          path: src-tauri/target-acceptance/debug/llm-wiki.exe
+          if-no-files-found: error

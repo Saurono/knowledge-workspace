@@ -9,6 +9,10 @@ edition = "2021"
 # late, platform-dependent dependency compilation failure.
 rust-version = "1.88"
 
+[features]
+default = []
+custom-protocol = ["tauri/custom-protocol"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]

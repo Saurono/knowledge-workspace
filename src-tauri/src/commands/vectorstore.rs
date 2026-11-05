@@ -1,5 +1,5 @@
 use arrow_array::{
-    ArrayRef, FixedSizeListArray, Float32Array, RecordBatch, RecordBatchIterator, StringArray,
+    Array, ArrayRef, FixedSizeListArray, Float32Array, RecordBatch, RecordBatchIterator, StringArray,
     UInt32Array,
 };
 use arrow_schema::{DataType, Field, Schema};
@@ -8,6 +8,7 @@ use lancedb::connect;
 use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::table::{CompactionOptions, OptimizeAction};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -65,6 +66,7 @@ const TABLE_V1: &str = "wiki_vectors";
 /// represented by multiple rows sharing the same `page_id`.
 const TABLE_V2: &str = "wiki_chunks_v2";
 const MAX_PAGE_ID_CHARS: usize = 256;
+const MAX_VERIFIED_PAGE_CHUNKS: usize = 512;
 static VECTORSTORE_V2_LOCKS: OnceLock<Mutex<HashMap<String, Arc<tokio::sync::RwLock<()>>>>> =
     OnceLock::new();
 
@@ -488,9 +490,21 @@ async fn vector_upsert_chunks_inner(
     let lock = vectorstore_v2_lock(project_path);
     let _guard = lock.write().await;
 
+    // Revoke previous evidence before mutating rows. A crash or failed
+    // manifest write must leave the page unready, even for the same revision.
+    if revision.is_some() {
+        super::page_embedding::invalidate_commit_manifest(project_path, page_id)?;
+    }
+
     if chunks.is_empty() {
         return Ok(());
     }
+
+    let manifest = if let Some(fingerprint) = revision {
+        Some(build_commit_manifest(page_id, fingerprint, &chunks)?)
+    } else {
+        None
+    };
 
     let dim = chunks[0].embedding.len() as i32;
     if dim == 0 {
@@ -534,12 +548,17 @@ async fn vector_upsert_chunks_inner(
             .map_err(|e| format!("Create table error: {e}"))?;
     }
 
-    if let Some(fingerprint) = revision {
-        if let Err(err) = super::page_embedding::save_revision(project_path, page_id, fingerprint) {
-            let _ = super::page_embedding::invalidate_page_revision(project_path, page_id);
-            eprintln!("[page-embedding] failed to save revision metadata: {err}");
+    if let Some(manifest) = manifest {
+        let table = db.open_table(TABLE_V2).execute().await.map_err(|e| format!("Open table error: {e}"))?;
+        let actual = read_page_chunks(&table, page_id).await?;
+        if actual != manifest.chunks {
+            let _ = super::page_embedding::invalidate_commit_manifest(project_path, page_id);
+            return Err("Persisted page chunks do not match the submitted index manifest".to_string());
         }
+        super::page_embedding::save_commit_manifest(project_path, &manifest)
+            .map_err(|err| format!("Failed to persist page index commit manifest: {err}"))?;
     } else {
+        super::page_embedding::invalidate_commit_manifest(project_path, page_id)?;
         let _ = super::page_embedding::invalidate_page_revision(project_path, page_id);
     }
 
@@ -554,7 +573,32 @@ pub(crate) async fn vector_page_revision_match(
     validate_page_id_for_v2(page_id)?;
     let lock = vectorstore_v2_lock(project_path);
     let _guard = lock.read().await;
-    if super::page_embedding::load_revision(project_path, page_id).as_deref() != Some(fingerprint) {
+    let Some(manifest) = super::page_embedding::load_commit_manifest(project_path, page_id) else { return Ok(None); };
+    if manifest.fingerprint != fingerprint { return Ok(None); }
+    page_commit_rows_match_locked(project_path, page_id, &manifest).await
+}
+
+pub(crate) async fn vector_page_commit_match(
+    project_path: &str,
+    page_id: &str,
+    expected: &super::page_embedding::PageCommitManifest,
+) -> Result<Option<usize>, String> {
+    validate_page_id_for_v2(page_id)?;
+    let lock = vectorstore_v2_lock(project_path);
+    let _guard = lock.read().await;
+    if super::page_embedding::load_commit_manifest(project_path, page_id).as_ref() != Some(expected) {
+        return Ok(None);
+    }
+    page_commit_rows_match_locked(project_path, page_id, expected).await
+}
+
+async fn page_commit_rows_match_locked(
+    project_path: &str,
+    page_id: &str,
+    manifest: &super::page_embedding::PageCommitManifest,
+) -> Result<Option<usize>, String> {
+    if manifest.schema_version != 1 || manifest.page_id != page_id || manifest.chunk_count == 0
+        || manifest.chunk_count > MAX_VERIFIED_PAGE_CHUNKS || manifest.chunk_count != manifest.chunks.len() {
         return Ok(None);
     }
 
@@ -570,15 +614,55 @@ pub(crate) async fn vector_page_revision_match(
     if !tables.contains(&TABLE_V2.to_string()) {
         return Ok(None);
     }
-    let count = db
-        .open_table(TABLE_V2)
-        .execute()
-        .await
-        .map_err(|e| format!("Open table error: {e}"))?
-        .count_rows(Some(format!("page_id = '{}'", page_id)))
-        .await
-        .map_err(|e| format!("Count page chunks error: {e}"))?;
-    Ok((count > 0).then_some(count))
+    let table = db.open_table(TABLE_V2).execute().await.map_err(|e| format!("Open table error: {e}"))?;
+    let actual = read_page_chunks(&table, page_id).await?;
+    Ok((actual == manifest.chunks).then_some(actual.len()))
+}
+
+fn vector_digest(values: &[f32]) -> Result<String, String> {
+    let mut bytes = Vec::with_capacity(values.len() * 4);
+    for value in values {
+        if !value.is_finite() { return Err("Embedding contains a non-finite value".to_string()); }
+        bytes.extend_from_slice(&value.to_bits().to_le_bytes());
+    }
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+fn build_commit_manifest(page_id: &str, fingerprint: &str, chunks: &[ChunkUpsertInput]) -> Result<super::page_embedding::PageCommitManifest, String> {
+    let mut rows = chunks.iter().map(|chunk| Ok(super::page_embedding::PageCommitChunk {
+        chunk_id: format!("{page_id}#{}", chunk.chunk_index), chunk_index: chunk.chunk_index,
+        chunk_text: chunk.chunk_text.clone(), heading_path: chunk.heading_path.clone(), vector_sha256: vector_digest(&chunk.embedding)?,
+    })).collect::<Result<Vec<_>, String>>()?;
+    rows.sort_by_key(|row| row.chunk_index);
+    if rows.windows(2).any(|pair| pair[0].chunk_index == pair[1].chunk_index) { return Err("Duplicate chunk index in page upsert".to_string()); }
+    if rows.is_empty() || rows.len() > MAX_VERIFIED_PAGE_CHUNKS || rows.iter().enumerate().any(|(index, row)| row.chunk_index as usize != index) { return Err("Page chunk indexes must be non-empty, contiguous from zero, and within the page chunk limit".to_string()); }
+    Ok(super::page_embedding::PageCommitManifest { schema_version: 1, fingerprint: fingerprint.to_string(), page_id: page_id.to_string(), chunk_count: rows.len(), chunks: rows })
+}
+
+async fn read_page_chunks(table: &lancedb::Table, page_id: &str) -> Result<Vec<super::page_embedding::PageCommitChunk>, String> {
+    let stream = table.query().only_if(format!("page_id = '{}'", page_id)).limit(MAX_VERIFIED_PAGE_CHUNKS + 1).execute().await.map_err(|e| format!("Query page chunks error: {e}"))?;
+    use futures::TryStreamExt;
+    let batches: Vec<RecordBatch> = stream.try_collect().await.map_err(|e| format!("Collect page chunks error: {e}"))?;
+    let mut rows = Vec::new();
+    for batch in &batches {
+        let ids = batch.column_by_name("chunk_id").and_then(|c| c.as_any().downcast_ref::<StringArray>()).ok_or("Missing chunk_id column")?;
+        let page_ids = batch.column_by_name("page_id").and_then(|c| c.as_any().downcast_ref::<StringArray>()).ok_or("Missing page_id column")?;
+        let indexes = batch.column_by_name("chunk_index").and_then(|c| c.as_any().downcast_ref::<UInt32Array>()).ok_or("Missing chunk_index column")?;
+        let texts = batch.column_by_name("chunk_text").and_then(|c| c.as_any().downcast_ref::<StringArray>()).ok_or("Missing chunk_text column")?;
+        let headings = batch.column_by_name("heading_path").and_then(|c| c.as_any().downcast_ref::<StringArray>()).ok_or("Missing heading_path column")?;
+        let vectors = batch.column_by_name("vector").and_then(|c| c.as_any().downcast_ref::<FixedSizeListArray>()).ok_or("Missing vector column")?;
+        for i in 0..batch.num_rows() {
+            if page_ids.value(i) != page_id { return Err("Page query returned a different page".to_string()); }
+            if vectors.is_null(i) { return Err("Null vector in persisted page row".to_string()); }
+            let row_values = vectors.value(i);
+            let row_values = row_values.as_any().downcast_ref::<Float32Array>().ok_or("Invalid vector values")?;
+            if row_values.null_count() > 0 { return Err("Null vector element in persisted page row".to_string()); }
+            let vector = (0..row_values.len()).map(|n| row_values.value(n)).collect::<Vec<_>>();
+            rows.push(super::page_embedding::PageCommitChunk { chunk_id: ids.value(i).to_string(), chunk_index: indexes.value(i), chunk_text: texts.value(i).to_string(), heading_path: headings.value(i).to_string(), vector_sha256: vector_digest(&vector)? });
+        }
+    }
+    rows.sort_by_key(|row| row.chunk_index);
+    Ok(rows)
 }
 
 /// Top-K chunk search. Returns every matching chunk's metadata + score
@@ -1056,6 +1140,48 @@ mod tests_v2 {
 
         let count = vector_count_chunks(pp.clone()).await.unwrap();
         assert_eq!(count, 3);
+    }
+
+    #[tokio::test]
+    async fn revision_match_requires_exact_committed_manifest_and_rows() {
+        let p = tmp_project();
+        let pp = p.to_string_lossy().to_string();
+        let page = "manifest-page";
+        let fingerprint = "sha256:manifest-test";
+        // More than common query defaults: read-back must collect every page row.
+        let chunks = make_chunks(page, 25, 8);
+        vector_upsert_chunks_with_revision(&pp, page, chunks.clone(), fingerprint).await.unwrap();
+        assert_eq!(vector_page_revision_match(&pp, page, fingerprint).await.unwrap(), Some(25));
+
+        let mut tampered = super::super::page_embedding::load_commit_manifest(&pp, page).unwrap();
+        tampered.fingerprint = "sha256:tampered".to_string();
+        super::super::page_embedding::save_commit_manifest(&pp, &tampered).unwrap();
+        assert_eq!(vector_page_revision_match(&pp, page, fingerprint).await.unwrap(), None);
+
+        // Recommit the correct evidence, then remove it: legacy revision
+        // metadata or a positive row count must not imply readiness.
+        vector_upsert_chunks_with_revision(&pp, page, chunks.clone(), fingerprint).await.unwrap();
+        super::super::page_embedding::invalidate_commit_manifest(&pp, page).unwrap();
+        assert_eq!(vector_page_revision_match(&pp, page, fingerprint).await.unwrap(), None);
+
+        vector_upsert_chunks_with_revision(&pp, page, chunks, fingerprint).await.unwrap();
+        let db = connect(&db_path(&pp)).execute().await.unwrap();
+        let table = db.open_table(TABLE_V2).execute().await.unwrap();
+        table.delete("chunk_id = 'manifest-page#1'").await.unwrap();
+        assert_eq!(vector_page_revision_match(&pp, page, fingerprint).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn revision_match_rejects_manifest_content_mismatch() {
+        let p = tmp_project();
+        let pp = p.to_string_lossy().to_string();
+        let page = "content-page";
+        let fingerprint = "sha256:content-test";
+        vector_upsert_chunks_with_revision(&pp, page, make_chunks(page, 1, 8), fingerprint).await.unwrap();
+        let mut tampered = super::super::page_embedding::load_commit_manifest(&pp, page).unwrap();
+        tampered.chunks[0].chunk_text.push_str(" changed");
+        super::super::page_embedding::save_commit_manifest(&pp, &tampered).unwrap();
+        assert_eq!(vector_page_revision_match(&pp, page, fingerprint).await.unwrap(), None);
     }
 
     #[tokio::test]

@@ -1,5 +1,13 @@
 # 完成记录
 
+## L045 · 2026-11-06 · D05 原生页索引验证节点（D05 总项未完成）
+
+- 用户扩大授权至 D01–D09 全部；此节点由 Luna 实现、主控静态审查与可用 TS 检查。原生 LanceDB 页级提交新增 schemaVersion 1 清单，绑定内容/配置指纹、准确 chunk ID/序号/正文/标题路径/向量摘要。写入后读回全部行核对，持久清单写入失败不再报告成功；缺失、篡改或与实际行不符时验证失败。
+- 新增 Tauri verified commit/verify 命令与 TS adapter；独立于 legacy embedding API，保留既有检索兼容。验证同时检查当前页面与配置，不能沿用旧内容或旧模型的成功证据。新增原生清单、篡改/删行、当前内容/配置变更测试。
+- 主控可用验证：TS adapter 2 项、项目类型和模块边界检查曾通过；本机无 Cargo，Rust 尚未编译/运行，新增 CI cargo test --lib 用于真实验收。不能以 TS transport 测试冒充 Rust/LanceDB 测试。
+- CI 新增 Windows 隔离验收 executable：独立 identifier com.llmwiki.acceptance、内嵌前端，API 支持显式独立端口以免覆盖现有程序状态。该 artifact 不是正式发布安装包。
+- D05 source manifest/独立重试与生产 ingestion 接线继续实现；D06–D08 仍有未验收工作区。远端结果以 Actions 实际状态为准，不提前勾选 D05/D09。
+
 ## L044 · 2026-11-05 · D03c 搜索界面增量
 
 - Luna 恢复连接后实际编码，主控审查返修：通用领域控件、多选 ANY/ALL/未分类、清除筛选，搜索复用领域纯规则；删除领域清理失效筛选并提示。无领域仍可操作未分类；无筛选保留本次搜索结果，项目切换隔离旧结果并重置筛选。

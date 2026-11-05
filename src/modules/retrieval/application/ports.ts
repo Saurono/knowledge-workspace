@@ -9,6 +9,23 @@ export interface VectorIndexPort {
   legacyCount(input: { projectPath: string }): Promise<number>
   dropLegacy(input: { projectPath: string }): Promise<unknown>
 }
+/** Evidence returned by the native page indexer after durable commit and read-back verification. */
+export interface VerifiedPageIndexCommit {
+  projectPath: string
+  pageId: string
+  contentRevision: string
+  configFingerprint: string
+  manifestRef: string
+  expectedChunkCount: number
+  chunkKeys: string[]
+  chunkDigest: string
+  status: "committed" | "unchanged"
+}
+/** Separate from the legacy index port so existing search/reindex callers remain compatible. */
+export interface VerifiedPageIndexPort {
+  commitPage(input: { projectPath: string; relativePath: string; config: EmbeddingConfig; force?: boolean }): Promise<VerifiedPageIndexCommit>
+  verifyPage(input: { projectPath: string; relativePath: string; config: EmbeddingConfig; expected: VerifiedPageIndexCommit }): Promise<{ status: "verified" | "missing" | "corrupt"; manifestRef?: string }>
+}
 export interface EmbeddingModelPort {
   embed(text: string, config: EmbeddingConfig, maxRetries: number): Promise<number[]>
   embedBatch(texts: string[], config: EmbeddingConfig): Promise<number[][]>

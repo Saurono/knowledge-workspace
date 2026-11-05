@@ -21,6 +21,7 @@ use crate::cors::{local_cors_headers, request_origin};
 use crate::{agent, clip_server, commands, server_bind};
 
 const PORT: u16 = 19828;
+const API_PORT_ENV: &str = "LLM_WIKI_API_PORT";
 const API_PREFIX: &str = "/api/v1";
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 const MAX_CHAT_BODY_BYTES: usize = 40 * 1024 * 1024;
@@ -59,6 +60,26 @@ static GRAPH_CACHE: OnceLock<Mutex<HashMap<String, Arc<CachedGraph>>>> = OnceLoc
 struct CachedAppState {
     loaded_at: Instant,
     value: Option<Value>,
+}
+
+#[cfg(test)]
+mod api_port_tests {
+    use super::{api_port_or_default, parse_api_port, PORT};
+
+    #[test]
+    fn api_port_accepts_only_nonzero_u16_values() {
+        assert_eq!(parse_api_port("19829"), Some(19829));
+        assert_eq!(parse_api_port("1"), Some(1));
+        assert_eq!(parse_api_port("65535"), Some(65535));
+        assert_eq!(parse_api_port("0"), None);
+        assert_eq!(parse_api_port("65536"), None);
+        assert_eq!(parse_api_port("nope"), None);
+        assert_eq!(api_port_or_default(Some("19829")), 19829);
+        assert_eq!(api_port_or_default(Some("0")), PORT);
+        assert_eq!(api_port_or_default(Some("garbage")), PORT);
+        assert_eq!(api_port_or_default(None), PORT);
+        assert_eq!(PORT, 19828);
+    }
 }
 
 #[derive(Clone)]
@@ -131,9 +152,22 @@ pub fn start_api_server(app: AppHandle) {
     });
 }
 
+fn configured_api_port() -> u16 {
+    api_port_or_default(std::env::var(API_PORT_ENV).ok().as_deref())
+}
+
+fn api_port_or_default(value: Option<&str>) -> u16 {
+    value.and_then(parse_api_port).unwrap_or(PORT)
+}
+
+fn parse_api_port(value: &str) -> Option<u16> {
+    let port = value.parse::<u16>().ok()?;
+    (port != 0).then_some(port)
+}
+
 fn bind_server_with_retry(app: &AppHandle) -> Option<(Server, String)> {
     let host = server_bind::configured_bind_host(app);
-    let addr = server_bind::bind_addr(&host, PORT);
+    let addr = server_bind::bind_addr(&host, configured_api_port());
     for attempt in 1..=MAX_BIND_RETRIES {
         match Server::http(&addr) {
             Ok(server) => return Some((server, addr)),

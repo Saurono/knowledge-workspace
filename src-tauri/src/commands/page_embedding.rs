@@ -1,8 +1,9 @@
 use std::fs;
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
@@ -21,6 +22,48 @@ const MAX_PAGE_CHUNKS: usize = 512;
 const EMBEDDING_BATCH_SIZE: usize = 64;
 const PROVIDER_PHASE_TIMEOUT: Duration = Duration::from_secs(300);
 const REVISION_DIR: &str = ".llm-wiki/embedding-revisions";
+const COMMIT_MANIFEST_DIR: &str = ".llm-wiki/page-commit-manifests";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PageCommitChunk {
+    pub chunk_id: String,
+    pub chunk_index: u32,
+    pub chunk_text: String,
+    pub heading_path: String,
+    pub vector_sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PageCommitManifest {
+    pub schema_version: u32,
+    pub fingerprint: String,
+    pub page_id: String,
+    pub chunk_count: usize,
+    pub chunks: Vec<PageCommitChunk>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedPageIndexCommit {
+    pub project_path: String,
+    pub page_id: String,
+    pub content_revision: String,
+    pub config_fingerprint: String,
+    pub manifest_ref: String,
+    pub expected_chunk_count: usize,
+    pub chunk_keys: Vec<String>,
+    pub chunk_digest: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifiedPageIndexCheck {
+    pub status: String,
+    pub manifest_ref: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -328,6 +371,162 @@ fn revision_path(project_path: &str, page_id: &str) -> PathBuf {
     Path::new(project_path)
         .join(REVISION_DIR)
         .join(format!("{key}.revision"))
+}
+
+fn commit_manifest_path(project_path: &str, page_id: &str) -> PathBuf {
+    let key = format!("{:x}", Sha256::digest(page_id.as_bytes()));
+    Path::new(project_path)
+        .join(COMMIT_MANIFEST_DIR)
+        .join(format!("{key}.json"))
+}
+
+pub(crate) fn load_commit_manifest(project_path: &str, page_id: &str) -> Option<PageCommitManifest> {
+    read_commit_manifest(project_path, page_id).ok().flatten()
+}
+
+fn read_commit_manifest(project_path: &str, page_id: &str) -> Result<Option<PageCommitManifest>, String> {
+    let bytes = match fs::read(commit_manifest_path(project_path, page_id)) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(format!("Failed to read page commit manifest: {err}")),
+    };
+    let manifest: PageCommitManifest = serde_json::from_slice(&bytes)
+        .map_err(|err| format!("Invalid page commit manifest: {err}"))?;
+    if manifest.schema_version != 1 || manifest.page_id != page_id
+        || manifest.chunk_count == 0 || manifest.chunk_count > MAX_PAGE_CHUNKS
+        || manifest.chunk_count != manifest.chunks.len() {
+        return Err("Page commit manifest metadata is invalid or unsupported".to_string());
+    }
+    Ok(Some(manifest))
+}
+
+fn manifest_ref(page_id: &str) -> String {
+    let key = format!("{:x}", Sha256::digest(page_id.as_bytes()));
+    format!("page-commit-manifests/{key}.json")
+}
+
+fn chunk_digest(manifest: &PageCommitManifest) -> Result<String, String> {
+    let bytes = serde_json::to_vec(&manifest.chunks).map_err(|err| format!("Failed to encode chunk evidence: {err}"))?;
+    Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
+}
+
+#[tauri::command]
+pub async fn embed_wiki_page_verified(
+    project_path: String,
+    relative_path: String,
+    config: SearchEmbeddingConfig,
+    force: bool,
+) -> Result<VerifiedPageIndexCommit, String> {
+    let config_for_fingerprint = config.clone();
+    let result = embed_wiki_page(&project_path, &relative_path, config, force)
+        .await.map_err(|err| err.message)?;
+    let manifest = load_commit_manifest(&project_path, &result.page_id)
+        .ok_or_else(|| "Committed page manifest is missing or invalid".to_string())?;
+    let expected_fingerprint = embedding_fingerprint(&result.revision, &config_for_fingerprint);
+    if manifest.fingerprint != expected_fingerprint || manifest.page_id != result.page_id {
+        return Err("Committed page manifest does not match this indexing request".to_string());
+    }
+    let verified_count = vectorstore::vector_page_revision_match(&project_path, &result.page_id, &expected_fingerprint)
+        .await?;
+    if verified_count != Some(manifest.chunk_count) {
+        return Err("Committed page rows changed before evidence could be returned".to_string());
+    }
+    let digest = chunk_digest(&manifest)?;
+    let keys = manifest.chunks.iter().map(|chunk| chunk.chunk_id.clone()).collect();
+    let reference = manifest_ref(&manifest.page_id);
+    Ok(VerifiedPageIndexCommit {
+        project_path,
+        page_id: result.page_id,
+        content_revision: result.revision,
+        config_fingerprint: manifest.fingerprint,
+        manifest_ref: reference,
+        expected_chunk_count: manifest.chunk_count,
+        chunk_keys: keys,
+        chunk_digest: digest,
+        status: if result.status == "unchanged" { "unchanged" } else { "committed" }.to_string(),
+    })
+}
+
+#[tauri::command]
+pub async fn verify_page_index_commit(
+    project_path: String,
+    relative_path: String,
+    config: SearchEmbeddingConfig,
+    expected: VerifiedPageIndexCommit,
+) -> Result<VerifiedPageIndexCheck, String> {
+    let (page_path, normalized_path) = resolve_wiki_markdown_path(&project_path, &relative_path)
+        .map_err(|err| err.message)?;
+    let page_id = vector_page_id(&normalized_path).ok_or_else(|| "Invalid wiki page name".to_string())?;
+    if expected.project_path != project_path || expected.page_id != page_id || expected.manifest_ref != manifest_ref(&page_id) {
+        return Ok(VerifiedPageIndexCheck { status: "corrupt".to_string(), manifest_ref: None });
+    }
+    if !config.enabled || config.model.trim().is_empty() {
+        return Ok(VerifiedPageIndexCheck { status: "corrupt".to_string(), manifest_ref: None });
+    }
+    let metadata = fs::metadata(&page_path).map_err(|err| format!("Failed to inspect current wiki page: {err}"))?;
+    if metadata.len() > MAX_PAGE_BYTES {
+        return Ok(VerifiedPageIndexCheck { status: "corrupt".to_string(), manifest_ref: None });
+    }
+    let content = fs::read(&page_path).map_err(|err| format!("Failed to read current wiki page: {err}"))?;
+    let content_revision = format!("sha256:{:x}", Sha256::digest(&content));
+    let fingerprint = embedding_fingerprint(&content_revision, &config);
+    if expected.content_revision != content_revision || expected.config_fingerprint != fingerprint {
+        return Ok(VerifiedPageIndexCheck { status: "corrupt".to_string(), manifest_ref: None });
+    }
+    let manifest = match read_commit_manifest(&project_path, &page_id) {
+        Ok(Some(manifest)) => manifest,
+        Ok(None) => return Ok(VerifiedPageIndexCheck { status: "missing".to_string(), manifest_ref: None }),
+        Err(_) => return Ok(VerifiedPageIndexCheck { status: "corrupt".to_string(), manifest_ref: None }),
+    };
+    let keys = manifest.chunks.iter().map(|chunk| chunk.chunk_id.clone()).collect::<Vec<_>>();
+    if expected.expected_chunk_count == 0 || !matches!(expected.status.as_str(), "committed" | "unchanged")
+        || manifest.fingerprint != fingerprint || manifest.chunk_count != expected.expected_chunk_count
+        || keys != expected.chunk_keys || chunk_digest(&manifest)? != expected.chunk_digest {
+        return Ok(VerifiedPageIndexCheck { status: "corrupt".to_string(), manifest_ref: None });
+    }
+    let actual_count = vectorstore::vector_page_commit_match(&project_path, &page_id, &manifest)
+        .await?;
+    if actual_count != Some(manifest.chunk_count) {
+        return Ok(VerifiedPageIndexCheck { status: "corrupt".to_string(), manifest_ref: None });
+    }
+    Ok(VerifiedPageIndexCheck { status: "verified".to_string(), manifest_ref: Some(expected.manifest_ref) })
+}
+
+pub(crate) fn save_commit_manifest(
+    project_path: &str,
+    manifest: &PageCommitManifest,
+) -> Result<(), String> {
+    let path = commit_manifest_path(project_path, &manifest.page_id);
+    let parent = path.parent().ok_or_else(|| "Invalid page commit manifest path".to_string())?;
+    fs::create_dir_all(parent).map_err(|err| format!("Failed to create commit manifest directory: {err}"))?;
+    let temp = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
+    let bytes = serde_json::to_vec(manifest).map_err(|err| format!("Failed to encode page commit manifest: {err}"))?;
+    let mut file = fs::File::create(&temp).map_err(|err| format!("Failed to create page commit manifest temp file: {err}"))?;
+    file.write_all(&bytes).map_err(|err| format!("Failed to write page commit manifest: {err}"))?;
+    file.sync_all().map_err(|err| format!("Failed to persist page commit manifest: {err}"))?;
+    drop(file);
+    if let Err(err) = fs::rename(&temp, &path) {
+        if path.exists() {
+            let previous = fs::read(&path).ok();
+            fs::remove_file(&path).map_err(|remove_err| format!("Failed to replace page commit manifest: {remove_err}"))?;
+            if let Err(rename_err) = fs::rename(&temp, &path) {
+                if let Some(previous) = previous { let _ = fs::write(&path, previous); }
+                return Err(format!("Failed to replace page commit manifest: {rename_err}"));
+            }
+        } else {
+            let _ = fs::remove_file(&temp);
+            return Err(format!("Failed to save page commit manifest: {err}"));
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn invalidate_commit_manifest(project_path: &str, page_id: &str) -> Result<(), String> {
+    match fs::remove_file(commit_manifest_path(project_path, page_id)) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("Failed to invalidate page commit manifest: {err}")),
+    }
 }
 
 pub(crate) fn load_revision(project_path: &str, page_id: &str) -> Option<String> {
@@ -872,6 +1071,72 @@ mod tests {
         assert_eq!(
             load_revision(root.to_str().unwrap(), "other").as_deref(),
             Some("sha256:other")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn verified_commit_rechecks_page_content_config_and_complete_evidence() {
+        let root = project();
+        let project_path = root.to_string_lossy().to_string();
+        let relative_path = "wiki/nested/page.md";
+        let page_id = "nested/page";
+        let content = "# Page\n\nVerified content.";
+        fs::write(root.join(relative_path), content).unwrap();
+        let config = embedding_config("model-a");
+        let content_revision = format!("sha256:{:x}", Sha256::digest(content.as_bytes()));
+        let config_fingerprint = embedding_fingerprint(&content_revision, &config);
+        vectorstore::vector_upsert_chunks_with_revision(
+            &project_path,
+            page_id,
+            vec![ChunkUpsertInput {
+                chunk_index: 0,
+                chunk_text: "Verified content.".to_string(),
+                heading_path: "# Page".to_string(),
+                embedding: vec![0.25, -0.75],
+            }],
+            &config_fingerprint,
+        )
+        .await
+        .unwrap();
+        let manifest = load_commit_manifest(&project_path, page_id).unwrap();
+        let expected = VerifiedPageIndexCommit {
+            project_path: project_path.clone(),
+            page_id: page_id.to_string(),
+            content_revision: content_revision.clone(),
+            config_fingerprint,
+            manifest_ref: manifest_ref(page_id),
+            expected_chunk_count: manifest.chunk_count,
+            chunk_keys: manifest.chunks.iter().map(|chunk| chunk.chunk_id.clone()).collect(),
+            chunk_digest: chunk_digest(&manifest).unwrap(),
+            status: "committed".to_string(),
+        };
+
+        assert_eq!(
+            verify_page_index_commit(project_path.clone(), relative_path.to_string(), config.clone(), expected.clone())
+                .await.unwrap().status,
+            "verified"
+        );
+        let mut altered_evidence = expected.clone();
+        altered_evidence.chunk_digest.push_str("-tampered");
+        assert_eq!(
+            verify_page_index_commit(project_path.clone(), relative_path.to_string(), config.clone(), altered_evidence)
+                .await.unwrap().status,
+            "corrupt"
+        );
+        fs::write(root.join(relative_path), "# Page\n\nChanged content.").unwrap();
+        assert_eq!(
+            verify_page_index_commit(project_path.clone(), relative_path.to_string(), config.clone(), expected.clone())
+                .await.unwrap().status,
+            "corrupt"
+        );
+        fs::write(root.join(relative_path), content).unwrap();
+        let mut changed_config = config;
+        changed_config.model = "model-b".to_string();
+        assert_eq!(
+            verify_page_index_commit(project_path, relative_path.to_string(), changed_config, expected)
+                .await.unwrap().status,
+            "corrupt"
         );
         let _ = fs::remove_dir_all(root);
     }
