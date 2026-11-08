@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 488,
+  "productionFiles": 490,
   "moduleCount": 18,
   "modules": [
     {
@@ -297,8 +297,8 @@
     },
     {
       "id": "retrieval",
-      "productionFiles": 14,
-      "testFiles": 2,
+      "productionFiles": 15,
+      "testFiles": 3,
       "publicEntrypoints": [
         {
           "path": "index.ts",
@@ -306,11 +306,11 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 15
+          "productionImporters": 17
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 7
+          "productionImporters": 8
         }
       ],
       "dependencies": [],

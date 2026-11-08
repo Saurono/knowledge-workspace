@@ -1,4 +1,5 @@
 export * from "./ports"
+export * from "./verified-source-index"
 export * from "./embedding"
 export * from "./search"
 export * from "./graph"
