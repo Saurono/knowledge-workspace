@@ -2857,6 +2857,7 @@ mod tests {
 
     #[test]
     fn allow_absolute_write_paths() {
+        #[cfg(unix)]
         assert!(require_absolute_path("write_file", "/tmp/project/wiki/sources/page.md").is_ok());
         assert!(require_absolute_path("write_file", "C:/project/wiki/sources/page.md").is_ok());
         assert!(require_absolute_path("write_file", r"C:\project\wiki\sources\page.md").is_ok());

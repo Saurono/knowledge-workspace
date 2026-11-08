@@ -109,8 +109,7 @@ fn project_root_for(path: &Path) -> Option<PathBuf> {
     None
 }
 
-fn history_path(root: &Path, path: &Path) -> PathBuf {
-    let relative = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
+fn history_path_for_key(root: &Path, relative: &str) -> PathBuf {
     // Fixed FNV-1a keeps history addresses stable across Rust/toolchain upgrades.
     let mut hash = 0xcbf29ce484222325_u64;
     for byte in relative.as_bytes() {
@@ -121,6 +120,11 @@ fn history_path(root: &Path, path: &Path) -> PathBuf {
     root.join(".llm-wiki/history").join(format!("{key}.json"))
 }
 
+fn history_path(root: &Path, path: &Path) -> PathBuf {
+    let relative = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
+    history_path_for_key(root, &relative.replace('\\', "/"))
+}
+
 fn history_dir(root: &Path) -> PathBuf {
     root.join(".llm-wiki/history")
 }
@@ -128,7 +132,16 @@ fn history_dir(root: &Path) -> PathBuf {
 fn checked_history_file(root: &Path, path: &Path) -> Result<PathBuf, String> {
     let store_path = history_path(root, path);
     validate_optional_regular_file(&store_path, "History file")?;
-    Ok(store_path)
+    if store_path.exists() {
+        return Ok(store_path);
+    }
+    // Before separator normalization, Windows stored backslash-based keys.
+    // Read and continue writing that legacy record in place; never migrate or
+    // delete it implicitly, and apply the same symlink/regular-file check.
+    let relative = path.strip_prefix(root).unwrap_or(path).to_string_lossy();
+    let legacy_path = history_path_for_key(root, &relative.replace('/', "\\"));
+    validate_optional_regular_file(&legacy_path, "Legacy history file")?;
+    if legacy_path.exists() { Ok(legacy_path) } else { Ok(store_path) }
 }
 
 fn checked_history_dir(root: &Path, create: bool) -> Result<PathBuf, String> {
@@ -474,6 +487,20 @@ pub async fn clear_file_history(project_path: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_separator_key_is_found_on_any_host() {
+        let root = std::env::temp_dir().join(format!("llm-wiki-history-{}", Uuid::new_v4()));
+        let file = root.join("wiki/page.md");
+        let relative = file.strip_prefix(&root).unwrap().to_string_lossy();
+        let legacy = history_path_for_key(&root, &relative.replace('/', "\\"));
+        let canonical = history_path(&root, &file);
+        assert_ne!(legacy, canonical);
+        fs::create_dir_all(history_dir(&root)).unwrap();
+        fs::write(&legacy, "[]").unwrap();
+        assert_eq!(checked_history_file(&root, &file).unwrap(), legacy);
+        let _ = fs::remove_dir_all(root);
+    }
 
     fn enable_history(root: &Path, max_versions_per_file: usize) {
         let settings = FileHistorySettings {
