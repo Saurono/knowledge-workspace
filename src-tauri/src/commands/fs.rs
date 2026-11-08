@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use calamine::{open_workbook_auto, Data, ExcelDateTime, Reader};
 use office_oxide::Document;
+use sha2::{Digest, Sha256};
 
 use crate::commands::file_sync;
 use crate::panic_guard::run_guarded;
@@ -1998,6 +1999,47 @@ pub async fn read_file_as_base64(path: String) -> Result<FileBase64, String> {
     })
     .await
     .map_err(|e| format!("read_file_as_base64 blocking task join error: {e}"))?
+}
+
+/// Stream a file through SHA-256 without decoding or retaining its contents.
+fn hash_file_sha256_sync(path: &str) -> Result<String, String> {
+    let mut file = fs::File::open(path).map_err(|e| format!("Failed to open '{}': {}", path, e))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer).map_err(|e| format!("Failed to hash '{}': {}", path, e))?;
+        if count == 0 { break; }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+#[tauri::command]
+pub async fn hash_file_sha256(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_guarded("hash_file_sha256", || {
+            require_absolute_path("hash_file_sha256", &path)?;
+            hash_file_sha256_sync(&path)
+        })
+    })
+    .await
+    .map_err(|e| format!("hash_file_sha256 blocking task join error: {e}"))?
+}
+
+#[cfg(test)]
+mod sha256_file_tests {
+    use super::*;
+
+    #[test]
+    fn hashes_streamed_file_bytes_and_reports_io_and_path_errors() {
+        let path = std::env::temp_dir().join(format!("kw-sha256-{}.bin", std::process::id()));
+        fs::write(&path, b"abc").unwrap();
+        assert_eq!(hash_file_sha256_sync(path.to_str().unwrap()).unwrap(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        let missing = path.with_extension("missing");
+        assert!(hash_file_sha256_sync(missing.to_str().unwrap()).unwrap_err().contains("Failed to open"));
+        assert!(require_absolute_path("hash_file_sha256", "relative.bin").is_err());
+        let _ = fs::remove_file(path);
+    }
 }
 
 /// Cheap existence check without reading or classifying the file.

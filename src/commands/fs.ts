@@ -239,6 +239,12 @@ export async function readFileAsBase64(path: string): Promise<FileBase64> {
   return invoke<FileBase64>("read_file_as_base64", { path })
 }
 
+/** Stream a file through SHA-256 natively without decoding or loading its body into JS. */
+export async function hashFileSha256(path: string): Promise<string> {
+  if (!isAbsolutePath(path)) throw new Error(`hashFileSha256 requires an absolute path: ${path}`)
+  return invoke<string>("hash_file_sha256", { path })
+}
+
 export async function createProject(
   name: string,
   path: string,
