@@ -35,6 +35,13 @@ export async function writeFileAtomic(path: string, contents: string): Promise<v
   return invoke<void>("write_file_atomic", { path, contents })
 }
 
+/** Write and read back a JSON receipt inside the selected Vault's fixed receipt directory. */
+export async function writeVaultReceipt(vaultPath: string, fileName: string, contents: string): Promise<string> {
+  assertAbsoluteFsPath("writeVaultReceipt", vaultPath)
+  if (!/^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.json$/.test(fileName) || fileName.includes("..")) throw new Error("Invalid Vault receipt filename")
+  return invoke<string>("write_vault_receipt", { vaultPath, fileName, contents })
+}
+
 /**
  * List a directory tree. Dot-prefixed entries (`.claude`, `.env`,
  * `.llm-wiki`, …) are hidden by default; pass `includeHidden: true`

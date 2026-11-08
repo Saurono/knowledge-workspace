@@ -1344,6 +1344,49 @@ pub async fn write_file_atomic(path: String, contents: String) -> Result<(), Str
     .map_err(|e| format!("write_file_atomic blocking task join error: {e}"))?
 }
 
+fn write_vault_receipt_sync(vault_path: &str, file_name: &str, contents: &str) -> Result<String, String> {
+    if file_name.is_empty() || !file_name.ends_with(".json") || file_name == ".json" ||
+        file_name.contains("..") || !file_name.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-' || byte == b'.') {
+        return Err("Invalid receipt filename".to_string());
+    }
+    let root = fs::canonicalize(vault_path).map_err(|e| format!("Failed to resolve Vault root: {e}"))?;
+    let obsidian = root.join(".obsidian");
+    let obsidian_meta = fs::symlink_metadata(&obsidian).map_err(|e| format!("Selected folder is not an Obsidian Vault: {e}"))?;
+    if obsidian_meta.file_type().is_symlink() || !obsidian_meta.is_dir() { return Err("Vault marker must be a real directory".to_string()); }
+    let directory = root.join("kb-ingest-records");
+    match fs::symlink_metadata(&directory) {
+        Ok(meta) if meta.file_type().is_symlink() || !meta.is_dir() => return Err("Receipt directory must be a real directory".to_string()),
+        Ok(_) => (),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir(&directory).map_err(|e| format!("Failed to create receipt directory: {e}"))?,
+        Err(error) => return Err(format!("Failed to inspect receipt directory: {error}")),
+    }
+    let resolved_directory = fs::canonicalize(&directory).map_err(|e| format!("Failed to resolve receipt directory: {e}"))?;
+    if !resolved_directory.starts_with(&root) { return Err("Receipt directory escaped the selected Vault".to_string()); }
+    let target = resolved_directory.join(file_name);
+    if let Ok(meta) = fs::symlink_metadata(&target) {
+        if meta.file_type().is_symlink() || !meta.is_file() { return Err("Receipt target must be a regular file".to_string()); }
+    }
+    let tmp = resolved_directory.join(format!(".{file_name}.{}.tmp", chrono::Utc::now().timestamp_nanos_opt().unwrap_or_else(|| chrono::Utc::now().timestamp_millis())));
+    fs::write(&tmp, contents).map_err(|e| format!("Failed to write receipt temporary file: {e}"))?;
+    if let Err(error) = fs::rename(&tmp, &target) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("Failed to atomically publish receipt: {error}"));
+    }
+    fs::read_to_string(&target).map_err(|e| format!("Failed to read back receipt: {e}"))
+}
+
+/// Writes only a JSON receipt beneath the explicitly selected Obsidian Vault.
+/// The native boundary rejects symlinked receipt directories and filenames with path syntax.
+#[tauri::command]
+pub async fn write_vault_receipt(vault_path: String, file_name: String, contents: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_guarded("write_vault_receipt", || {
+            require_absolute_path("write_vault_receipt", &vault_path)?;
+            write_vault_receipt_sync(&vault_path, &file_name, &contents)
+        })
+    }).await.map_err(|e| format!("write_vault_receipt blocking task join error: {e}"))?
+}
+
 fn apply_text_selection_edit_inner(
     project_path: &str,
     file_path: &str,
@@ -2149,6 +2192,45 @@ mod tests {
         }
         archive.finish().unwrap();
         path
+    }
+
+    #[test]
+    fn vault_receipt_writer_requires_real_vault_and_atomically_verifies_overwrites() {
+        let root = std::env::temp_dir().join(format!("llm-wiki-vault-receipt-{}", uuid::Uuid::new_v4()));
+        assert!(write_vault_receipt_sync(root.to_str().unwrap(), "source-rev.json", "{}").is_err());
+        fs::create_dir_all(root.join(".obsidian")).unwrap();
+        let first = r#"{"version":1}"#;
+        let second = r#"{"version":2}"#;
+        assert_eq!(write_vault_receipt_sync(root.to_str().unwrap(), "source-rev.json", first).unwrap(), first);
+        assert_eq!(write_vault_receipt_sync(root.to_str().unwrap(), "source-rev.json", second).unwrap(), second);
+        assert_eq!(fs::read_to_string(root.join("kb-ingest-records/source-rev.json")).unwrap(), second);
+        assert!(write_vault_receipt_sync(root.to_str().unwrap(), "../outside.json", "{}").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn vault_receipt_writer_rejects_symlinked_marker_and_receipt_directory() {
+        let parent = std::env::temp_dir().join(format!("llm-wiki-vault-link-{}", uuid::Uuid::new_v4()));
+        let root = parent.join("vault"); let outside = parent.join("outside");
+        fs::create_dir_all(&root).unwrap(); fs::create_dir_all(outside.join(".obsidian")).unwrap();
+        #[cfg(unix)] {
+            std::os::unix::fs::symlink(outside.join(".obsidian"), root.join(".obsidian")).unwrap();
+            assert!(write_vault_receipt_sync(root.to_str().unwrap(), "source-rev.json", "{}").is_err());
+            fs::remove_file(root.join(".obsidian")).unwrap();
+            fs::create_dir(root.join(".obsidian")).unwrap();
+            std::os::unix::fs::symlink(&outside, root.join("kb-ingest-records")).unwrap();
+            assert!(write_vault_receipt_sync(root.to_str().unwrap(), "source-rev.json", "{}").is_err());
+        }
+        #[cfg(windows)] {
+            use std::os::windows::fs::symlink_dir;
+            if symlink_dir(outside.join(".obsidian"), root.join(".obsidian")).is_ok() {
+                assert!(write_vault_receipt_sync(root.to_str().unwrap(), "source-rev.json", "{}").is_err());
+                fs::remove_dir(root.join(".obsidian")).unwrap(); fs::create_dir(root.join(".obsidian")).unwrap();
+                symlink_dir(&outside, root.join("kb-ingest-records")).unwrap();
+                assert!(write_vault_receipt_sync(root.to_str().unwrap(), "source-rev.json", "{}").is_err());
+            }
+        }
+        fs::remove_dir_all(parent).unwrap();
     }
 
     fn minimal_docx() -> std::path::PathBuf {

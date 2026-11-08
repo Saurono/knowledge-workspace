@@ -626,6 +626,7 @@ pub fn run() {
             commands::fs::write_file,
             commands::fs::write_file_base64,
             commands::fs::write_file_atomic,
+            commands::fs::write_vault_receipt,
             commands::fs::apply_text_selection_edit,
             commands::fs::create_missing_wiki_page,
             commands::file_history::list_file_history,
