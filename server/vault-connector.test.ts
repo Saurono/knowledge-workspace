@@ -98,7 +98,7 @@ it("rejects invalid pair codes, expires and revokes sessions, and rechecks servi
   expect((await expiredCode.request("/pair", { method: "POST", body: JSON.stringify({ code: expiredCode.connector.pairingCode() }) })).status).toBe(410)
   const invalidCode = await fixture()
   expect((await invalidCode.request("/pair", { method: "POST", body: JSON.stringify({ code: "wrong" }) })).status).toBe(401)
-})
+}, 20_000)
 
 it("does not recreate a moved configured Vault or report a false delivery", async () => {
   const f = await fixture(), token = await pair(f)

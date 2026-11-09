@@ -453,3 +453,4 @@
 - 本轮独立初审：类型、18 模块边界及 503 生产文件审计通过；桌面/Web/服务构建、CLI/MCP 8 组与共享浏览器 12 组通过，页面异常 0。最新完整回归暴露 supersededBy 在同修订新 run 后校验失败，交回 Luna 修复；同时收紧 connector 排队提交撤销竞态。修复后的最终结果与对应产物证据将在本条后补，不提前勾选 D。
 - 验收边界：使用临时合成文件、独立 Vault 和确定性模型/embedding 提供者；生产链实际调用原生 hash、LanceDB、验证、检索及 Vault 写入。真实商业模型、公共 HTTPS 浏览器兼容、正式安装器与完整共享编译执行器不由本项冒充通过；跨文件/跨介质不是事务，互斥也非跨进程严格恰好一次。
 - 修复后主控独立完整回归：219 文件、2463 项通过；另 1 文件/1 项原生 opt-in 因没有 CDP 明确跳过，不计入通过。类型、18 模块边界、503 生产文件审计通过；桌面/Web/服务构建通过。共享浏览器 12 组 pageErrors=[]、CLI/MCP 8 组、HTTP Vault 配对/同步/撤销/CLI pull smoke 通过。日志为 TEMP 下 kw-d-final-regression-fixed.log、kw-d-final-build.log、kw-d-final-web-build.log、kw-d-final-browser.log、kw-d-final-vault-browser.log。
+- 真实候选 CI 42627547041：Linux 成功；Windows 唯一失败为 connector 权限集成测试默认 5000ms 超时（实际约5534ms，另142项通过），未出现权限断言失败。该测试创建六套真实 HTTP/SQLite/密码 fixture；Luna 仅把此单项超时设为有限 20000ms，保留全部断言、没有全局放宽或跳过。主控独立重跑该文件5项通过；修正后另推提交并重新收集三平台与原生产物。
