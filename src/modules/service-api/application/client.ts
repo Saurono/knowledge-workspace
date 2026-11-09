@@ -2,6 +2,7 @@ import { ServiceError } from "../domain"
 import type { ApiSuccess, ApiFailure, ProjectRecord, ResourceRecord, WikiContent, ProjectEvent } from "../domain"
 import type { SharedWorkspace } from "./workspace"
 import type { IngestionCheckpointV1, IngestionSummary } from "@/modules/ingestion/domain"
+import type { PhaseReceiptV2 } from "@/modules/obsidian/domain"
 import type { DomainFilter } from "@/modules/domains/domain"
 import { appendDomainFilterQuery } from "./domain-query"
 export interface ApiTransport {
@@ -34,6 +35,7 @@ export function createSharedClient(transport: ApiTransport) {
     saveWorkspace: (id: string, workspace: SharedWorkspace, expected: number) => request<ResourceRecord<SharedWorkspace>>("PUT", `${root(id)}/workspace`, workspace, expected),
     documents: (id: string, query = "", domainFilter?: DomainFilter) => request<ResourceRecord[]>("GET", `${root(id)}/documents${appendDomainFilterQuery(query, domainFilter)}`),
     documentIngestion: (projectId: string, documentId: string) => request<{ revision: number; checkpoint: IngestionCheckpointV1; summary: IngestionSummary }>("GET", `${root(projectId)}/documents/${encodeURIComponent(documentId)}/ingestion`),
+    documentReceipt: (projectId: string, documentId: string) => request<PhaseReceiptV2>("GET", `${root(projectId)}/documents/${encodeURIComponent(documentId)}/receipt`),
     events: (id: string, after = 0) => request<ProjectEvent[]>("GET", `${root(id)}/events?after=${after}`),
   }
 }

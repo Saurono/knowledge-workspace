@@ -14,6 +14,7 @@ import type { ProjectPermission, SessionIdentity, AccessContext } from "@/module
 import type { AccountAuthentication } from "./auth-http"
 import { createDocumentCheckpointRepository } from "./ingestion-checkpoints"
 import { summarizeIngestion } from "@/modules/ingestion/domain"
+import { projectPhaseReceipt } from "@/modules/obsidian/application"
 import { domainFilterFromQuery } from "@/modules/service-api/application"
 export interface ServiceOptions { repository: SqliteRepository; authentication: AccountAuthentication; executions?: ExecutionGateway; maxJsonBytes?: number; uploads?: UploadStorage; uploadRegistry?: UploadRegistry; maxUploadBytes?: number; webRoot?: string }
 export function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
@@ -108,6 +109,26 @@ export function createServiceHttp(options: ServiceOptions) {
         if (!value) throw new ServiceError("not_found", "Document not found")
         response.setHeader("ETag", etag(value.revision))
         return send(200, { ...value, summary: summarizeIngestion(value.checkpoint) })
+      }
+      const receiptRoute = part?.match(/^documents\/([^/]+)\/receipt$/)
+      if (receiptRoute && method === "GET") {
+        let documentId: string
+        try { documentId = decodeURIComponent(receiptRoute[1]) } catch { throw new ServiceError("invalid_argument", "Invalid document identifier") }
+        const record = await guarded.get(id, "document", documentId)
+        if (!record) throw new ServiceError("not_found", "Document not found")
+        const data = record.data as Record<string, unknown>
+        const checkpoint = (await checkpoints.read(id, documentId))?.checkpoint
+        const sourceId = data.sourceId, revision = data.sourceRevision ?? data.sha256
+        if (!checkpoint || typeof sourceId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(sourceId) || typeof revision !== "string" || !/^[a-f0-9]{64}$/.test(revision))
+          throw new ServiceError("invalid_argument", "Document receipt metadata is unavailable or damaged")
+        const projected = projectPhaseReceipt({
+          id: "", sourceId, sourceRevision: revision, runId: `resource-${documentId}`,
+          revisionKind: "raw-bytes-sha256",
+          checkpoint, times: { receivedAt: checkpoint.stages.receive.finishedAt, sourceIngestedAt: null, revisionIngestedAt: null },
+          outputVersions: [], indexCommitRefs: [],
+        })
+        response.setHeader("ETag", etag(record.revision))
+        return send(200, projected)
       }
       if (part === "memories" && method === "GET") { requireContextPermission(context, "memory.read"); return send(200, (await service.readWorkspace(id)).data) }
       if ((part === "retrieval" || part === "search") && method === "POST") { requireContextPermission(context, "wiki.read"); return send(200, await keywordSearch(service, id, await json())) }

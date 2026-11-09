@@ -1,5 +1,5 @@
 import { fileExists } from "@/commands/fs"
-import { documents } from "@/app/document-records/documents"
+import { readLocalSourceTimes } from "./source-times"
 import { canonicalDomainResourceKey } from "@/modules/domains/domain"
 import { getRelativePath, isAbsolutePath, normalizePath } from "@/lib/path-utils"
 
@@ -11,6 +11,9 @@ export interface ResolvedLocalDomainResource {
   canonicalKey: string
   /** Legacy keys are returned only after matching the exact catalog entry. */
   legacyKeys: string[]
+  receivedAt: string | null
+  sourceIngestedAt: string | null
+  revisionIngestedAt: string | null
 }
 
 function fail(message: string, code: "invalid_argument" | "not_found" = "invalid_argument"): never {
@@ -35,7 +38,7 @@ export async function resolveLocalDomainResource(
   if (resource.kind === "wiki") {
     const canonicalKey = canonicalDomainResourceKey("wiki", resource.path)
     if (!(await fileExists(`${root}/${canonicalKey}`))) return null
-    return { canonicalKey, legacyKeys: [] }
+    return { canonicalKey, legacyKeys: [], receivedAt: null, sourceIngestedAt: null, revisionIngestedAt: null }
   }
 
   const absolute = isAbsolutePath(resource.path)
@@ -50,16 +53,48 @@ export async function resolveLocalDomainResource(
   const canonicalAbsolute = `${root}/${sourceRelative}`
   if (!(await fileExists(canonicalAbsolute))) return null
 
-  let catalog = await documents.list(root)
-  let provenance = catalog[canonicalAbsolute]
-  if (!provenance && options.registerExistingSource) {
+  let metadata = (await readLocalSourceTimes(root, [canonicalAbsolute]))[canonicalAbsolute]
+  if (!metadata && options.registerExistingSource) {
     // Registration is an explicit assignment side effect and happens only after
     // proving the physical source exists. Reads and filters never allocate IDs.
-    await documents.registerImportedSource(root, canonicalAbsolute, canonicalAbsolute)
-    catalog = await documents.list(root)
-    provenance = catalog[canonicalAbsolute]
+    const { registerImportedSource } = await import("@/app/document-records/documents")
+    await registerImportedSource(root, canonicalAbsolute, canonicalAbsolute)
+    metadata = (await readLocalSourceTimes(root, [canonicalAbsolute]))[canonicalAbsolute]
   }
-  if (!provenance) return null
-  const canonicalKey = canonicalDomainResourceKey("document", provenance.id)
-  return { canonicalKey, legacyKeys: [sourceRelative] }
+  if (!metadata) return null
+  const canonicalKey = canonicalDomainResourceKey("document", metadata.id)
+  return { canonicalKey, legacyKeys: [sourceRelative], receivedAt: metadata.receivedAt, sourceIngestedAt: metadata.sourceIngestedAt, revisionIngestedAt: metadata.revisionIngestedAt }
+}
+
+/** Resolve a batch of already discovered leaves with one catalog read and no identity writes. */
+export async function resolveLocalDomainResources(
+  projectPath: string,
+  resources: readonly LocalDomainResource[],
+): Promise<(ResolvedLocalDomainResource | null)[]> {
+  const root = normalizePath(projectPath).replace(/\/+$/, "")
+  const documentPaths = resources.filter((resource): resource is Extract<LocalDomainResource, { kind: "document" }> => resource.kind === "document")
+    .map(resource => isAbsolutePath(resource.path) ? normalizePath(resource.path) : `${root}/${safeRelative(resource.path)}`)
+  const metadata = documentPaths.length ? await readLocalSourceTimes(root, documentPaths) : {}
+  return Promise.all(resources.map(async (resource) => {
+    if (resource.kind === "wiki") {
+      const canonicalKey = canonicalDomainResourceKey("wiki", resource.path)
+      if (!(await fileExists(`${root}/${canonicalKey}`))) return null
+      return { canonicalKey, legacyKeys: [], receivedAt: null, sourceIngestedAt: null, revisionIngestedAt: null }
+    }
+
+    const absolute = isAbsolutePath(resource.path)
+      ? normalizePath(resource.path)
+      : `${root}/${safeRelative(resource.path)}`
+    const prefix = `${root}/raw/sources/`
+    const windowsPath = /^[A-Za-z]:\//.test(root) || root.startsWith("//")
+    const comparable = (value: string) => windowsPath ? value.toLowerCase() : value
+    if (!comparable(absolute).startsWith(comparable(prefix))) return fail("Document domain assignment must target a project raw/sources file")
+    const sourceRelative = safeRelative(getRelativePath(absolute, root))
+    if (!sourceRelative.startsWith("raw/sources/")) return fail("Document domain assignment must target raw/sources")
+    const canonicalAbsolute = `${root}/${sourceRelative}`
+    if (!(await fileExists(canonicalAbsolute))) return null
+    const source = metadata[canonicalAbsolute]
+    if (!source) return null
+    return { canonicalKey: canonicalDomainResourceKey("document", source.id), legacyKeys: [sourceRelative], receivedAt: source.receivedAt, sourceIngestedAt: source.sourceIngestedAt, revisionIngestedAt: source.revisionIngestedAt }
+  }))
 }

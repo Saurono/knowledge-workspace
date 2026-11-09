@@ -10,7 +10,8 @@
     "memory",
     "domains",
     "identity",
-    "ingestion"
+    "ingestion",
+    "obsidian"
   ],
   "allowedExternalImports": [],
   "allowedLegacyImports": []

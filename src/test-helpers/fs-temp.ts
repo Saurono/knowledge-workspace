@@ -12,6 +12,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
+import { createHash } from "node:crypto"
 import type { FileNode } from "@/types/wiki"
 
 async function buildTree(dir: string): Promise<FileNode[]> {
@@ -62,6 +63,20 @@ export const realFs = {
     await fs.writeFile(temporary, contents, "utf-8")
     await fs.rename(temporary, p)
   },
+  writeVaultReceipt: async (root: string, fileName: string, contents: string): Promise<string> => {
+    if (!/^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.json$/.test(fileName) || fileName.includes("..")) throw new Error("Invalid receipt filename")
+    const vaultPath = path.resolve(root), marker = path.join(vaultPath, ".obsidian"), stat = await fs.lstat(marker)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Vault marker must be a real directory")
+    const directory = path.join(vaultPath, "kb-ingest-records")
+    await fs.mkdir(directory, { recursive: true })
+    const dirStat = await fs.lstat(directory)
+    const resolvedDirectory = await fs.realpath(directory)
+    if (!dirStat.isDirectory() || dirStat.isSymbolicLink() || !resolvedDirectory.startsWith(vaultPath)) throw new Error("Invalid receipt directory")
+    const target = path.join(directory, fileName), temporary = `${target}.tmp-${process.pid}-${Math.random().toString(36).slice(2)}`
+    await fs.writeFile(temporary, contents, "utf8")
+    await fs.rename(temporary, target)
+    return fs.readFile(target, "utf8")
+  },
   listDirectory: async (p: string): Promise<FileNode[]> => {
     return buildTree(p)
   },
@@ -87,6 +102,7 @@ export const realFs = {
   getFileSize: async (p: string): Promise<number> => {
     return (await fs.stat(p)).size
   },
+  hashFileSha256: async (p: string): Promise<string> => createHash("sha256").update(await fs.readFile(p)).digest("hex"),
   findRelatedWikiPages: async (): Promise<string[]> => {
     return []
   },

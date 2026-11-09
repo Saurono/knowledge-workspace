@@ -25,6 +25,8 @@ export function createRemoteWorkspace(api: ReturnType<typeof createSharedClient>
     removeMemory: (id: string) => memories.remove(projectId, id),
     addDomain: (tag: Parameters<typeof domains.add>[1]) => domains.add(projectId, tag),
     toggleDomain: (path: string, id: string) => domains.toggle(projectId, path, id),
+    setResourceDomains: (canonicalKey: string, ids: readonly string[], legacyKeys: readonly string[] = []) =>
+      domains.setResourceDomains(projectId, canonicalKey, ids, legacyKeys),
     removeDomain: (id: string) => update(current => removeDomain(current, id)),
   }
 }

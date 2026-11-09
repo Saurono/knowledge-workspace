@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { FileNode } from "@/types/wiki"
-import { filterSourceTreeByQuery, summarizeImportOutcome } from "./sources-view"
+import { filterSourceTreeByQuery, filterSourceTreeByDomain, summarizeImportOutcome } from "./sources-view"
+import type { DomainFilter } from "@/modules/domains/domain"
 
 const TREE: FileNode[] = [
   {
@@ -37,6 +38,32 @@ describe("filterSourceTreeByQuery", () => {
 
   it("returns an empty tree when no source matches", () => {
     expect(filterSourceTreeByQuery(TREE, "missing source")).toEqual([])
+  })
+})
+
+describe("filterSourceTreeByDomain", () => {
+  const state = {
+    domains: [{ id: "a", name: "领域 A" }, { id: "b", name: "领域 B" }],
+    resourceDomains: { "raw/documents/source-a": ["a"], "raw/documents/source-ab": ["a", "b"], "raw/documents/unregistered": ["a"] },
+  }
+  const assignments = {
+    "/project/raw/sources/Books/BookA.md": { canonicalKey: "raw/documents/source-a", legacyKeys: ["raw/sources/Books/BookA.md"] },
+    "/project/raw/sources/Books/三阶段治疗模型.pdf": { canonicalKey: "raw/documents/source-ab", legacyKeys: ["raw/sources/Books/三阶段治疗模型.pdf"] },
+  }
+  const filter = (domainIds: string[], match: "any" | "all" = "any", unclassified = false): DomainFilter => ({ domainIds, match, unclassified })
+
+  it("keeps only classified files matching ANY or ALL and retains matching folders", () => {
+    expect(filterSourceTreeByDomain(TREE, assignments, state, filter(["a"]))[0].children?.map(node => node.name))
+      .toEqual(["BookA.md", "三阶段治疗模型.pdf"])
+    expect(filterSourceTreeByDomain(TREE, assignments, state, filter(["b"]))[0].children?.map(node => node.name))
+      .toEqual(["三阶段治疗模型.pdf"])
+    expect(filterSourceTreeByDomain(TREE, assignments, state, filter(["a", "b"], "all"))[0].children?.map(node => node.name))
+      .toEqual(["三阶段治疗模型.pdf"])
+  })
+
+  it("treats unresolved identities as unclassified without registering them", () => {
+    const result = filterSourceTreeByDomain(TREE, assignments, state, filter([], "any", true))
+    expect(result.map(node => node.name)).toEqual(["notes.txt"])
   })
 })
 

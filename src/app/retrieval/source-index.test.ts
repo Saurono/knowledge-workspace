@@ -99,6 +99,20 @@ describe("compiled source index adapter over real files", () => {
     expect(retried.record.times).toEqual(first.record.times)
   })
 
+  it("indexes only native-eligible knowledge pages and refuses aggregate-only manifests", async () => {
+    state.secondFailures = 0
+    state.outputPaths = ["wiki/index.md", "wiki/log.md", "wiki/overview.md", "wiki/page-a.md"]
+    for (const relative of state.outputPaths) await nodeWriteFile(join(root, relative), `content ${relative}`)
+    const result = await indexCompiledSource({ projectPath: root, sourceId: "source-1", sourceRevision, rawSourceRevision: digest("original source bytes"), config, attemptToken: "attempt-aggregates" })
+    expect(result.status).toBe("succeeded")
+    expect(result.record.pages.map(page => page.relativePath)).toEqual(["wiki/page-a.md"])
+    expect(state.commitCalls).toEqual(["wiki/page-a.md"])
+
+    state.outputPaths = ["wiki/index.md", "wiki/log.md", "wiki/overview.md"]
+    await expect(indexCompiledSource({ projectPath: root, sourceId: "source-1", sourceRevision, rawSourceRevision: digest("original source bytes"), config, attemptToken: "attempt-aggregates-only" }))
+      .rejects.toThrow(/no eligible knowledge pages/i)
+  })
+
   it("rejects a physical source change even when the catalog parsed revision is unchanged", async () => {
     state.secondFailures = 0
     const rawRevision = digest("original source bytes")

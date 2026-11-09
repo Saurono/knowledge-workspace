@@ -5,11 +5,17 @@ const state = vi.hoisted(() => ({
   catalog: {} as Record<string, { id: string; originalPath: string; receivedAt: string | null; ingestedAt: string | null }>,
   workspace: { version: 1, domains: [{ id: "research", name: "Research" }], resourceDomains: {} as Record<string, string[]>, memories: [] as unknown[] },
   register: vi.fn(),
+  list: vi.fn(async () => state.catalog),
+  readTimes: vi.fn(async (_root: string, paths: string[]) => Object.fromEntries(paths.map(path => {
+    const source = state.catalog[path]
+    return [path, source ? { id: source.id, receivedAt: source.receivedAt, sourceIngestedAt: source.ingestedAt, revisionIngestedAt: null } : null]
+  }))),
 }))
+vi.mock("./source-times", () => ({ readLocalSourceTimes: state.readTimes }))
 
 vi.mock("@/commands/fs", () => ({ fileExists: async (path: string) => state.files.has(path) }))
-vi.mock("@/app/document-records/documents", () => ({ documents: {
-  list: async () => state.catalog,
+vi.mock("@/app/document-records/documents", () => ({ registerImportedSource: state.register, documents: {
+  list: state.list,
   registerImportedSource: state.register,
 } }))
 vi.mock("./json-repository", () => ({
@@ -20,7 +26,7 @@ vi.mock("./json-repository", () => ({
   },
 }))
 
-import { resolveLocalDomainResource } from "./resource-domains"
+import { resolveLocalDomainResource, resolveLocalDomainResources } from "./resource-domains"
 import { executeWorkspaceCommand } from "./services"
 
 beforeEach(() => {
@@ -32,11 +38,13 @@ beforeEach(() => {
   state.register.mockReset().mockImplementation(async (_root: string, path: string, originalPath: string) => {
     state.catalog[path] = { id: "source-123", originalPath, receivedAt: "now", ingestedAt: null }
   })
+  state.list.mockClear().mockImplementation(async () => state.catalog)
+  state.readTimes.mockClear()
 })
 
 describe("local domain resource adapter", () => {
   it("resolves Wiki paths and never allocates identities during a read", async () => {
-    expect(await resolveLocalDomainResource("/p", { kind: "wiki", path: "wiki/page.md" })).toEqual({ canonicalKey: "wiki/page.md", legacyKeys: [] })
+    expect(await resolveLocalDomainResource("/p", { kind: "wiki", path: "wiki/page.md" })).toEqual({ canonicalKey: "wiki/page.md", legacyKeys: [], receivedAt: null, sourceIngestedAt: null, revisionIngestedAt: null })
     expect(await resolveLocalDomainResource("/p", { kind: "document", path: "raw/sources/source.pdf" })).toBeNull()
     expect(state.register).not.toHaveBeenCalled()
     expect(await resolveLocalDomainResource("/p", { kind: "wiki", path: "wiki/missing.md" })).toBeNull()
@@ -61,5 +69,23 @@ describe("local domain resource adapter", () => {
     await expect(resolveLocalDomainResource("/p", { kind: "document", path: "raw/sources/../secret.pdf" })).rejects.toMatchObject({ code: "invalid_argument" })
     await executeWorkspaceCommand("/p", { type: "domain.toggle", resourcePath: "wiki/page.md", domainId: "research" })
     expect(state.workspace.resourceDomains["wiki/page.md"]).toEqual(["research"])
+  })
+
+  it("resolves a batch from one catalog read without registering identities", async () => {
+    state.files.add("/p/raw/sources/unregistered.pdf")
+    state.catalog["/p/raw/sources/source.pdf"] = { id: "source-123", originalPath: "/p/raw/sources/source.pdf", receivedAt: "now", ingestedAt: null }
+    const result = await resolveLocalDomainResources("/p", [
+      { kind: "document", path: "/p/raw/sources/source.pdf" },
+      { kind: "document", path: "/p/raw/sources/unregistered.pdf" },
+      { kind: "wiki", path: "wiki/page.md" },
+    ])
+    expect(result).toEqual([
+      { canonicalKey: "raw/documents/source-123", legacyKeys: ["raw/sources/source.pdf"], receivedAt: "now", sourceIngestedAt: null, revisionIngestedAt: null },
+      null,
+      { canonicalKey: "wiki/page.md", legacyKeys: [], receivedAt: null, sourceIngestedAt: null, revisionIngestedAt: null },
+    ])
+    expect(state.readTimes).toHaveBeenCalledTimes(1)
+    expect(state.readTimes).toHaveBeenCalledWith("/p", ["/p/raw/sources/source.pdf", "/p/raw/sources/unregistered.pdf"])
+    expect(state.register).not.toHaveBeenCalled()
   })
 })

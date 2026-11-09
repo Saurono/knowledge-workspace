@@ -45,6 +45,7 @@ export async function loadIngestRecords(projectPath: string): Promise<IngestReco
     if (!path || path.includes("\\") || !record(source)) return false
     const item = source as unknown as Record<string, unknown>
     return typeof item.id === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(item.id) &&
+      (item.sourceKind === undefined || ["generated-wiki", "raw", "unknown"].includes(String(item.sourceKind))) &&
       (item.originalPath === null || typeof item.originalPath === "string") &&
       (item.receivedAt === null || typeof item.receivedAt === "string") &&
       (item.ingestedAt === null || typeof item.ingestedAt === "string") &&

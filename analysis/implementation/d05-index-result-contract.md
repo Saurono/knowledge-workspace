@@ -1,6 +1,6 @@
 # D05 实际索引结果契约草案
 
-日期：2026-11-03（Asia/Shanghai）。本轮只设计，不实现索引执行器，不勾选 D05。现有入口为 ingestion 的五阶段 checkpoint/lifecycle 与 retrieval 的公开 embedding/search 端口。
+初稿：2026-11-03（Asia/Shanghai）。2026-11-06 用户将授权扩大为完成 D01–D09；D05 现允许实施，完成勾选仍需真实提交与验证证据。现有入口为 ingestion 的五阶段 checkpoint/lifecycle 与 retrieval 的公开 embedding/search 端口。
 
 ## 目标与权威证据
 

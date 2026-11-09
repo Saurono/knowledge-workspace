@@ -47,13 +47,114 @@ try {
  await second.getByRole('button',{name:'保存 Wiki',exact:true}).click()
  await second.getByText('资源已由其他客户端修改。草稿已保留，请复制草稿后刷新再合并。',{exact:true}).waitFor()
  if(await second.getByLabel('Wiki 正文',{exact:true}).inputValue()!=='Unsaved stale client draft')throw new Error('Stale draft was lost')
+
+ const savePage=async(path,body)=>{
+  await first.getByRole('button',{name:'新建 Wiki',exact:true}).click()
+  await first.getByLabel('Wiki 路径',{exact:true}).fill(path)
+  await first.getByLabel('Wiki 正文',{exact:true}).fill(body)
+  await first.getByRole('button',{name:'保存 Wiki',exact:true}).click()
+  await first.getByText('版本 1',{exact:true}).waitFor()
+ }
+ await savePage('wiki/concepts/browser-any-all.md','# ANY and ALL classification target')
+ await savePage('wiki/concepts/browser-unclassified.md','# Unclassified filter target')
  await first.getByRole('tab',{name:'文档',exact:true}).click()
+ const uploadResponse=first.waitForResponse(response=>response.request().method()==='POST'&&response.url().includes('/documents'))
  await first.getByLabel('上传原始文档',{exact:true}).setInputFiles({name:'浏览器资料.md',mimeType:'text/markdown',buffer:Buffer.from('Actual uploaded document')})
  await first.getByText('浏览器资料.md',{exact:true}).waitFor()
+ const uploaded=await (await uploadResponse).json(),sourceId=uploaded.data.data.sourceId
+ assert.match(sourceId,/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/)
  await first.getByRole('tab',{name:'知识领域',exact:true}).click()
- await first.getByLabel('新增领域标签',{exact:true}).fill('跨端验证领域')
- await first.getByRole('button',{name:'添加',exact:true}).click()
- await first.getByRole('button',{name:'删除 跨端验证领域',exact:true}).waitFor()
+ const addDomain=async name=>{
+  await first.getByLabel('新增领域标签',{exact:true}).fill(name)
+  await first.getByRole('button',{name:'添加',exact:true}).click()
+  await first.getByRole('button',{name:'删除 '+name,exact:true}).waitFor()
+ }
+ await addDomain('跨端验证领域')
+ await addDomain('第二领域')
+ const wikiKey=(value)=>`wiki/concepts/${value}.md`
+ const saveDomain=async action=>{const pending=first.waitForResponse(r=>r.request().method()==='PUT'&&r.url().includes('/workspace'));await action();const response=await pending;if(!response.ok())throw Error('domain assignment failed: '+response.status())}
+ await first.getByRole('tab',{name:'Wiki',exact:true}).click()
+ await first.getByLabel('设置领域归类：'+wikiKey('browser-shared')).click()
+ await saveDomain(()=>first.getByRole('checkbox',{name:wikiKey('browser-shared')+'：跨端验证领域',exact:true}).check())
+ await first.getByLabel('设置领域归类：'+wikiKey('browser-shared')).click()
+ await first.getByLabel('设置领域归类：'+wikiKey('browser-any-all')).click()
+ await saveDomain(()=>first.getByRole('checkbox',{name:wikiKey('browser-any-all')+'：跨端验证领域',exact:true}).check())
+ await saveDomain(()=>first.getByRole('checkbox',{name:wikiKey('browser-any-all')+'：第二领域',exact:true}).check())
+ await first.getByLabel('设置领域归类：'+wikiKey('browser-any-all')).click()
+ await first.getByRole('tab',{name:'文档',exact:true}).click()
+ await first.getByLabel('设置领域归类：浏览器资料.md').click()
+ await saveDomain(()=>first.getByRole('checkbox',{name:'浏览器资料.md：第二领域',exact:true}).check())
+ await first.getByLabel('设置领域归类：浏览器资料.md').click()
+
+ // A genuine stale workspace CAS keeps the attempted assignment visible as a draft.
+ await second.reload()
+ await second.getByLabel('当前项目',{exact:true}).waitFor()
+ await second.getByRole('tab',{name:'Wiki',exact:true}).waitFor()
+ const projectBeforeCas=(await (await first.request.get(origin+'/api/v1/projects')).json()).data.find(item=>item.name==='真实 Web 服务验证').id
+ let releaseCas,signalCas
+ const casGate=new Promise(resolve=>{releaseCas=resolve}),casStarted=new Promise(resolve=>{signalCas=resolve})
+ const workspaceUrl=`**/api/v1/projects/${projectBeforeCas}/workspace`
+ await second.route(workspaceUrl,async route=>{if(route.request().method()==='PUT'){signalCas();await casGate}await route.continue()})
+ await second.getByLabel('设置领域归类：'+wikiKey('browser-shared')).click()
+ const staleAssignment=second.getByRole('checkbox',{name:wikiKey('browser-shared')+'：第二领域',exact:true}).check()
+ await casStarted
+ await first.getByRole('tab',{name:'知识领域',exact:true}).click()
+ await addDomain('并发后新增领域')
+ releaseCas()
+ await staleAssignment
+ await second.getByText('资源已由其他客户端修改。草稿已保留，请复制草稿后刷新再合并。',{exact:true}).waitFor()
+ if(!await second.getByRole('checkbox',{name:wikiKey('browser-shared')+'：第二领域',exact:true}).isChecked())throw new Error('CAS conflict discarded the pending domain assignment draft')
+ await second.getByLabel('设置领域归类：'+wikiKey('browser-shared')).click()
+ await second.unroute(workspaceUrl)
+
+ // Exercise real server-side Wiki filtering for ANY, ALL, unclassified, and clear.
+ await first.getByRole('tab',{name:'Wiki',exact:true}).click()
+ const waitCount=async(name,count)=>first.waitForFunction(({name,count})=>Array.from(document.querySelectorAll('button')).filter(button=>button.textContent?.trim()===name).length===count,{name,count})
+ await first.getByRole('checkbox',{name:'跨端验证领域',exact:true}).check()
+ await waitCount(wikiKey('browser-shared'),1);await waitCount(wikiKey('browser-any-all'),1);await waitCount(wikiKey('browser-unclassified'),0)
+ await first.getByRole('checkbox',{name:'第二领域',exact:true}).check()
+ await waitCount(wikiKey('browser-shared'),1);await waitCount(wikiKey('browser-any-all'),1)
+ await first.getByLabel('领域匹配方式',{exact:true}).selectOption('all')
+ await waitCount(wikiKey('browser-shared'),0);await waitCount(wikiKey('browser-any-all'),1);await waitCount(wikiKey('browser-unclassified'),0)
+ await first.getByRole('button',{name:'清除筛选',exact:true}).click()
+ await waitCount(wikiKey('browser-shared'),1);await waitCount(wikiKey('browser-any-all'),1);await waitCount(wikiKey('browser-unclassified'),1)
+ await first.getByRole('checkbox',{name:'未分类',exact:true}).check()
+ await waitCount(wikiKey('browser-shared'),0);await waitCount(wikiKey('browser-any-all'),0);await waitCount(wikiKey('browser-unclassified'),1)
+ await first.getByRole('button',{name:'清除筛选',exact:true}).click()
+
+ // Revisions of one source keep the same canonical domain assignment.
+ const revisionResponse=await first.request.post(`${origin}/api/v1/projects/${projectBeforeCas}/documents`,{headers:{Origin:origin,'X-KW-CSRF':'1','Content-Type':'text/markdown','X-File-Name':encodeURIComponent('浏览器资料.md'),'Idempotency-Key':'d03c-'+randomBytes(12).toString('hex'),'X-Source-Id':sourceId},data:Buffer.from('Actual second source revision')})
+ assert.equal(revisionResponse.status(),201)
+ const storedWorkspace=(await (await first.request.get(`${origin}/api/v1/projects/${projectBeforeCas}/workspace`)).json()).data.data
+ assert.deepEqual(storedWorkspace.resourceDomains[`raw/documents/${sourceId}`],[''+storedWorkspace.domains.find(domain=>domain.name==='第二领域').id])
+ const filteredDocuments=await (await first.request.get(`${origin}/api/v1/projects/${projectBeforeCas}/documents?domainId=${encodeURIComponent(storedWorkspace.domains.find(domain=>domain.name==='第二领域').id)}&domainMatch=any&unclassified=0`)).json()
+ assert.ok(filteredDocuments.data.some(record=>record.data.sourceId===sourceId),'stable source filter omitted its later revision')
+ await first.reload()
+ await first.getByLabel('当前项目',{exact:true}).waitFor()
+ await first.getByRole('tab',{name:'文档',exact:true}).click()
+ await first.getByRole('checkbox',{name:'第二领域',exact:true}).check()
+ const sourceRevisionRows=first.getByText('浏览器资料.md',{exact:true})
+ assert.equal(await sourceRevisionRows.count(),2,'both revisions of the stable source should appear in the filtered list')
+
+ // Removing a selected domain prunes the stale filter and refetches the list.
+ await first.getByRole('tab',{name:'知识领域',exact:true}).click()
+ await first.getByRole('button',{name:'删除 第二领域',exact:true}).click()
+ await first.getByRole('tab',{name:'文档',exact:true}).click()
+ await first.getByRole('status').filter({hasText:'已删除领域已从筛选中移除'}).waitFor()
+ if(await first.getByRole('checkbox',{name:'第二领域',exact:true}).count())throw new Error('Deleted domain remained in the active filter')
+
+ // Switching projects clears selections without carrying IDs into another workspace.
+ await first.getByRole('tab',{name:'Wiki',exact:true}).click()
+ await first.getByRole('checkbox',{name:'跨端验证领域',exact:true}).check()
+ await first.getByLabel('新项目名称',{exact:true}).fill('过滤切换验证项目')
+ await first.getByRole('button',{name:'创建项目',exact:true}).click()
+ await first.getByLabel('当前项目',{exact:true}).selectOption({label:'过滤切换验证项目'})
+ await first.getByRole('checkbox',{name:'未分类',exact:true}).waitFor()
+ if(await first.getByLabel('领域匹配方式',{exact:true}).inputValue()!=='any')throw new Error('Project switch retained the previous match mode')
+ await first.getByLabel('当前项目',{exact:true}).selectOption({label:'真实 Web 服务验证'})
+ await first.getByRole('checkbox',{name:'跨端验证领域',exact:true}).waitFor()
+ if(await first.getByRole('checkbox',{name:'跨端验证领域',exact:true}).isChecked())throw new Error('Project switch retained the previous domain selection')
+
  await first.getByRole('tab',{name:'记忆库',exact:true}).click()
  await first.getByRole('button',{name:'新建记忆',exact:true}).click()
  await first.getByLabel('标题',{exact:true}).fill('共享记忆浏览器验证')
@@ -62,7 +163,7 @@ try {
  await first.getByRole('button',{name:'保存',exact:true}).click()
  await first.getByRole('button',{name:/共享记忆浏览器验证/}).waitFor()
  const data=await (await first.request.get(origin+'/api/v1/projects')).json()
- const project=data.data[0].id
+ const project=data.data.find(item=>item.name==='真实 Web 服务验证').id
  const workspace=await (await first.request.get(`${origin}/api/v1/projects/${project}/workspace`)).json()
  if(workspace.data.data.memories[0]?.title!=='共享记忆浏览器验证')throw new Error('Memory was not persisted on the service')
  const stored=await (await first.request.get(`${origin}/api/v1/projects/${project}/wiki/page?path=wiki/concepts/browser-shared.md`)).json()
@@ -104,6 +205,7 @@ try {
  const tokenHeaders={Authorization:`Bearer ${raw}`,'Content-Type':'application/json','If-None-Match':'*'}
  assert.equal((await fetch(`${origin}/api/v1/projects/${project}/wiki/page?path=wiki/no.md`,{method:'PUT',headers:tokenHeaders,body:JSON.stringify({content:'denied'})})).status,403)
  const alice=await connect('alice')
+ await alice.getByRole('button',{name:wikiKey('browser-shared'),exact:true}).waitFor()
  await alice.getByLabel('Wiki 正文',{exact:true}).fill('Unsaved role-switch draft')
  alice.once('dialog',dialog=>dialog.dismiss())
  await alice.getByLabel('有效身份与工作角色',{exact:true}).selectOption({label:'alice · 审阅者'})
@@ -112,6 +214,7 @@ try {
  await alice.getByLabel('有效身份与工作角色',{exact:true}).selectOption({label:'alice · 审阅者'})
  await alice.getByText('当前权限：project.read · wiki.read',{exact:true}).waitFor()
  assert.equal(await alice.getByRole('button',{name:'保存 Wiki',exact:true}).isDisabled(),true)
+ if(await alice.getByLabel('设置领域归类：'+wikiKey('browser-shared'),{exact:true}).count())throw new Error('Read-only identity saw a writable Wiki domain assignment control')
  const accounts=await (await first.request.get(origin+'/api/v1/admin/accounts')).json(),aliceId=accounts.data.catalog.accounts.find(account=>account.handle==='alice').id
  const delegationResponse=await first.request.post(`${origin}/api/v1/projects/${project}/delegations`,{headers:{'X-KW-CSRF':'1'},data:{granteeId:aliceId,permissions:['project.read','wiki.read','wiki.write'],expiresAt:new Date(Date.now()+86400000).toISOString()}});assert.equal(delegationResponse.status(),201)
  await alice.getByRole('button',{name:'刷新身份授权',exact:true}).click()

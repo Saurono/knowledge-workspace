@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 490,
+  "productionFiles": 503,
   "moduleCount": 18,
   "modules": [
     {
@@ -59,7 +59,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 10
+          "productionImporters": 11
         },
         {
           "path": "application/index.ts",
@@ -81,7 +81,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 11
+          "productionImporters": 14
         },
         {
           "path": "application/index.ts",
@@ -134,7 +134,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 10
+          "productionImporters": 15
         },
         {
           "path": "application/index.ts",
@@ -174,8 +174,8 @@
     },
     {
       "id": "obsidian",
-      "productionFiles": 5,
-      "testFiles": 1,
+      "productionFiles": 7,
+      "testFiles": 2,
       "publicEntrypoints": [
         {
           "path": "index.ts",
@@ -183,14 +183,16 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 5
+          "productionImporters": 10
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 2
+          "productionImporters": 7
         }
       ],
-      "dependencies": [],
+      "dependencies": [
+        "ingestion"
+      ],
       "externalPackages": [],
       "legacyExceptions": []
     },
@@ -306,7 +308,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 17
+          "productionImporters": 18
         },
         {
           "path": "application/index.ts",
@@ -332,7 +334,7 @@
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 10
+          "productionImporters": 11
         }
       ],
       "dependencies": [
@@ -340,6 +342,7 @@
         "identity",
         "ingestion",
         "memory",
+        "obsidian",
         "wiki"
       ],
       "externalPackages": [],
@@ -505,7 +508,7 @@
     },
     {
       "path": "src/lib/ingest-receipts.ts",
-      "productionImporters": 6,
+      "productionImporters": 7,
       "testImporters": 4
     },
     {
@@ -530,7 +533,7 @@
     },
     {
       "path": "src/lib/llm-task-routing.ts",
-      "productionImporters": 8,
+      "productionImporters": 7,
       "testImporters": 1
     },
     {
@@ -550,7 +553,7 @@
     },
     {
       "path": "src/lib/project-identity.ts",
-      "productionImporters": 3,
+      "productionImporters": 4,
       "testImporters": 0
     },
     {

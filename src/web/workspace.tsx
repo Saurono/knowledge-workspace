@@ -10,6 +10,11 @@ import { createRemoteWorkspace } from "@/app/platform/remote-workspace"
 import type { ProjectRecord, ResourceRecord, WikiContent } from "@/modules/service-api/domain"
 import type { ReceivedDocument, SharedWorkspace } from "@/modules/service-api/application"
 import { ApiClientError } from "@/modules/service-api/application"
+import { DomainFilter } from "@/components/workspace/domain-filter"
+import { ResourceDomainAssignment } from "@/components/workspace/resource-domain-assignment"
+import { formatSourceTimestamp } from "@/components/workspace/source-time"
+import type { DomainFilter as DomainFilterValue } from "@/modules/domains/domain"
+import { VaultConnectorPanel } from "./vault-connector-panel"
 type Platform = ReturnType<typeof createWebPlatform>
 const message = (error: unknown) => error instanceof ApiClientError && error.code === "conflict"
   ? "资源已由其他客户端修改。草稿已保留，请复制草稿后刷新再合并。" : error instanceof ApiClientError && error.code === "unauthenticated" ? "会话已失效，请复制草稿后重新登录。" : error instanceof Error ? error.message : String(error)
@@ -76,21 +81,50 @@ function ProjectPanel({ platform, project, access, onDirty, onBusy }: { platform
   const [tab, setTab] = useState(access.permissions.includes("wiki.read") ? "wiki" : access.permissions.includes("memory.read") ? "memories" : "domains"), [connection, setConnection] = useState<ConnectionState>("connecting")
   const [path, setPath] = useState("wiki/queries/new-page.md"), [content, setContent] = useState(""), [revision, setRevision] = useState<number | null>(null)
   const [selectedMemory, setSelectedMemory] = useState<string | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState(""), [updated, setUpdated] = useState(false)
+  const [domainFilter, setDomainFilter] = useState<DomainFilterValue>({ domainIds: [], match: "any", unclassified: false })
+  const [domainDrafts, setDomainDrafts] = useState<Record<string, string[]>>({})
+  const [filterBusy, setFilterBusy] = useState(false)
+  const [domainNotice, setDomainNotice] = useState("")
+  const resourceGeneration = useRef(0)
+  const filterGeneration = useRef(0)
   const alive = useRef(true), pageGeneration = useRef(0), dirty = useRef(false)
   const markDirty = (value: boolean) => { dirty.current = value; onDirty(value) }
   useEffect(() => { onBusy(busy); return () => onBusy(false) }, [busy, onBusy])
-  const resources = async () => {
+  const resources = async (filter: DomainFilterValue = domainFilter) => {
+    const generation = ++resourceGeneration.current
     const all = async <T,>(load: (query: string) => Promise<{ data: T[]; meta: { page?: { nextCursor: string | null } } }>) => {
       const result: T[] = []; let query = ""
       do { const page = await load(query); result.push(...page.data); query = page.meta.page?.nextCursor ? `?cursor=${encodeURIComponent(page.meta.page.nextCursor)}` : "" } while (query)
       return result
     }
-    const [pages, files] = await Promise.all([can("wiki.read") ? all(query => platform.api.wiki(project.id, query)) : [], can("documents.read") ? all(query => platform.api.documents(project.id, query)) : []])
-    if (alive.current) { setWiki(pages); setDocuments(files as ResourceRecord<ReceivedDocument>[]) }
+    const activeFilter = filter.domainIds.length || filter.unclassified ? filter : undefined
+    try {
+      const [pages, files] = await Promise.all([
+        can("wiki.read") ? all(query => platform.api.wiki(project.id, query, activeFilter)) : [],
+        can("documents.read") ? all(query => platform.api.documents(project.id, query, activeFilter)) : [],
+      ])
+      if (alive.current && generation === resourceGeneration.current) { setWiki(pages); setDocuments(files as ResourceRecord<ReceivedDocument>[]) }
+    } catch (error) {
+      if (generation === resourceGeneration.current) throw error
+    }
   }
   const reload = async () => {
     setBusy(true)
-    try { const value = can("project.read") ? await workspace.load() : null; await resources(); if (alive.current) { setSnapshot(value); setRevision(null); setContent(""); setPath("wiki/queries/new-page.md"); setError(""); setUpdated(false); markDirty(false); ++pageGeneration.current } }
+    setDomainDrafts({})
+    try {
+      const value = can("project.read") ? await workspace.load() : null
+      let currentFilter = domainFilter
+      if (value) {
+        const known = new Set(value.data.domains.map(domain => domain.id))
+        const domainIds = domainFilter.domainIds.filter(id => known.has(id))
+        if (domainIds.length !== domainFilter.domainIds.length) {
+          currentFilter = { ...domainFilter, domainIds }
+          setDomainFilter(currentFilter); setDomainNotice("已删除领域已从筛选中移除。")
+        }
+      }
+      await resources(currentFilter)
+      if (alive.current) { setSnapshot(value); setRevision(null); setContent(""); setPath("wiki/queries/new-page.md"); setError(""); setUpdated(false); markDirty(false); ++pageGeneration.current }
+    }
     catch (error) { if (alive.current) setError(message(error)) }
     finally { if (alive.current) setBusy(false) }
   }
@@ -102,30 +136,80 @@ function ProjectPanel({ platform, project, access, onDirty, onBusy }: { platform
     window.addEventListener("beforeunload", guard)
     return () => { onDirty(false); alive.current = false; ++pageGeneration.current; controller.abort(); stop(); window.removeEventListener("beforeunload", guard) }
   }, [workspace])
+  useEffect(() => {
+    if (!snapshot) return
+    const known = new Set(snapshot.data.domains.map(domain => domain.id))
+    if (domainFilter.domainIds.some(id => !known.has(id))) {
+      const safe = { ...domainFilter, domainIds: domainFilter.domainIds.filter(id => known.has(id)) }
+      setDomainFilter(safe)
+      setDomainNotice("已删除领域已从筛选中移除。")
+      setFilterBusy(true)
+      void resources(safe).catch(error => { if (alive.current) setError(message(error)) }).finally(() => { if (alive.current) setFilterBusy(false) })
+    }
+  }, [snapshot, domainFilter.domainIds])
+  const activeDomainFilter = useMemo(() => {
+    const known = new Set((snapshot?.data.domains ?? []).map(domain => domain.id))
+    return { ...domainFilter, domainIds: domainFilter.domainIds.filter(id => known.has(id)) }
+  }, [domainFilter, snapshot])
+  const updateDomainFilter = (next: DomainFilterValue) => {
+    if (filterBusy) return
+    const request = ++filterGeneration.current
+    setDomainFilter(next); setFilterBusy(true); setError("")
+    void resources(next).catch(async error => {
+      if (request !== filterGeneration.current) return
+      if (error instanceof ApiClientError && error.code === "invalid_argument" && /Unknown domain filter ID/i.test(error.message) && can("project.read")) {
+        try {
+          const fresh = await workspace.load()
+          if (!alive.current) return
+          setSnapshot(fresh)
+          const known = new Set(fresh.data.domains.map(domain => domain.id))
+          const safe = { ...next, domainIds: next.domainIds.filter(id => known.has(id)) }
+          setDomainFilter(safe); setDomainNotice("领域列表已更新，已移除失效筛选条件。")
+          try { await resources(safe) }
+          catch (retryError) { if (alive.current) setError(message(retryError)) }
+        } catch (refreshError) { if (alive.current) setError(message(refreshError)) }
+      } else if (alive.current) setError(message(error))
+    }).finally(() => { if (alive.current && request === filterGeneration.current) setFilterBusy(false) })
+  }
   const mutate = async (operation: () => Promise<unknown>) => {
     setBusy(true); setError("")
     try { await operation(); if (alive.current) { setSnapshot(workspace.snapshot()); return true } return false }
     catch (error) { if (alive.current) setError(message(error)); return false }
     finally { if (alive.current) setBusy(false) }
   }
+  const saveResourceDomains = async (key: string, desired: string[]) => {
+    setDomainDrafts(current => ({ ...current, [key]: desired }))
+    const success = await mutate(() => workspace.setResourceDomains(key, desired))
+    if (success) {
+      setDomainDrafts(current => { const next = { ...current }; delete next[key]; return next })
+      try { await resources(activeDomainFilter); setDomainNotice("") }
+      catch (error) { if (alive.current) setError(message(error)) }
+    }
+  }
   return <section className="panel space-y-4">
     <header className="flex flex-wrap items-center justify-between gap-3"><nav role="tablist" aria-label="项目功能" className="flex flex-wrap gap-2">{[["wiki", "Wiki", "wiki.read"], ["documents", "文档", "documents.read"], ["memories", "记忆库", "memory.read"], ["domains", "知识领域", "project.read"]].filter(([, , permission]) => can(permission as ProjectPermission)).map(([id, label]) => <button role="tab" key={id} aria-selected={tab === id} onClick={() => setTab(id)}>{label}</button>)}</nav><p role="status" className="muted">事件连接：{connection === "connected" ? "已连接" : connection === "reconnecting" ? "重连中" : connection === "error" ? "连接失败" : "连接中"}</p></header>
     {(error || updated) && <div role="alert" className={error ? "error" : "muted"}><p>{error || "服务已有新变更，可刷新读取。"}</p><button className="mt-2" disabled={busy} onClick={() => void reload()}>刷新资源（放弃未保存内容）</button></div>}
-    {tab === "wiki" && can("wiki.read") && <div className="grid gap-5 lg:grid-cols-[230px_1fr]"><aside className="space-y-2"><button disabled={busy || !can("wiki.write")} onClick={() => { ++pageGeneration.current; setPath("wiki/queries/new-page.md"); setContent(""); setRevision(null); markDirty(false) }}>新建 Wiki</button>{wiki.map(page => <button className="block w-full truncate text-left text-xs" key={page.key} disabled={busy} onClick={async () => {
+    {(tab === "wiki" || tab === "documents") && snapshot && <div className="space-y-2">
+      <DomainFilter domains={snapshot.data.domains} value={activeDomainFilter} onChange={updateDomainFilter} disabled={busy || filterBusy} />
+      {domainNotice && <p role="status" className="muted text-xs">{domainNotice}</p>}
+      {filterBusy && <p role="status" className="muted text-xs">正在按领域筛选…</p>}
+    </div>}
+    {tab === "wiki" && can("wiki.read") && <div className="grid min-w-0 gap-5 lg:grid-cols-[230px_minmax(0,1fr)]"><aside className="min-w-0 space-y-2 [&>div>details>fieldset]:left-0 [&>div>details>fieldset]:right-auto [&>div>details>fieldset]:max-w-[calc(100vw-2rem)]"><button disabled={busy || !can("wiki.write")} onClick={() => { ++pageGeneration.current; setPath("wiki/queries/new-page.md"); setContent(""); setRevision(null); markDirty(false) }}>新建 Wiki</button>{wiki.map(page => <div className="flex min-w-0 flex-col items-start gap-1" key={page.key}><button className="block min-w-0 flex-1 truncate text-left text-xs" disabled={busy} onClick={async () => {
       const version = ++pageGeneration.current; setBusy(true)
       try { const record = (await platform.api.readWiki(project.id, page.key)).data; if (alive.current && version === pageGeneration.current) { setPath(record.data.path); setContent(record.data.content); setRevision(record.revision); markDirty(false) } }
       catch (error) { if (alive.current) setError(message(error)) }
       finally { if (alive.current) setBusy(false) }
-    }}>{page.key}</button>)}</aside><div className="space-y-3"><label>Wiki 路径<input aria-label="Wiki 路径" disabled={revision !== null || busy || !can("wiki.write")} value={path} onChange={event => setPath(event.target.value)} /></label><label>Wiki 正文<textarea className="min-h-64 font-mono text-sm" aria-label="Wiki 正文" readOnly={!can("wiki.write")} disabled={busy} value={content} onChange={event => { setContent(event.target.value); markDirty(true) }} /></label><div className="flex gap-2"><button className="primary" disabled={busy || !can("wiki.write")} onClick={async () => {
+    }}>{page.key}</button><span className="muted text-xs max-w-full break-words">服务资源创建：{formatSourceTimestamp(page.createdAt, "未知")}</span>{can("domains.manage") && snapshot && <ResourceDomainAssignment label={page.key} domains={snapshot.data.domains} selectedIds={domainDrafts[page.key] ?? snapshot.data.resourceDomains[page.key] ?? []} disabled={busy} onChange={ids => void saveResourceDomains(page.key, ids)} />}</div>)}</aside><div className="min-w-0 space-y-3"><label>Wiki 路径<input aria-label="Wiki 路径" disabled={revision !== null || busy || !can("wiki.write")} value={path} onChange={event => setPath(event.target.value)} /></label><label>Wiki 正文<textarea className="min-h-64 font-mono text-sm" aria-label="Wiki 正文" readOnly={!can("wiki.write")} disabled={busy} value={content} onChange={event => { setContent(event.target.value); markDirty(true) }} /></label><div className="flex gap-2"><button className="primary" disabled={busy || !can("wiki.write")} onClick={async () => {
       setBusy(true); setError("")
       try { const record = (await platform.api.saveWiki(project.id, path, content, revision)).data; if (alive.current) { setRevision(record.revision); setPath(record.data.path); markDirty(false); await resources() } }
       catch (error) { if (alive.current) setError(message(error)) }
       finally { if (alive.current) setBusy(false) }
-    }}>保存 Wiki</button><button onClick={() => void navigator.clipboard.writeText(content)}>复制草稿</button><span className="muted self-center">{revision === null ? "未创建" : `版本 ${revision}`}</span></div><article className="prose dark:prose-invert max-w-none border-t pt-4"><ReactMarkdown>{content}</ReactMarkdown></article></div></div>}
+    }}>保存 Wiki</button><button onClick={() => void navigator.clipboard.writeText(content)}>复制草稿</button><span className="muted self-center">{revision === null ? "未创建" : `版本 ${revision}`}</span></div><article className="prose dark:prose-invert min-w-0 max-w-none border-t pt-4"><ReactMarkdown components={{ table: ({ children }) => <div className="max-w-full overflow-x-auto"><table>{children}</table></div> }}>{content}</ReactMarkdown></article></div></div>}
     {tab === "documents" && can("documents.read") && <div className="space-y-4"><label>上传原始文档<input aria-label="上传原始文档" type="file" disabled={busy || !can("documents.write")} onChange={async event => {
       const file = event.target.files?.[0]; if (!file) return; setBusy(true); setError("")
       try { await platform.upload(project.id, file); if (alive.current) await resources() } catch (error) { if (alive.current) setError(message(error)) } finally { if (alive.current) setBusy(false) }
-    }} /></label><p className="muted">上传仅表示服务已接收原始文件；解析、入库和索引不会被标为已完成。最大 16 MiB。</p>{documents.map(record => <div key={record.key} className="rounded-lg border p-3"><b>{record.data.name}</b><p className="muted">已接收 · {record.data.size} 字节 · {record.data.receivedAt}</p></div>)}</div>}
+    }} /></label><p className="muted">上传仅表示服务已接收原始文件；解析、入库和索引不会被标为已完成。最大 16 MiB。</p>{documents.map(record => { const key = `raw/documents/${record.data.sourceId}`; return <div key={record.key} className="flex items-start justify-between gap-3 rounded-lg border p-3"><div><b>{record.data.name}</b><p className="muted">已接收 · {record.data.size} 字节 · {formatSourceTimestamp(record.data.receivedAt, "未知")}</p><p className="muted">来源入库：{formatSourceTimestamp(record.data.sourceIngestedAt, "未知")}</p><p className="muted">当前修订入库：{formatSourceTimestamp((record.data as ReceivedDocument & { revisionIngestedAt?: string | null }).revisionIngestedAt, "未知")}</p></div>{can("domains.manage") && snapshot && <ResourceDomainAssignment label={record.data.name} domains={snapshot.data.domains} selectedIds={domainDrafts[key] ?? snapshot.data.resourceDomains[key] ?? []} disabled={busy} onChange={ids => void saveResourceDomains(key, ids)} />}</div>})}</div>}
+    {tab === "documents" && can("documents.read") && <VaultConnectorPanel projectId={project.id} projectName={project.name} documents={documents.map(record => record.data)} enabled />}
     {tab === "memories" && can("memory.read") && snapshot && <div className="min-h-[600px]"><MemoryLibrary readOnly={!can("memory.write")} key={snapshot.revision} memories={snapshot.data.memories} domains={snapshot.data.domains} loading={false} saving={busy} error={error || null} selected={selectedMemory} onSelect={setSelectedMemory} onRetry={() => void reload()} onSave={record => mutate(() => workspace.saveMemory(record))} onRemove={id => mutate(() => workspace.removeMemory(id))} /></div>}
     {tab === "domains" && can("project.read") && snapshot && <DomainTagEditor readOnly={!can("domains.manage")} domains={snapshot.data.domains} loading={false} saving={busy} error={error || null} onRetry={() => void reload()} onAdd={tag => mutate(() => workspace.addDomain(tag))} onRemove={id => mutate(() => workspace.removeDomain(id))} onToggle={(path, id) => mutate(() => workspace.toggleDomain(path, id))} />}
     <footer className="muted border-t pt-3">Web 使用服务端资源；本机 Shell、文件监听和 Obsidian Vault 需本机连接器。</footer>

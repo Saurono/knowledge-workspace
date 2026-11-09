@@ -29,6 +29,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { importSourceUrls, parseImportUrls, type UrlImportResult } from "@/lib/url-source-import"
 import { listIngestedSourceIdentities } from "@/lib/ingest-cache"
 import { getQueue, subscribeIngestQueue, type IngestTask } from "@/lib/ingest-queue"
+import { DomainFilter } from "@/components/workspace/domain-filter"
+import { ResourceDomainAssignment } from "@/components/workspace/resource-domain-assignment"
+import { filterMatches, effectiveDomainIds, type DomainFilter as DomainFilterValue } from "@/modules/domains/domain"
+import { useWorkspaceStore } from "@/stores/workspace-store"
+import { resolveLocalDomainResources } from "@/app/workspace"
+import { formatSourceTimestamp } from "@/components/workspace/source-time"
 
 const SOURCE_TREE_INITIAL_ROWS = 160
 const SOURCE_TREE_LOAD_BATCH = 160
@@ -45,7 +51,18 @@ export function SourcesView() {
   const llmConfig = useWikiStore((s) => s.llmConfig)
   const sourceWatchConfig = useWikiStore((s) => s.sourceWatchConfig)
   const dataVersion = useWikiStore((s) => s.dataVersion)
+  const domains = useWorkspaceStore((s) => s.data.domains)
+  const resourceDomains = useWorkspaceStore((s) => s.data.resourceDomains)
+  const workspaceLoading = useWorkspaceStore((s) => s.loading)
+  const workspaceSaving = useWorkspaceStore((s) => s.saving)
+  const performWorkspace = useWorkspaceStore((s) => s.perform)
   const [sources, setSources] = useState<FileNode[]>([])
+  const [sourceOwner, setSourceOwner] = useState<{ id: string; path: string } | null>(null)
+  const [domainFilter, setDomainFilter] = useState<DomainFilterValue>({ domainIds: [], match: "any", unclassified: false })
+  const [domainResources, setDomainResources] = useState<Record<string, { canonicalKey: string; legacyKeys: string[]; ids: string[]; receivedAt: string | null; sourceIngestedAt: string | null; revisionIngestedAt: string | null }>>({})
+  const [domainResourcesLoading, setDomainResourcesLoading] = useState(false)
+  const [domainResourcesError, setDomainResourcesError] = useState(false)
+  const [domainNotice, setDomainNotice] = useState("")
   const [importing, setImporting] = useState(false)
   const [ingestingPath, setIngestingPath] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -71,6 +88,7 @@ export function SourcesView() {
    *      anchored here is the right scope.
    */
   const [pendingDeletePath, setPendingDeletePath] = useState<string | null>(null)
+  const sourceGeneration = useRef(0)
 
   // Auto-disarm: 5 seconds without a second click resets the
   // pending state. Prevents a stale armed button from firing if
@@ -83,15 +101,23 @@ export function SourcesView() {
   }, [pendingDeletePath])
 
   const loadSources = useCallback(async () => {
-    if (!project) return
+    const generation = ++sourceGeneration.current
+    if (!project) { setSources([]); setSourceOwner(null); return }
+    const target = { id: project.id, path: project.path }
     const pp = normalizePath(project.path)
     try {
       const tree = await listDirectory(`${pp}/raw/sources`, true)
-      setSources(filterRawSourceTree(tree))
-      setRefreshError(null)
+      const current = useWikiStore.getState().project
+      if (generation === sourceGeneration.current && current?.id === target.id && current.path === target.path) {
+        setSources(filterRawSourceTree(tree))
+        setSourceOwner(target)
+        setRefreshError(null)
+      }
     } catch (err) {
-      setRefreshError(String(err))
-      setSources([])
+      const current = useWikiStore.getState().project
+      if (generation === sourceGeneration.current && current?.id === target.id && current.path === target.path) {
+        setRefreshError(String(err)); setSources([]); setSourceOwner(target)
+      }
     }
   }, [project])
 
@@ -102,6 +128,51 @@ export function SourcesView() {
   useEffect(() => {
     setSourceQuery("")
   }, [project?.id])
+
+  useEffect(() => {
+    setDomainFilter({ domainIds: [], match: "any", unclassified: false })
+    setDomainNotice("")
+  }, [project?.id, project?.path])
+  const activeDomainFilter = useMemo(() => {
+    const known = new Set(domains.map((domain) => domain.id))
+    return { ...domainFilter, domainIds: domainFilter.domainIds.filter((id) => known.has(id)) }
+  }, [domains, domainFilter])
+  useEffect(() => {
+    if (activeDomainFilter.domainIds.length !== domainFilter.domainIds.length) {
+      setDomainFilter(activeDomainFilter)
+      setDomainNotice("已删除领域已从筛选中移除。")
+    }
+  }, [activeDomainFilter, domainFilter.domainIds.length])
+
+  useEffect(() => {
+    let cancelled = false
+    const visibleSources = sourceOwner && sourceOwner.id === project?.id && sourceOwner.path === project?.path ? sources : []
+    const leaves = flattenSourceLeaves(visibleSources)
+    setDomainResources({})
+    setDomainResourcesError(false)
+    if (!project || !leaves.length) { setDomainResourcesLoading(false); return }
+    setDomainResourcesLoading(true)
+    void resolveLocalDomainResources(project.path, leaves.map((node) => ({ kind: "document" as const, path: node.path }))).then((resolved) => {
+      if (!cancelled) {
+        const mapped: typeof domainResources = {}
+        for (let index = 0; index < leaves.length; index++) {
+          const item = resolved[index]
+          if (!item) continue
+          mapped[normalizePath(leaves[index].path)] = {
+            canonicalKey: item.canonicalKey,
+            legacyKeys: item.legacyKeys,
+            ids: effectiveDomainIds({ domains, resourceDomains }, item.canonicalKey, item.legacyKeys),
+            receivedAt: item.receivedAt,
+            sourceIngestedAt: item.sourceIngestedAt,
+            revisionIngestedAt: item.revisionIngestedAt,
+          }
+        }
+        setDomainResources(mapped)
+        setDomainResourcesLoading(false)
+      }
+    }).catch((error) => { if (!cancelled) { setDomainNotice(`无法读取领域归类：${String(error)}`); setDomainResourcesError(true); setDomainResourcesLoading(false) } })
+    return () => { cancelled = true }
+  }, [sources, sourceOwner, project?.id, project?.path, domains, resourceDomains])
 
   useEffect(() => {
     if (!project) {
@@ -139,12 +210,29 @@ export function SourcesView() {
     }
     return statuses
   }, [ingestedIdentities, project, queueSnapshot])
+  const visibleSources = sourceOwner && sourceOwner.id === project?.id && sourceOwner.path === project?.path ? sources : []
   const filteredSources = useMemo(
-    () => filterSourceTreeByQuery(sources, sourceQuery),
-    [sourceQuery, sources],
+    () => activeDomainFilter.domainIds.length || activeDomainFilter.unclassified
+      ? domainResourcesLoading || domainResourcesError ? [] : filterSourceTreeByDomain(filterSourceTreeByQuery(visibleSources, sourceQuery), domainResources, { domains, resourceDomains }, activeDomainFilter)
+      : filterSourceTreeByQuery(visibleSources, sourceQuery),
+    [activeDomainFilter, domainResources, domainResourcesError, domainResourcesLoading, domains, resourceDomains, sourceQuery, visibleSources],
   )
-  const totalSourceCount = useMemo(() => countFiles(sources), [sources])
+  const totalSourceCount = useMemo(() => countFiles(visibleSources), [visibleSources])
   const filteredSourceCount = useMemo(() => countFiles(filteredSources), [filteredSources])
+
+  async function saveSourceDomains(node: FileNode, ids: string[]) {
+    if (!project) return
+    const ok = await performWorkspace(project.path, {
+      type: "domain.set",
+      resource: { kind: "document", path: node.path },
+      domainIds: ids,
+    })
+    if (!ok) {
+      setDomainNotice(`无法保存“${node.name}”的领域归类：${useWorkspaceStore.getState().error ?? "请重试。"}`)
+      return
+    }
+    setDomainNotice("")
+  }
 
   async function handleRefreshSources() {
     if (!project || refreshing) return
@@ -411,6 +499,11 @@ export function SourcesView() {
         </div>
       </div>
 
+      <div className="border-b px-4 py-2">
+        <DomainFilter domains={domains} value={activeDomainFilter} onChange={setDomainFilter} disabled={workspaceLoading || !project} />
+        {domainNotice && <p role="status" className="text-xs text-muted-foreground">{domainNotice}</p>}
+      </div>
+
       <Dialog open={urlDialogOpen} onOpenChange={setUrlDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -537,7 +630,11 @@ export function SourcesView() {
             )}
           </div>
         )}
-        {sources.length === 0 ? (
+        {(activeDomainFilter.domainIds.length > 0 || activeDomainFilter.unclassified) && domainResourcesLoading ? (
+          <div role="status" className="p-4 text-center text-xs text-muted-foreground">正在读取来源领域归类…</div>
+        ) : (activeDomainFilter.domainIds.length > 0 || activeDomainFilter.unclassified) && domainResourcesError ? (
+          <div role="alert" className="p-4 text-center text-xs text-destructive">{domainNotice || "读取来源领域归类失败。"}</div>
+        ) : visibleSources.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 p-8 text-center text-sm text-muted-foreground">
             <p>{t("sources.noSources")}</p>
             <p>{t("sources.importHint")}</p>
@@ -569,6 +666,10 @@ export function SourcesView() {
               setPendingDeletePath={setPendingDeletePath}
               ingestingPath={ingestingPath}
               sourceStatuses={sourceStatuses}
+              domains={domains}
+              domainResources={domainResources}
+              domainSaving={workspaceSaving}
+              onChangeDomains={saveSourceDomains}
               forceExpanded={Boolean(sourceQuery.trim())}
             />
           </div>
@@ -673,6 +774,34 @@ export function filterSourceTreeByQuery(
   return nodes.map(visit).filter((node): node is FileNode => node !== null)
 }
 
+export function filterSourceTreeByDomain(
+  nodes: readonly FileNode[],
+  assignments: Readonly<Record<string, { canonicalKey: string; legacyKeys: string[] }>>,
+  state: { domains: { id: string; name: string }[]; resourceDomains: Record<string, string[]> },
+  filter: DomainFilterValue,
+): FileNode[] {
+  if (!filter.domainIds.length && !filter.unclassified) return [...nodes]
+  const visit = (node: FileNode): FileNode | null => {
+    if (node.is_dir) {
+      const children = (node.children ?? []).map(visit).filter((child): child is FileNode => child !== null)
+      return children.length ? { ...node, children } : null
+    }
+    const resolved = assignments[normalizePath(node.path)]
+    if (!resolved) return filter.unclassified ? node : null
+    return filterMatches(state, resolved.canonicalKey, filter, resolved.legacyKeys) ? node : null
+  }
+  return nodes.map(visit).filter((node): node is FileNode => node !== null)
+}
+
+function flattenSourceLeaves(nodes: readonly FileNode[]): FileNode[] {
+  const files: FileNode[] = []
+  for (const node of nodes) {
+    if (node.is_dir) files.push(...flattenSourceLeaves(node.children ?? []))
+    else files.push(node)
+  }
+  return files
+}
+
 function sortSourceNodes(nodes: readonly FileNode[]): FileNode[] {
   return sortFileNodes(nodes)
 }
@@ -703,6 +832,10 @@ function SourceTree({
   setPendingDeletePath,
   ingestingPath,
   sourceStatuses,
+  domains,
+  domainResources,
+  domainSaving,
+  onChangeDomains,
   forceExpanded,
 }: {
   nodes: FileNode[]
@@ -719,6 +852,10 @@ function SourceTree({
   setPendingDeletePath: (path: string | null) => void
   ingestingPath: string | null
   sourceStatuses: ReadonlyMap<string, SourceIngestStatus>
+  domains: { id: string; name: string }[]
+  domainResources: Record<string, { canonicalKey: string; legacyKeys: string[]; ids: string[]; receivedAt: string | null; sourceIngestedAt: string | null; revisionIngestedAt: string | null }>
+  domainSaving: boolean
+  onChangeDomains: (node: FileNode, ids: string[]) => void
   forceExpanded: boolean
 }) {
   const { t } = useTranslation()
@@ -827,24 +964,25 @@ function SourceTree({
             className="flex w-full items-center gap-1 rounded-md px-1 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
             style={{ paddingLeft: `${depth * 16 + 4}px` }}
           >
-            <button
-              onClick={() => onOpen(node)}
-              className="flex flex-1 items-center gap-2 truncate px-2 py-1 text-left"
-            >
-              <FileText className="h-4 w-4 shrink-0" />
-              <span className="truncate">{node.name}</span>
-              <span
-                className={
-                  ingestStatus === "failed"
-                    ? "shrink-0 text-[10px] text-destructive"
-                    : ingestStatus === "processing"
-                      ? "shrink-0 text-[10px] text-primary"
-                      : "shrink-0 text-[10px] text-muted-foreground"
-                }
-              >
-                {t(`sources.ingestStatus.${ingestStatus}`)}
-              </span>
-            </button>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <button onClick={() => onOpen(node)} className="flex items-center gap-2 truncate px-2 py-1 text-left">
+                <FileText className="h-4 w-4 shrink-0" />
+                <span className="truncate">{node.name}</span>
+                <span className={ingestStatus === "failed" ? "shrink-0 text-[10px] text-destructive" : ingestStatus === "processing" ? "shrink-0 text-[10px] text-primary" : "shrink-0 text-[10px] text-muted-foreground"}>
+                  {t(`sources.ingestStatus.${ingestStatus}`)}
+                </span>
+              </button>
+              <div className="px-2 text-[10px] leading-4 text-muted-foreground">
+                {t("workspace.sourceReceivedAt")}: {formatSourceTimestamp(domainResources[normalizePath(node.path)]?.receivedAt, t("workspace.unknownTime"))} · {t("workspace.sourceIngestedAt")}: {formatSourceTimestamp(domainResources[normalizePath(node.path)]?.sourceIngestedAt, t("workspace.unknownTime"))} · {t("workspace.sourceRevisionIngestedAt")}: {formatSourceTimestamp(domainResources[normalizePath(node.path)]?.revisionIngestedAt, t("workspace.unknownTime"))}
+              </div>
+            </div>
+            <ResourceDomainAssignment
+              label={node.name}
+              domains={domains}
+              selectedIds={domainResources[normalizePath(node.path)]?.ids ?? []}
+              disabled={domainSaving}
+              onChange={(ids) => onChangeDomains(node, ids)}
+            />
             <Button
               variant="ghost"
               size="icon"

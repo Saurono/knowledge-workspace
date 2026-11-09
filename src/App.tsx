@@ -143,6 +143,27 @@ function App() {
     startClipWatcher()
   }, [])
 
+  // Deliver externally configured phase receipts even if the Obsidian
+  // connection panel is never opened. The sync service only reads project
+  // receipt state and never updates React stores, so timer ticks cannot create
+  // a render/sync loop.
+  useEffect(() => {
+    if (!project) return
+    let cancelled = false
+    let dispose: (() => void) | undefined
+    const projectId = project.id
+    const projectPath = project.path
+    void import("@/app/obsidian/auto-sync").then(({ startPhaseReceiptAutoSync }) => {
+      const current = useWikiStore.getState().project
+      if (cancelled || current?.id !== projectId || current.path !== projectPath) return
+      dispose = startPhaseReceiptAutoSync(projectPath)
+    }).catch(error => console.warn("[phase-receipt-sync] failed to start:", error))
+    return () => {
+      cancelled = true
+      dispose?.()
+    }
+  }, [project?.id, project?.path])
+
   // Register global keyboard shortcuts
   // Cmd+, on macOS or Ctrl+, on Windows/Linux opens settings
   useGlobalShortcut({

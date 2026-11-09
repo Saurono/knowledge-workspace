@@ -4,6 +4,8 @@ import type { WikiProject } from "@/types/wiki"
 import { getHttpFetch } from "@/lib/tauri-fetch"
 import { normalizeSourceWatchConfig } from "@/lib/source-watch-config"
 import { enqueueSourceIngest, getUniqueDestPath } from "@/lib/source-lifecycle"
+import { withProjectLock } from "@/lib/project-mutex"
+import { reserveImportedSource, confirmImportedSource, documents } from "@/lib/ingest-receipts"
 import { normalizePath } from "@/lib/path-utils"
 
 export const MAX_BATCH_URLS = 50
@@ -160,7 +162,8 @@ export async function importSourceUrls(
 ): Promise<UrlImportResult[]> {
   const fetch = await getHttpFetch()
   const maxBytes = normalizeSourceWatchConfig(sourceWatchConfig).maxFileSizeMb * 1024 * 1024
-  const sourceRoot = `${normalizePath(project.path)}/raw/sources`
+  const projectPath = normalizePath(project.path)
+  const sourceRoot = `${projectPath}/raw/sources`
   const results: UrlImportResult[] = []
   const importedPaths: string[] = []
 
@@ -187,8 +190,25 @@ export async function importSourceUrls(
       }
       const body = new TextDecoder().decode(bytes)
       const fileName = urlSourceFileName(url, contentType, body)
-      const path = await getUniqueDestPath(sourceRoot, fileName)
-      await writeFile(path, attachSourceUrl(url, contentType, body))
+      const path = await withProjectLock(`source-import\0${projectPath}`, async () => {
+        const existing = await documents.pathForOriginalSource(projectPath, url)
+        const catalog = await documents.list(projectPath)
+        const target = existing ?? await getUniqueDestPath(sourceRoot, fileName, Object.keys(catalog))
+        const targetRecord = Object.entries(catalog).find(([candidate]) => normalizePath(candidate).toLowerCase() === normalizePath(target).toLowerCase())?.[1]
+        if (targetRecord && targetRecord.originalPath?.replace(/\\/g, "/") !== url.replace(/\\/g, "/")) {
+          throw new Error("Import target is reserved by a different source origin")
+        }
+        await reserveImportedSource(projectPath, target, url)
+        const source = (await documents.list(projectPath))[target]
+        if (!source || !/^[A-Za-z0-9_-]{1,128}$/.test(source.id)) {
+          throw new Error("Source identity could not be established before downloading")
+        }
+        await withProjectLock(`ingest-source\0${projectPath}\0${source.id}`, async () => {
+          await writeFile(target, attachSourceUrl(url, contentType, body))
+          await confirmImportedSource(projectPath, target)
+        })
+        return target
+      })
       importedPaths.push(path)
       results.push({ url, path })
     } catch (error) {

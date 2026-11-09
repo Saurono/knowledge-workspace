@@ -1,5 +1,7 @@
 export interface SourceProvenance {
   id: string
+  /** Provenance category. Missing legacy values remain unknown; they are not inferred in bulk. */
+  sourceKind?: "generated-wiki" | "raw" | "unknown"
   originalPath: string | null
   receivedAt: string | null
   ingestedAt: string | null
@@ -40,6 +42,7 @@ export function registerSource(
     ...catalog,
     [key]: {
       id: context.createId(),
+      sourceKind: "raw",
       originalPath: normalizeSourceKey(originalPath),
       receivedAt: context.now,
       ingestedAt: null,
@@ -62,7 +65,7 @@ export function reserveSource(
       return { ...catalog, [key]: { ...existing, originalPath: original } }
     return catalog
   }
-  return { ...catalog, [key]: { id: context.createId(), originalPath: normalizeSourceKey(originalPath), receivedAt: null, ingestedAt: null } }
+  return { ...catalog, [key]: { id: context.createId(), sourceKind: "raw", originalPath: normalizeSourceKey(originalPath), receivedAt: null, ingestedAt: null } }
 }
 
 /** Confirm a successful copy once, preserving the first received timestamp. */

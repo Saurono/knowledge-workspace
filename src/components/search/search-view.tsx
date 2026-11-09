@@ -246,7 +246,7 @@ export function SearchView({ localOnly = false }: { localOnly?: boolean }) {
       <div className="shrink-0 border-b px-4 py-3">
         <DomainFilterControl
           domains={domains}
-          value={domainFilter}
+          value={activeDomainFilter}
           onChange={setDomainFilter}
         />
         {removedDomainNotice && (

@@ -5,6 +5,7 @@ import {
   createDirectory,
   deleteFile,
   fileExists,
+  hashFileSha256,
   getFileModifiedTime,
   getFileSize,
   readFile,
@@ -12,7 +13,11 @@ import {
   writeFile,
   listDirectory,
 } from "@/commands/fs"
-import { deliverObsidianReceipt, hashReceiptRevision, recordSuccessfulIngest, registerImportedSource, documents } from "@/lib/ingest-receipts"
+import { deliverObsidianReceipt, hashReceiptRevision, recordSuccessfulIngest, registerImportedSource, documents, loadIngestRecords } from "@/lib/ingest-receipts"
+import { phaseReceipts } from "@/app/obsidian/phase-receipts"
+import { indexCompiledSource, readCompiledSourceIndex, retryCompiledSourceIndex } from "@/app/retrieval/source-index"
+import { beginStage, createReceivedCheckpoint, finishStage, invalidateStageAndDescendants, reconcileCheckpointPolicy, recoverInterrupted, retryStage, type IngestionCheckpointV1, type IngestionStage } from "@/modules/ingestion/domain"
+import { projectPhaseReceipt } from "@/modules/obsidian/application"
 import { streamChat } from "@/lib/llm-client"
 import type { LlmConfig, ReasoningConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -660,6 +665,44 @@ export async function autoIngest(
       let capturedExisting = false
       let revision: string | null = null
       let cacheHit = false
+      let rawSourceRevision: string | null = null
+      let phaseCheckpoint: IngestionCheckpointV1 | null = null
+      let phaseSourceId: string | null = null
+      let phaseSourceKind: "generated-wiki" | "raw" | "unknown" = "unknown"
+      let phaseRevisionBound: string | null = null
+      let phaseTimes = { receivedAt: null as string | null, sourceIngestedAt: null as string | null, revisionIngestedAt: null as string | null }
+      let phaseOutputVersions: Array<{ path: string; version: string }> = []
+      let phaseIndexRefs: string[] = []
+      const phaseRunId = options?.taskId
+      const phaseAttemptIds: Partial<Record<IngestionStage, string>> = {}
+      const phaseNow = () => {
+        const now = new Date().toISOString()
+        return phaseCheckpoint && Date.parse(now) < Date.parse(phaseCheckpoint.updatedAt) ? phaseCheckpoint.updatedAt : now
+      }
+      const persistPhase = async (phaseRevision: string | null = revision) => {
+        if (!phaseCheckpoint || !phaseSourceId || !phaseRunId) return
+        const receipt = projectPhaseReceipt({ id: "", sourceId: phaseSourceId, sourceKind: phaseSourceKind, sourceRevision: phaseRevision,
+          revisionKind: phaseRevision ? "parsed-text-sha256" : "unknown", runId: phaseRunId, checkpoint: phaseCheckpoint, times: phaseTimes,
+          outputVersions: phaseOutputVersions, indexCommitRefs: phaseIndexRefs })
+        await phaseReceipts.save(pp, receipt)
+      }
+      const beginPhase = async (stage: IngestionStage) => {
+        if (!phaseCheckpoint) return
+        if (["failed", "blocked", "cancelled"].includes(phaseCheckpoint.stages[stage].status)) phaseCheckpoint = retryStage(phaseCheckpoint, stage, phaseNow())
+        const attemptId = `${phaseRunId}-${stage}-${phaseCheckpoint.stages[stage].attempt + 1}`
+        phaseAttemptIds[stage] = attemptId
+        phaseCheckpoint = beginStage(phaseCheckpoint, stage, { attemptId, now: phaseNow() })
+        await persistPhase()
+      }
+      const finishPhase = async (stage: IngestionStage, outcome: "succeeded" | "failed" | "cancelled", evidence?: string[], error?: Error) => {
+        if (!phaseCheckpoint) return
+        const attemptId = phaseAttemptIds[stage]
+        if (!attemptId) return
+        if (outcome === "succeeded" && (!evidence?.length || evidence.some((entry) => !entry.trim()))) throw new Error(`Verified evidence is required to finish ${stage}`)
+        phaseCheckpoint = finishStage(phaseCheckpoint, stage, { attempt: phaseCheckpoint.stages[stage].attempt, attemptId, now: phaseNow(), outcome,
+          ...(outcome === "succeeded" ? { evidence } : { error: { code: outcome === "cancelled" ? "cancelled" : "stage_failed", message: error?.message ?? `${stage} failed` } }) })
+        await persistPhase()
+      }
       const createdPages: Record<string, string> = {}
       if (options?.taskId) {
         throwIfIngestAborted(signal)
@@ -669,10 +712,63 @@ export async function autoIngest(
         walk(await listDirectory(`${pp}/wiki`))
         capturedExisting = true
         throwIfIngestAborted(signal)
+        const source = (await documents.list(pp))[sp]
+        phaseSourceId = source?.id ?? null
+        phaseSourceKind = source?.sourceKind ?? "unknown"
+        phaseTimes.receivedAt = phaseSourceKind === "generated-wiki" ? null : source?.receivedAt ?? null
+        if (phaseSourceId && phaseRunId) {
+          const existingPhases = (await phaseReceipts.read(pp)).receipts
+          const previous = source.contentRevision ? existingPhases[`${phaseSourceId}-parsed-text-sha256-${source.contentRevision}`] : undefined
+          if (previous) {
+            const recoveredAt = new Date().toISOString()
+            phaseCheckpoint = recoverInterrupted(previous.checkpoint as IngestionCheckpointV1, recoveredAt)
+            phaseCheckpoint = reconcileCheckpointPolicy(phaseCheckpoint, {
+              index: useWikiStore.getState().embeddingConfig.enabled ? "required" : "disabled",
+              feedback: (await phaseReceipts.read(pp)).vaultPath ? "required" : "disabled",
+              now: recoveredAt,
+            })
+            phaseRevisionBound = previous.sourceRevision
+            phaseSourceKind = previous.sourceKind ?? phaseSourceKind
+            phaseTimes = previous.times
+            phaseOutputVersions = structuredClone(previous.outputVersions)
+            phaseIndexRefs = [...previous.indexCommitRefs]
+            await persistPhase(previous.sourceRevision)
+          } else {
+            const observedAt = phaseTimes.receivedAt ?? new Date().toISOString()
+            rawSourceRevision = await hashFileSha256(sp)
+            phaseCheckpoint = createReceivedCheckpoint({ projectId: options.projectId!, documentId: phaseSourceId,
+              receivedAt: observedAt, artifactRef: `${phaseTimes.receivedAt ? "raw-source" : phaseSourceKind === "generated-wiki" ? "generated-wiki-observed" : "source-observed"}:${phaseSourceId}:sha256:${rawSourceRevision}`,
+              indexPolicy: useWikiStore.getState().embeddingConfig.enabled ? "required" : "disabled",
+              feedbackPolicy: (await phaseReceipts.read(pp)).vaultPath ? "required" : "disabled" })
+          }
+          if (["pending", "failed", "blocked", "cancelled"].includes(phaseCheckpoint.stages.parse.status)) await beginPhase("parse")
+          if (!rawSourceRevision) {
+            try { rawSourceRevision = await hashFileSha256(sp) }
+            catch (error) {
+              const active = phaseCheckpoint.stages.parse.status === "running" ? "parse" : undefined
+              if (active) await finishPhase(active, "failed", undefined, error instanceof Error ? error : new Error(String(error)))
+              throw error
+            }
+          }
+        }
       }
       const onPreparedSource = options?.taskId ? async (sourceContent: string, cachedFiles: string[] | null) => {
         revision = await hashReceiptRevision(sourceContent)
         cacheHit = cachedFiles !== null
+        if (phaseCheckpoint && phaseRevisionBound && phaseRevisionBound !== revision) {
+          phaseCheckpoint = createReceivedCheckpoint({ projectId: options.projectId!, documentId: phaseSourceId!, receivedAt: phaseTimes.receivedAt ?? new Date().toISOString(),
+            artifactRef: `${phaseSourceKind === "raw" ? "raw-source" : phaseSourceKind === "generated-wiki" ? "generated-wiki-observed" : "source-observed"}:${phaseSourceId}:sha256:${rawSourceRevision}`,
+            indexPolicy: useWikiStore.getState().embeddingConfig.enabled ? "required" : "disabled",
+            feedbackPolicy: (await phaseReceipts.read(pp)).vaultPath ? "required" : "disabled" })
+          phaseAttemptIds.parse = undefined
+          phaseAttemptIds.compile = undefined
+        }
+        phaseRevisionBound = revision
+        if (phaseCheckpoint && phaseCheckpoint.stages.parse.status !== "succeeded") {
+          if (phaseCheckpoint.stages.parse.status === "pending" || ["failed", "blocked", "cancelled"].includes(phaseCheckpoint.stages.parse.status)) await beginPhase("parse")
+          await finishPhase("parse", "succeeded", [`parsed-sha256:${revision}`])
+        }
+        if (phaseCheckpoint && phaseCheckpoint.stages.compile.status !== "succeeded") await beginPhase("compile")
         await documents.recordContentRevision(pp, sp, revision)
         const source = (await documents.list(pp))[sp]
         if (!source || !/^[A-Za-z0-9_-]{1,128}$/.test(source.id)) throw new Error("Source identity could not be established before compilation")
@@ -680,6 +776,14 @@ export async function autoIngest(
         if (!options.bindIdempotency) throw new Error("Queued ingestion cannot compile before its idempotency identity is persisted")
         await options.bindIdempotency({ sourceId: source.id, sourceRevision: revision, idempotencyKey })
         const prior = (await documents.revisions(pp, sp)).find((item) => item.revision === revision)
+        const priorIndex = phaseSourceId ? await readCompiledSourceIndex(pp, phaseSourceId) : null
+        if (prior && prior.outputPaths.length > 0 && priorIndex?.record.sourceRevision === revision && priorIndex.record.status === "failed") {
+          const allPresent = await Promise.all(prior.outputPaths.map(async (path) => {
+            const fullPath = path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) ? path : `${pp}/${path}`
+            return fileExists(fullPath).catch(() => false)
+          }))
+          if (allPresent.every(Boolean)) return prior.outputPaths
+        }
         // Cache hits may still complete images. A cache miss with a verified
         // successful receipt can skip model work if every output still exists.
         if (cachedFiles === null && prior && prior.outputPaths.length > 0) {
@@ -691,21 +795,99 @@ export async function autoIngest(
         }
         return null
       } : undefined
-      const writtenPaths = await autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext,
-        (path) => {
-          onFileWritten?.(path)
-          if (capturedExisting && !existingPaths.has(normalizePath(`${pp}/${path}`))) createdPages[normalizePath(path)] ??= new Date().toISOString()
-        }, options ? { ...options, onPreparedSource } : undefined)
+      let writtenPaths: string[]
+      try {
+        writtenPaths = await autoIngestImpl(projectPath, sourcePath, llmConfig, signal, folderContext,
+          (path) => {
+            onFileWritten?.(path)
+            if (capturedExisting && !existingPaths.has(normalizePath(`${pp}/${path}`))) createdPages[normalizePath(path)] ??= new Date().toISOString()
+          }, options ? { ...options, onPreparedSource } : undefined)
+      } catch (error) {
+        const active = (Object.keys(phaseAttemptIds) as IngestionStage[]).reverse().find((stage) => phaseCheckpoint?.stages[stage].status === "running")
+        if (active) await finishPhase(active, signal?.aborted ? "cancelled" : "failed", undefined, error instanceof Error ? error : new Error(String(error))).catch(() => undefined)
+        throw error
+      }
+      if (options?.taskId && phaseCheckpoint && (signal?.aborted || writtenPaths.length === 0)) {
+        const active = (Object.keys(phaseAttemptIds) as IngestionStage[]).reverse().find((stage) => phaseCheckpoint?.stages[stage].status === "running")
+        if (active) await finishPhase(active, signal?.aborted ? "cancelled" : "failed", undefined,
+          new Error(signal?.aborted ? "Ingestion cancelled before compiled outputs were committed" : "No compiled Wiki outputs were produced"))
+        throw new Error(signal?.aborted ? "Ingestion cancelled" : "Ingest produced no compiled Wiki outputs")
+      }
       if (options?.taskId && writtenPaths.length > 0 && !signal?.aborted) {
         try {
           if (!revision) throw new Error("Source revision unavailable; ingest receipt was not recorded")
           const afterRevision = await hashReceiptRevision(await readFile(sp, { extractImages: false }))
           if (afterRevision !== revision) throw new Error("Source changed during compilation; the older revision was not marked successful")
+          if (rawSourceRevision && await hashFileSha256(sp) !== rawSourceRevision) throw new Error("Raw source changed during compilation; the older revision was not indexed")
           const idempotencyKey = ingestionIdempotencyKey(options.projectId!, sourceRunIdentity, revision)
           const id = await recordSuccessfulIngest({ projectPath: pp, taskId: options.taskId, sourcePath: sp, revision, idempotencyKey, idempotencyProjectId: options.projectId, writtenPaths, createdPages, cacheHit })
+          const records = await loadIngestRecords(pp)
+          const sourceRecord = Object.values(records.sources).find((item) => item.id === sourceRunIdentity)
+          phaseSourceKind = sourceRecord?.sourceKind ?? phaseSourceKind
+          const compiledReceipt = records.receipts[id]
+          phaseTimes = { receivedAt: phaseSourceKind === "generated-wiki" ? null : sourceRecord?.receivedAt ?? null, sourceIngestedAt: sourceRecord?.ingestedAt ?? null, revisionIngestedAt: compiledReceipt?.revisionIngestedAt ?? null }
+          phaseOutputVersions = await Promise.all(writtenPaths.map(async (path) => ({ path: normalizePath(path), version: `sha256:${await hashFileSha256(normalizePath(path).startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) ? path : `${pp}/${path}`)}` })))
+          if (phaseCheckpoint && phaseCheckpoint.stages.compile.status === "running") {
+            await finishPhase("compile", "succeeded", [`receipt:${id}`, ...phaseOutputVersions.map(({ path, version }) => `output:${path}:${version}`)])
+          }
+          if (phaseCheckpoint && revision && phaseSourceId && rawSourceRevision && phaseCheckpoint.policy.index === "required") {
+            const previousIndex = await readCompiledSourceIndex(pp, phaseSourceId)
+            const sameRevisionIndexExists = previousIndex?.record.sourceRevision === revision
+            if (phaseCheckpoint.stages.index.status === "succeeded") {
+              phaseCheckpoint = invalidateStageAndDescendants(phaseCheckpoint, "index", phaseNow())
+              phaseIndexRefs = []
+              await persistPhase()
+            }
+            await beginPhase("index")
+            const attemptToken = `${phaseRunId}-index-${crypto.randomUUID()}`
+            const indexInput = { projectPath: pp, sourceId: phaseSourceId, config: useWikiStore.getState().embeddingConfig, attemptToken }
+            let indexed
+            if (sameRevisionIndexExists) {
+              try {
+                indexed = await retryCompiledSourceIndex(indexInput)
+              } catch (error) {
+                // A same-revision record may describe an older config or output manifest.
+                // Retry reuses its proofs only for an identical current snapshot; otherwise
+                // begin a fresh verified generation from the current compiled files.
+                const message = error instanceof Error ? error.message : String(error)
+                if (!/source revision or output manifest changed|snapshot changed/i.test(message)) throw error
+                indexed = await indexCompiledSource({ ...indexInput, sourceRevision: revision, rawSourceRevision })
+              }
+              if (indexed.status === "blocked" && indexed.record.error?.code === "snapshot_changed")
+                indexed = await indexCompiledSource({ ...indexInput, attemptToken: `${attemptToken}-new-generation`, sourceRevision: revision, rawSourceRevision })
+            } else {
+              indexed = await indexCompiledSource({ ...indexInput, sourceRevision: revision, rawSourceRevision })
+            }
+            if (indexed.status === "succeeded") {
+              phaseIndexRefs = indexed.record.pages.flatMap((page) => page.evidence ? [`index:${page.pageId}:${page.evidence.manifestRef}`] : [])
+              await finishPhase("index", "succeeded", phaseIndexRefs)
+            }
+            else {
+              const indexError = new Error(indexed.record.error?.message ?? `Index ${indexed.status}`)
+              await finishPhase("index", indexed.status === "cancelled" ? "cancelled" : "failed", undefined, indexError)
+              throw Object.assign(new Error(`Compilation succeeded but verified indexing ${indexed.status}; retry indexing without recompiling.`), { code: "index_incomplete", cause: indexError })
+            }
+          }
           await deliverObsidianReceipt(pp, id)
+          if (phaseCheckpoint && phaseCheckpoint.policy.feedback === "required" && ["succeeded", "skipped"].includes(phaseCheckpoint.stages.index.status)) {
+            if (phaseCheckpoint.stages.feedback.status === "succeeded") {
+              phaseCheckpoint = invalidateStageAndDescendants(phaseCheckpoint, "feedback", phaseNow())
+              await persistPhase()
+            }
+            await beginPhase("feedback")
+            const feedbackId = projectPhaseReceipt({ id: "", sourceId: phaseSourceId!, sourceKind: phaseSourceKind, sourceRevision: revision!, revisionKind: "parsed-text-sha256", runId: phaseRunId!, checkpoint: phaseCheckpoint, times: phaseTimes }).id
+            await phaseReceipts.deliver(pp, feedbackId)
+            const firstDelivery = (await phaseReceipts.read(pp)).receipts[feedbackId]
+            if (!firstDelivery || firstDelivery.delivery !== "delivered" || !firstDelivery.deliveredDigest) throw new Error("Vault receipt delivery has no verified read-back")
+            await finishPhase("feedback", "succeeded", [`vault-receipt-sha256:${firstDelivery.deliveredDigest}`])
+            await phaseReceipts.deliver(pp, feedbackId)
+            const finalDelivery = (await phaseReceipts.read(pp)).receipts[feedbackId]
+            if (!finalDelivery || finalDelivery.delivery !== "delivered" || !finalDelivery.deliveredDigest) throw new Error("Final Vault receipt snapshot is pending delivery")
+          }
           useWikiStore.getState().bumpDataVersion()
         } catch (error) {
+          const active = (Object.keys(phaseAttemptIds) as IngestionStage[]).reverse().find((stage) => phaseCheckpoint?.stages[stage].status === "running")
+          if (active) await finishPhase(active, signal?.aborted ? "cancelled" : "failed", undefined, error instanceof Error ? error : new Error(String(error))).catch(() => undefined)
           useActivityStore.getState().addItem({ type: "ingest", title: "Ingest receipt", status: "error", detail: String(error), filesWritten: writtenPaths })
           throw error
         }
@@ -961,7 +1143,7 @@ async function autoIngestImpl(
           // was added — the safety-net section was just rewritten
           // with captions, but the embeddings still reflect the old
           // empty-alt content.
-          await reembedSourceSummary(pp, sourceIdentity, sourceSummarySlug)
+          if (!options?.taskId) await reembedSourceSummary(pp, sourceIdentity, sourceSummarySlug)
         }
       } else {
         console.log(`[ingest:diag] cache-hit branch: skipping injection (no images returned from extraction)`)
@@ -1635,7 +1817,7 @@ async function autoIngestImpl(
 
   // ── Step 6: Generate embeddings (if enabled) ───────────────
   const embCfg = useWikiStore.getState().embeddingConfig
-  if (embCfg.enabled && embCfg.model && writtenPaths.length > 0) {
+  if (!options?.taskId && embCfg.enabled && embCfg.model && writtenPaths.length > 0) {
     try {
       const { embedPage, wikiPageIdFromPath } = await import("@/lib/embedding")
       for (const wpath of writtenPaths) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { beginStage, createReceivedCheckpoint, finishStage, recoverInterrupted, retryStage, summarizeIngestion, validateCheckpoint } from "./checkpoint"
+import { beginStage, createReceivedCheckpoint, finishStage, invalidateStageAndDescendants, reconcileCheckpointPolicy, recoverInterrupted, retryStage, summarizeIngestion, validateCheckpoint } from "./checkpoint"
 import type { IngestionCheckpointV1, IngestionStage } from "./checkpoint"
 
 const start = "2026-10-01T10:00:00.000Z"
@@ -64,14 +64,15 @@ describe("ingestion checkpoint protocol", () => {
     invalidTime.stages.compile.startedAt = "2026-10-01T10:00:02.000Z"
     expect(() => validateCheckpoint(invalidTime)).toThrow()
   })
-  it("rejects unsafe attempt counters, nonzero skipped counters, and retried pending stages behind failed upstreams", () => {
+  it("allows pending historical attempt counters behind a failed prerequisite but still blocks stage begin", () => {
     const oversized = initial(); oversized.stages.parse.attempt = Number.MAX_SAFE_INTEGER + 1
     expect(() => validateCheckpoint(oversized)).toThrow()
     const skipped = initial({ indexPolicy: "disabled" }); skipped.stages.index.attempt = 1
     expect(() => validateCheckpoint(skipped)).toThrow()
     const failedParse = completeStage(initial(), "parse", 1, "failed")
     failedParse.stages.compile.attempt = 1
-    expect(() => validateCheckpoint(failedParse)).toThrow()
+    expect(() => validateCheckpoint(failedParse)).not.toThrow()
+    expect(() => beginStage(failedParse, "compile", { attemptId: "compile-retry", now: "2026-10-01T10:00:05Z" })).toThrow()
   })
   it("does not mutate nested input and rejects damaged, skipped, and out of order data", () => {
     const cp = initial(), before = structuredClone(cp)
@@ -82,5 +83,29 @@ describe("ingestion checkpoint protocol", () => {
     expect(() => beginStage(cp, "compile", { attemptId: "c", now: "2026-10-01T10:01:00Z" })).toThrow()
     const malformed = { ...cp, stages: { ...cp.stages, index: { ...cp.stages.index, status: "failed" as const, attempt: 1, startedAt: start, finishedAt: start, error: { code: "x", message: "x" } } } } as IngestionCheckpointV1
     expect(() => retryStage(malformed, "index", "2026-10-01T10:01:00Z")).toThrow()
+  })
+  it("invalidates stale index and feedback proof while retaining attempts and disabled policies", () => {
+    let cp = initial({ feedbackPolicy: "required" })
+    cp = completeStage(cp, "parse", 1); cp = completeStage(cp, "compile", 2); cp = completeStage(cp, "index", 3); cp = completeStage(cp, "feedback", 4)
+    const invalidated = invalidateStageAndDescendants(cp, "index", "2026-10-01T10:00:10.000Z")
+    expect(invalidated.stages.index).toMatchObject({ status: "pending", attempt: 1, attemptId: null, evidence: [], error: null })
+    expect(invalidated.stages.feedback).toMatchObject({ status: "pending", attempt: 1, attemptId: null, startedAt: null, finishedAt: null, evidence: [], error: null })
+    expect(invalidated.stages.compile).toEqual(cp.stages.compile)
+    validateCheckpoint(invalidated)
+    const disabled = invalidateStageAndDescendants(initial({ indexPolicy: "disabled", feedbackPolicy: "disabled" }), "index", "2026-10-01T10:00:01.000Z")
+    expect(disabled.stages.index.status).toBe("skipped")
+    expect(disabled.stages.feedback.status).toBe("skipped")
+  })
+  it("upgrades restored disabled policies without replacing compile proof or first timestamps", () => {
+    let cp = initial({ indexPolicy: "disabled", feedbackPolicy: "disabled" })
+    cp = completeStage(cp, "parse", 1); cp = completeStage(cp, "compile", 2)
+    const upgraded = reconcileCheckpointPolicy(cp, { index: "required", feedback: "required", now: "2026-10-01T10:00:05.000Z" })
+    expect(upgraded.policy).toEqual({ index: "required", feedback: "required" })
+    expect(upgraded.stages.index.status).toBe("pending")
+    expect(upgraded.stages.feedback.status).toBe("pending")
+    expect(upgraded.stages.compile).toEqual(cp.stages.compile)
+    expect(upgraded.createdAt).toBe(cp.createdAt)
+    expect(() => beginStage(upgraded, "feedback", { attemptId: "feedback-too-early", now: "2026-10-01T10:00:06.000Z" })).toThrow()
+    expect(beginStage(upgraded, "index", { attemptId: "index-enabled", now: "2026-10-01T10:00:06.000Z" }).stages.index.status).toBe("running")
   })
 })

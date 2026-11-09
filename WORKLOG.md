@@ -440,3 +440,16 @@
 - Luna 提供实现与补丁，主控审查应用并独立验证。部分代理当前缺文件工具，未静默切换编码模型。更新旧测试的 sidecar mock，保留正文并发/CAS断言；回执失败按目标 revision 证据注入，避免依赖偶然写入次数。
 - 验证：完整回归 **203 文件 / 2386 项通过**；项目 tsc --build、18 模块边界与 **485 生产文件**审计通过；共享 Web/服务/CLI 构建通过。真实共享浏览器 **12 组、页面异常 0**，实际 CLI/MCP **8 组**通过。沿用合成资料/临时数据，不代表真实模型、Vault、原生 watcher 或安装包验收。
 - D04b 来源入口和 D04c 时间展示保持待办，D04 总项未完成。D05 契约已归档，未接实际索引提交/验证端口，因此无 ready/succeeded 实现交付。
+
+## L044 · 2026-11-09 · D03–D09 生产接线与最终验收
+
+- 授权与仓库：接续全部 D01–D09；沿用 knowledge-workspace 既有 checkout、origin Saurono/knowledge-workspace 与 codex/knowledge-workspace-v0.1，不新建 worktree、不合并 main。程序、测试、工作流由 gpt-6-luna 编写；主控审查、独立运行验证、文档和提交。外部 K 系列建议保持未启动。
+- D03c：来源树、Wiki 导航、检索与共享 Web 的领域多选、ANY/ALL、未分类及稳定来源分类；项目切换隔离旧异步结果、删除领域移除失效条件、CAS 冲突保留归类草稿。共享侧栏归类菜单与长表格已修复可操作布局。
+- D04b/c：URL 原始地址稳定身份、写入成功后确认接收；生成 Wiki 先保存原页，以 generated-wiki 身份经真队列编译，不复制到 raw；失败保留已保存页并提示。来源首次/当前修订/Wiki 创建时间独立投影，历史未知不回填。覆盖矩阵见 d04-entrypoint-matrix.md。
+- D05：生产 autoIngest 使用来源级验证索引，原始字节 SHA 与解析文本修订分开；逐页提交、读回、持久清单及向量证明齐全才成功；聚合 index/log/overview 不作为知识页。相同快照重验、配置或产物变化新 generation，失败独立重试不再调用编译 LLM。
+- D06/D07：独立 v2 JSON 含五阶段 checkpoint/attempt/错误、产物 SHA、索引清单及交付 digest，兼容 v1。全局 15 秒自动同步与仅反馈重试，写后读回；断连不重建旧 Vault，显式移动后重连；回执目录不自导入。未知修订记录归档为稳定修订指针，保留失败/取消和其他 run。
+- D08：显式本机 loopback 连接器、精确 Origin/Host、一次性短期配对、内存 Token、固定项目/Vault；每次重新授权共享服务，网页不能提供本机路径。写入有大小/超时/并发限制及撤销边界；HTTP 浏览器与本机 pull 路线分别验收。公网 HTTPS→loopback 未证明，提供本机 pull，不关闭浏览器安全策略。
+- 已推原生基础：f8c37ae 路径兼容、82b28d6 流式原始字节 SHA、441039b 持久来源索引、7bf81d2 原子安全 Vault 回执。已核对 7bf81d2 的 CI 42442104610 三平台全部成功，含 Rust build/test；不是安装包发布验收。
+- 本轮独立初审：类型、18 模块边界及 503 生产文件审计通过；桌面/Web/服务构建、CLI/MCP 8 组与共享浏览器 12 组通过，页面异常 0。最新完整回归暴露 supersededBy 在同修订新 run 后校验失败，交回 Luna 修复；同时收紧 connector 排队提交撤销竞态。修复后的最终结果与对应产物证据将在本条后补，不提前勾选 D。
+- 验收边界：使用临时合成文件、独立 Vault 和确定性模型/embedding 提供者；生产链实际调用原生 hash、LanceDB、验证、检索及 Vault 写入。真实商业模型、公共 HTTPS 浏览器兼容、正式安装器与完整共享编译执行器不由本项冒充通过；跨文件/跨介质不是事务，互斥也非跨进程严格恰好一次。
+- 修复后主控独立完整回归：219 文件、2463 项通过；另 1 文件/1 项原生 opt-in 因没有 CDP 明确跳过，不计入通过。类型、18 模块边界、503 生产文件审计通过；桌面/Web/服务构建通过。共享浏览器 12 组 pageErrors=[]、CLI/MCP 8 组、HTTP Vault 配对/同步/撤销/CLI pull smoke 通过。日志为 TEMP 下 kw-d-final-regression-fixed.log、kw-d-final-build.log、kw-d-final-web-build.log、kw-d-final-browser.log、kw-d-final-vault-browser.log。

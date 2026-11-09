@@ -62,6 +62,48 @@ export function retryStage(checkpoint: IngestionCheckpointV1, stage: IngestionSt
   const next = clone(checkpoint), attempt = next.stages[stage].attempt
   Object.assign(next.stages[stage], empty()); next.stages[stage].attempt = attempt; next.updatedAt = now; return next
 }
+/** Invalidates a successful stage and all downstream results while preserving attempt counters. */
+export function invalidateStageAndDescendants(checkpoint: IngestionCheckpointV1, stage: IngestionStage, now: string): IngestionCheckpointV1 {
+  validateCheckpoint(checkpoint); orderedTime(checkpoint, now)
+  const position = INGESTION_STAGES.indexOf(stage)
+  if (stage === "index" && checkpoint.policy.index === "disabled" || stage === "feedback" && checkpoint.policy.feedback === "disabled") return checkpoint
+  if (position < 0 || INGESTION_STAGES.slice(0, position).some(previous => !["succeeded", "skipped"].includes(checkpoint.stages[previous].status))) fail("Stage cannot be invalidated before its prerequisites succeed")
+  const next = clone(checkpoint)
+  for (const current of INGESTION_STAGES.slice(position)) {
+    const record = next.stages[current], attempt = record.attempt
+    if (current === "index" && next.policy.index === "disabled" || current === "feedback" && next.policy.feedback === "disabled") Object.assign(record, empty("skipped"), { attempt })
+    else Object.assign(record, empty(), { attempt })
+  }
+  next.updatedAt = now
+  validateCheckpoint(next)
+  return next
+}
+/** Upgrade restored checkpoints when an explicitly enabled downstream policy is now available. */
+export function reconcileCheckpointPolicy(checkpoint: IngestionCheckpointV1, input: { index: "required" | "disabled"; feedback: "required" | "disabled"; now: string }): IngestionCheckpointV1 {
+  validateCheckpoint(checkpoint); orderedTime(checkpoint, input.now)
+  const next = clone(checkpoint)
+  const enableIndex = checkpoint.policy.index === "disabled" && input.index === "required"
+  const enableFeedback = checkpoint.policy.feedback === "disabled" && input.feedback === "required"
+  if (!enableIndex && !enableFeedback) return checkpoint
+  if (enableIndex) {
+    next.policy.index = "required"
+    const attempt = next.stages.index.attempt
+    Object.assign(next.stages.index, empty(), { attempt })
+    // Index changes invalidate any previously delivered feedback proof.
+    if (next.policy.feedback === "required") {
+      const feedbackAttempt = next.stages.feedback.attempt
+      Object.assign(next.stages.feedback, empty(), { attempt: feedbackAttempt })
+    }
+  }
+  if (enableFeedback) {
+    next.policy.feedback = "required"
+    const attempt = next.stages.feedback.attempt
+    Object.assign(next.stages.feedback, empty(), { attempt })
+  }
+  next.updatedAt = input.now
+  validateCheckpoint(next)
+  return next
+}
 export function recoverInterrupted(checkpoint: IngestionCheckpointV1, now: string): IngestionCheckpointV1 {
   validateCheckpoint(checkpoint)
   const running = INGESTION_STAGES.filter(stage => checkpoint.stages[stage].status === "running")
@@ -88,7 +130,7 @@ export function validateCheckpoint(value: unknown): asserts value is IngestionCh
     else { if (r.attempt < 1 || !(stage === "receive" && r.status === "succeeded" && r.attemptId === null) && (typeof r.attemptId !== "string" || !r.attemptId.trim()) || !time(r.startedAt) || !time(r.finishedAt) || Date.parse(r.startedAt) < Date.parse(cp.createdAt) || Date.parse(r.finishedAt) < Date.parse(r.startedAt) || Date.parse(r.finishedAt) > Date.parse(cp.updatedAt)) fail(`Invalid finished ${stage} record`); if (r.status === "succeeded" ? !r.evidence.length || r.error !== null : !r.error || typeof r.error.code !== "string" || !r.error.code.trim() || typeof r.error.message !== "string" || !r.error.message.trim()) fail(`Invalid ${stage} result`) }
     if (r.startedAt && INGESTION_STAGES.slice(0, stageIndex).some(previous => cp.stages[previous].finishedAt && Date.parse(r.startedAt!) < Date.parse(cp.stages[previous].finishedAt!))) fail(`${stage} started before an upstream stage finished`)
   }
-  for (let i = 0; i < INGESTION_STAGES.length; i++) { const stage = INGESTION_STAGES[i], record = cp.stages[stage]; if ((record.status !== "pending" || record.attempt > 0) && record.status !== "skipped" && INGESTION_STAGES.slice(0, i).some(prev => !["succeeded", "skipped"].includes(cp.stages[prev].status))) fail(`${stage} violates stage dependencies`) }
+  for (let i = 0; i < INGESTION_STAGES.length; i++) { const stage = INGESTION_STAGES[i], record = cp.stages[stage]; if (record.status !== "pending" && record.status !== "skipped" && INGESTION_STAGES.slice(0, i).some(prev => !["succeeded", "skipped"].includes(cp.stages[prev].status))) fail(`${stage} violates stage dependencies`) }
 }
 export function summarizeIngestion(checkpoint: IngestionCheckpointV1): IngestionSummary {
   validateCheckpoint(checkpoint)

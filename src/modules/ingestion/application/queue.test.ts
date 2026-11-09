@@ -83,6 +83,13 @@ describe("injected ingest queue service", () => {
     expect(a.queue.getIngestWorkerLimit()).toBe(4)
     expect(b.queue.getIngestWorkerLimit()).toBe(1)
   })
+  it("accepts a stable source ID before its parsed revision and canonical key are known", async () => {
+    const f = fixture()
+    await f.queue.restoreQueue("p", "/p")
+    const id = await f.queue.enqueueIngest("p", "wiki/generated.md", "", { sourceId: "generated_source_1" })
+    expect(f.queue.getQueue()).toContainEqual(expect.objectContaining({ id, sourceId: "generated_source_1", sourceRevision: undefined, idempotencyKey: undefined }))
+    expect([...f.files.values()].some((snapshot) => snapshot.includes("generated_source_1"))).toBe(true)
+  })
 
   it("captures immutable snapshots and serializes active writes before newer changes", async () => {
     const { queue, ports } = fixture()

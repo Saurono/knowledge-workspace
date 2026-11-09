@@ -22,8 +22,6 @@ import type { FileNode } from "@/types/wiki"
 
 import { convertLatexToUnicode } from "@/lib/latex-to-unicode"
 import { normalizePath, getFileName, isAbsolutePath } from "@/lib/path-utils"
-import { hasUsableLlm } from "@/lib/has-usable-llm"
-import { getTaskLlmConfig } from "@/lib/llm-task-routing"
 import { messageImageToDataUrl } from "@/lib/chat-image-utils"
 import { resolveMarkdownImageSrc } from "@/lib/markdown-image-resolver"
 import { transformImageEmbeds } from "@/lib/wikilink-transform"
@@ -548,11 +546,13 @@ function SaveToWikiButton({ content, visible }: { content: string; visible: bool
   const project = useWikiStore((s) => s.project)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [ingestQueueFailed, setIngestQueueFailed] = useState(false)
 
   const handleSave = useCallback(async () => {
     if (!project || saving) return
     const pp = normalizePath(project.path)
     setSaving(true)
+    setIngestQueueFailed(false)
     try {
       const { filePath } = await saveGeneratedQuery(pp, content)
       if (useWikiStore.getState().project?.id !== project.id
@@ -564,13 +564,14 @@ function SaveToWikiButton({ content, visible }: { content: string; visible: bool
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
 
-      // Full auto-ingest: extract entities, concepts, cross-references from saved content
-      const llmConfig = getTaskLlmConfig("ingest")
-      if (hasUsableLlm(llmConfig)) {
-        const { autoIngest } = await import("@/lib/ingest")
-        autoIngest(pp, filePath, llmConfig).catch((err) =>
-          console.error("Failed to auto-ingest saved query:", err)
-        )
+      // Queue the saved Wiki page with its generated-Wiki provenance. The helper
+      // never makes a raw/sources copy and reports queue failures without undoing the save.
+      try {
+        const { enqueueSavedGeneratedWikiQuery } = await import("@/app/document-records/generated-wiki")
+        await enqueueSavedGeneratedWikiQuery({ projectId: project.id, projectPath: pp, filePath })
+      } catch (err) {
+        setIngestQueueFailed(true)
+        console.error("The Wiki page was saved, but ingestion could not be queued; the saved page remains available:", err)
       }
     } catch (err) {
       console.error("Failed to save to wiki:", err)
@@ -579,19 +580,22 @@ function SaveToWikiButton({ content, visible }: { content: string; visible: bool
     }
   }, [project, content, saving])
 
-  if (!visible && !saved) return null
+  if (!visible && !saved && !ingestQueueFailed) return null
 
   return (
-    <button
-      type="button"
-      onClick={handleSave}
-      disabled={saving}
-      className="self-start inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-      title={t("chat.saveToWiki")}
-    >
-      <BookmarkPlus className="h-3 w-3" />
-      {saved ? t("chat.saved") : saving ? t("chat.saving") : t("chat.saveToWiki")}
-    </button>
+    <div className="flex flex-col items-start gap-1">
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={saving}
+        className="self-start inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+        title={t("chat.saveToWiki")}
+      >
+        <BookmarkPlus className="h-3 w-3" />
+        {saved ? t("chat.saved") : saving ? t("chat.saving") : t("chat.saveToWiki")}
+      </button>
+      {ingestQueueFailed && <span role="alert" className="text-[11px] text-destructive">{t("chat.ingestQueueFailed")}</span>}
+    </div>
   )
 }
 

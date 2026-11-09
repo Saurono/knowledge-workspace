@@ -56,10 +56,15 @@ async function snapshotFor(root: string, sourceId: string, requestedRevision?: s
   const outputs = []
   for (const entry of receipt.wikiResults) {
     const absolute = outputPath(root, entry.path)
+    const relativePath = getRelativePath(absolute, root)
+    // Native verified page indexing rejects app-maintained aggregate views by
+    // basename; keep them in compile receipts but exclude them from retrieval.
+    const baseName = relativePath.slice(relativePath.lastIndexOf("/") + 1).replace(/\.md$/i, "").toLowerCase()
+    if (["index", "log", "overview"].includes(baseName)) continue
     if (!(await fileExists(absolute))) throw new Error(`Compiled output is missing: ${entry.path}`)
-    outputs.push({ relativePath: getRelativePath(absolute, root), contentRevision: `sha256:${await hashFileSha256(absolute)}` })
+    outputs.push({ relativePath, contentRevision: `sha256:${await hashFileSha256(absolute)}` })
   }
-  if (!outputs.length) throw new Error("Compiled source receipt has no Wiki outputs")
+  if (!outputs.length) throw new Error("Compiled source receipt has no eligible knowledge pages to index; aggregate index/log/overview pages are excluded")
   return { sourceId, sourceRevision: receipt.sourceRevision, rawSourceRevision, configFingerprint: config ? await fingerprint(config) : "", outputs }
 }
 function createRepository(root: string, rawSourceRevision: string): VerifiedSourceIndexRepository {

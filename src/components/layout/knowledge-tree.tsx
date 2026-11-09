@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import {
   FileText, Users, Lightbulb, BookOpen, HelpCircle, GitMerge, BarChart3, TrendingUp, Target, ChevronRight, ChevronDown, Layout, Globe, Trash2,
 } from "lucide-react"
@@ -17,6 +17,10 @@ import { useAppDialog } from "@/stores/app-dialog-store"
 import { parseSources } from "@/lib/sources-merge"
 import { filterPagesBySource, listPageSourceIdentities } from "@/lib/knowledge-source-filter"
 import { flattenFilesNaturally } from "@/lib/file-tree-order"
+import { DomainFilter } from "@/components/workspace/domain-filter"
+import { ResourceDomainAssignment } from "@/components/workspace/resource-domain-assignment"
+import { useWorkspaceStore } from "@/stores/workspace-store"
+import { canonicalDomainResourceKey, effectiveDomainIds, filterMatches, type DomainFilter as DomainFilterValue } from "@/modules/domains/domain"
 
 interface WikiPageInfo {
   path: string
@@ -52,16 +56,27 @@ export function KnowledgeTree() {
   const setSelectedFile = useWikiStore((s) => s.setSelectedFile)
   const openPathInPreview = useWikiStore((s) => s.openPathInPreview)
   const dataVersion = useWikiStore((s) => s.dataVersion)
+  const domains = useWorkspaceStore((s) => s.data.domains)
+  const resourceDomains = useWorkspaceStore((s) => s.data.resourceDomains)
+  const workspaceLoading = useWorkspaceStore((s) => s.loading)
+  const workspaceSaving = useWorkspaceStore((s) => s.saving)
+  const performWorkspace = useWorkspaceStore((s) => s.perform)
   const [pages, setPages] = useState<WikiPageInfo[]>([])
+  const [pagesOwner, setPagesOwner] = useState<{ id: string; path: string } | null>(null)
+  const [domainFilter, setDomainFilter] = useState<DomainFilterValue>({ domainIds: [], match: "any", unclassified: false })
+  const [domainNotice, setDomainNotice] = useState("")
   const [selectedSource, setSelectedSource] = useState<string | null>(null)
   const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(["overview", "entity", "concept", "source"]))
   // Two-stage delete: first click arms the row, second click executes.
   // Only one row armed at a time (clicking another row replaces).
   const [armedPath, setArmedPath] = useState<string | null>(null)
   const [deletingPath, setDeletingPath] = useState<string | null>(null)
+  const pagesGeneration = useRef(0)
 
   const loadPages = useCallback(async () => {
-    if (!project) return
+    const generation = ++pagesGeneration.current
+    if (!project) { setPages([]); setPagesOwner(null); return }
+    const owner = { id: project.id, path: project.path }
     const pp = normalizePath(project.path)
     try {
       const wikiTree = await listDirectory(`${pp}/wiki`)
@@ -86,9 +101,15 @@ export function KnowledgeTree() {
         }
       }
 
-      setPages(pageInfos)
+      const current = useWikiStore.getState().project
+      if (generation === pagesGeneration.current && current?.id === owner.id && current.path === owner.path) {
+        setPages(pageInfos); setPagesOwner(owner)
+      }
     } catch {
-      setPages([])
+      const current = useWikiStore.getState().project
+      if (generation === pagesGeneration.current && current?.id === owner.id && current.path === owner.path) {
+        setPages([]); setPagesOwner(owner)
+      }
     }
   }, [project])
 
@@ -103,11 +124,27 @@ export function KnowledgeTree() {
     setSelectedSource(null)
   }, [project?.id])
 
+  useEffect(() => {
+    setDomainFilter({ domainIds: [], match: "any", unclassified: false })
+    setDomainNotice("")
+  }, [project?.id, project?.path])
+  const activeDomainFilter = useMemo(() => {
+    const known = new Set(domains.map((domain) => domain.id))
+    return { ...domainFilter, domainIds: domainFilter.domainIds.filter((id) => known.has(id)) }
+  }, [domains, domainFilter])
+  useEffect(() => {
+    if (activeDomainFilter.domainIds.length !== domainFilter.domainIds.length) {
+      setDomainFilter(activeDomainFilter)
+      setDomainNotice("已删除领域已从筛选中移除。")
+    }
+  }, [activeDomainFilter, domainFilter.domainIds.length])
+
   const sourceOptions = useMemo(() => listPageSourceIdentities(pages), [pages])
-  const visiblePages = useMemo(
-    () => filterPagesBySource(pages, selectedSource),
-    [pages, selectedSource],
-  )
+  const currentPages = pagesOwner && pagesOwner.id === project?.id && pagesOwner.path === project?.path ? pages : []
+  const visiblePages = useMemo(() => filterPagesBySource(currentPages, selectedSource).filter((page) => {
+    const key = wikiResourceKey(project?.path ?? "", page.path)
+    return key !== null && filterMatches({ domains, resourceDomains }, key, activeDomainFilter)
+  }), [currentPages, selectedSource, project?.path, domains, resourceDomains, activeDomainFilter])
 
   useEffect(() => {
     if (selectedSource && !sourceOptions.includes(selectedSource)) setSelectedSource(null)
@@ -180,11 +217,28 @@ export function KnowledgeTree() {
     })
   }
 
+  async function saveWikiDomains(path: string, domainIds: string[]) {
+    if (!project) return
+    const key = wikiResourceKey(project.path, path)
+    if (!key) { setDomainNotice("无法确认此 Wiki 页属于当前项目。") ; return }
+    const success = await performWorkspace(project.path, {
+      type: "domain.set",
+      resource: { kind: "wiki", path: key },
+      domainIds,
+    })
+    setDomainNotice(success ? "" : `无法保存领域归类：${useWorkspaceStore.getState().error ?? "请重试。"}`)
+  }
+
   return (
     <ScrollArea className="h-full">
       <div className="p-2">
         <div className="mb-2 px-2 text-xs font-semibold uppercase text-muted-foreground">
           {project.name}
+        </div>
+
+        <div className="mb-2 px-2">
+          <DomainFilter domains={domains} value={activeDomainFilter} onChange={setDomainFilter} disabled={workspaceLoading} />
+          {domainNotice && <p role="status" className="text-xs text-muted-foreground">{domainNotice}</p>}
         </div>
 
         {sourceOptions.length > 1 && (
@@ -274,6 +328,16 @@ export function KnowledgeTree() {
                           onClick={() => void handleDeleteClick(page.path)}
                           name={page.title}
                         />
+                        <ResourceDomainAssignment
+                          label={page.title}
+                          domains={domains}
+                          selectedIds={(() => {
+                            const key = wikiResourceKey(project.path, page.path)
+                            return key ? effectiveDomainIds({ domains, resourceDomains }, key) : []
+                          })()}
+                          disabled={workspaceLoading || workspaceSaving}
+                          onChange={(ids) => void saveWikiDomains(page.path, ids)}
+                        />
                       </div>
                     )
                   })}
@@ -288,6 +352,14 @@ export function KnowledgeTree() {
       </div>
     </ScrollArea>
   )
+}
+
+function wikiResourceKey(projectPath: string, absolutePath: string): string | null {
+  const rootPrefix = `${normalizePath(projectPath).replace(/\/$/, "")}/wiki/`
+  const normalized = normalizePath(absolutePath)
+  if (!normalized.startsWith(rootPrefix)) return null
+  try { return canonicalDomainResourceKey("wiki", `wiki/${normalized.slice(rootPrefix.length)}`) }
+  catch { return null }
 }
 
 function RawSourcesSection() {

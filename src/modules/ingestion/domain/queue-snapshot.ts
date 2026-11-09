@@ -9,11 +9,13 @@ export function decodeQueueSnapshot(raw: string, projectId: string): IngestTask[
   return tasks.map((task) => {
     if (!task || typeof task !== "object" || Array.isArray(task)) throw new Error("Invalid ingest queue task")
     const restored = { ...task, projectId: task.projectId ?? projectId }
-    const fields = [restored.sourceId, restored.sourceRevision, restored.idempotencyKey]
-    if (fields.some(value => value !== undefined)) {
-      if (fields.some(value => typeof value !== "string") ||
-          !isCanonicalIngestionIdempotencyKey(restored.projectId, restored.sourceId!, restored.sourceRevision!, restored.idempotencyKey!))
+    const hasBinding = restored.sourceRevision !== undefined || restored.idempotencyKey !== undefined
+    if (hasBinding) {
+      if (typeof restored.sourceId !== "string" || typeof restored.sourceRevision !== "string" || typeof restored.idempotencyKey !== "string" ||
+          !isCanonicalIngestionIdempotencyKey(restored.projectId, restored.sourceId, restored.sourceRevision, restored.idempotencyKey))
         throw new Error("Invalid ingestion idempotency identity in queue snapshot")
+    } else if (restored.sourceId !== undefined && (typeof restored.sourceId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(restored.sourceId))) {
+      throw new Error("Invalid stable source identity in queue snapshot")
     }
     return restored
   })

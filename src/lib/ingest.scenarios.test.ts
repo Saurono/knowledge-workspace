@@ -38,6 +38,12 @@ vi.mock("./llm-client", () => ({
 
 const mineruMock = vi.hoisted(() => ({ parse: vi.fn() }))
 vi.mock("@/lib/mineru", () => ({ parseWithMineruResult: mineruMock.parse }))
+const sourceIndexMock = vi.hoisted(() => ({ index: vi.fn(), retry: vi.fn(), read: vi.fn() }))
+vi.mock("@/app/retrieval/source-index", () => ({
+  indexCompiledSource: sourceIndexMock.index,
+  retryCompiledSourceIndex: sourceIndexMock.retry,
+  readCompiledSourceIndex: sourceIndexMock.read,
+}))
 
 import { autoIngest } from "./ingest"
 import { useWikiStore } from "@/stores/wiki-store"
@@ -46,6 +52,9 @@ import { useActivityStore } from "@/stores/activity-store"
 import { useChatStore } from "@/stores/chat-store"
 import { hashReceiptRevision, loadIngestRecords } from "./ingest-receipts"
 import { migrateSourcePath } from "./source-lifecycle"
+import { loadPhaseReceiptRecords } from "@/app/obsidian/phase-receipts"
+import { phaseReceipts } from "@/app/obsidian/phase-receipts"
+import { retryIngestionFeedback } from "@/app/ingestion/retry-feedback"
 
 const scenarioResponses = async (scenario: IngestScenario) => [
   await fs.readFile(path.join(FIXTURES_ROOT, scenario.name, "llm-analysis.txt"), "utf-8"),
@@ -72,6 +81,10 @@ beforeEach(() => {
   streamCallCount = 0
   afterStreamToken = null
   mineruMock.parse.mockReset()
+  sourceIndexMock.index.mockReset()
+  sourceIndexMock.retry.mockReset()
+  sourceIndexMock.read.mockReset()
+  useWikiStore.setState({ embeddingConfig: { enabled: false, endpoint: "", apiKey: "", model: "" } })
   useReviewStore.setState({ items: [] })
   useActivityStore.setState({ items: [] })
   useChatStore.setState({
@@ -195,6 +208,20 @@ async function assertOutcome(
   }
 }
 
+function verifiedIndexResult(input: { sourceId: string; sourceRevision: string; status: "succeeded" | "failed" | "blocked"; message?: string; errorCode?: string }) {
+  const record = {
+    schemaVersion: 1, sourceId: input.sourceId, sourceRevision: input.sourceRevision,
+    status: input.status, error: input.status === "succeeded" ? null : { code: input.errorCode ?? "index_failed", message: input.message ?? "offline" },
+    pages: [{ pageId: "sources/rope-paper", status: input.status === "succeeded" ? "verified" : "failed",
+      evidence: input.status === "succeeded" ? { manifestRef: "manifest:sha256:proof" } : null }],
+  }
+  return { status: input.status, record, version: 1 }
+}
+
+function enableVerifiedIndex() {
+  useWikiStore.setState({ embeddingConfig: { enabled: true, endpoint: "http://127.0.0.1:1/embed", apiKey: "", model: "test-embedding" } })
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("ingest scenarios (fixture-driven)", () => {
@@ -314,6 +341,11 @@ describe("ingest scenarios (fixture-driven)", () => {
     expect(firstSource?.id).toBe(sourceId)
     expect(firstSource?.contentRevision).toBe(firstRevision)
     expect(Object.values(firstRecords.receipts)).toContainEqual(expect.objectContaining({ id: `${sourceId}-${firstRevision}`, sourceRevision: firstRevision, idempotencyKey: `ingest-v1:${projectId}:${sourceId}:${firstRevision}:compile` }))
+    const phaseRecords = await loadPhaseReceiptRecords(projectPath)
+    const phase = Object.values(phaseRecords.receipts).find((entry) => entry.sourceId === sourceId && entry.sourceRevision === firstRevision)
+    expect(phase).toMatchObject({ summary: { contentReady: true }, stages: { receive: { status: "succeeded" }, parse: { status: "succeeded" }, compile: { status: "succeeded" }, index: { status: "skipped" }, feedback: { status: "skipped" } } })
+    expect(phase?.outputVersions.length).toBeGreaterThan(0)
+    expect(phase?.outputVersions.every((output) => /^sha256:[a-f0-9]{64}$/.test(output.version))).toBe(true)
     expect(streamCallCount).toBe(2)
 
     await autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("attempt-two"))
@@ -344,6 +376,116 @@ describe("ingest scenarios (fixture-driven)", () => {
     await autoIngest(projectPath, movedPath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("attempt-five"))
     expect(streamCallCount).toBe(6)
     expect((await loadIngestRecords(projectPath)).sources[movedPath]?.id).toBe(sourceId)
+  })
+
+  it("runs required verified indexing after real compile writes and rechecks the proof on duplicate ingestion", async () => {
+    const scenario = ingestScenarios[0]
+    ctx = await setup(scenario)
+    enableVerifiedIndex()
+    const projectPath = ctx.tmp.path
+    const sourcePath = path.join(projectPath, scenario.source.path).replace(/\\/g, "/")
+    const projectId = "compile-project"
+    const options = (taskId: string) => ({ taskId, projectId, bindIdempotency: vi.fn(async () => {}) })
+    let latest: ReturnType<typeof verifiedIndexResult> | null = null
+    sourceIndexMock.read.mockImplementation(async () => latest)
+    sourceIndexMock.index.mockImplementation(async (input: { sourceId: string; sourceRevision: string; rawSourceRevision: string }) => {
+      expect(input.rawSourceRevision).toMatch(/^[a-f0-9]{64}$/)
+      latest = verifiedIndexResult({ sourceId: input.sourceId, sourceRevision: input.sourceRevision, status: "succeeded" })
+      return latest
+    })
+    sourceIndexMock.retry.mockImplementation(async () => latest)
+    const outputs = await autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("verified-one"))
+    const source = (await loadIngestRecords(projectPath)).sources[sourcePath]
+    const revision = await hashReceiptRevision(await readFileRaw(sourcePath))
+    const receipt = Object.values((await loadPhaseReceiptRecords(projectPath)).receipts).find((entry) => entry.sourceId === source.id && entry.sourceRevision === revision)
+    expect(outputs.length).toBeGreaterThan(0)
+    expect(receipt).toMatchObject({ stages: { compile: { status: "succeeded" }, index: { status: "succeeded" } }, summary: { knowledgeReady: true } })
+    expect(receipt?.indexCommitRefs).toEqual(["index:sources/rope-paper:manifest:sha256:proof"])
+    expect(sourceIndexMock.index).toHaveBeenCalledTimes(1)
+    const callsBefore = streamCallCount
+    await autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("verified-repeat"))
+    expect(streamCallCount).toBe(callsBefore)
+    expect(sourceIndexMock.index).toHaveBeenCalledTimes(1)
+    expect(sourceIndexMock.retry).toHaveBeenCalledTimes(1)
+    sourceIndexMock.retry.mockImplementationOnce(async () => {
+      latest = verifiedIndexResult({ sourceId: source.id, sourceRevision: revision, status: "blocked", errorCode: "snapshot_changed", message: "config/output changed" })
+      return latest
+    })
+    sourceIndexMock.index.mockImplementationOnce(async (input: { sourceId: string; sourceRevision: string }) => {
+      latest = verifiedIndexResult({ sourceId: input.sourceId, sourceRevision: input.sourceRevision, status: "succeeded" })
+      return latest
+    })
+    await autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("verified-new-generation"))
+    expect(streamCallCount).toBe(callsBefore)
+    expect(sourceIndexMock.retry).toHaveBeenCalledTimes(2)
+    expect(sourceIndexMock.index).toHaveBeenCalledTimes(2)
+  })
+
+  it("persists index failure without losing compile proof and retries index without another LLM compile", async () => {
+    const scenario = ingestScenarios[0]
+    ctx = await setup(scenario)
+    enableVerifiedIndex()
+    const projectPath = ctx.tmp.path
+    const sourcePath = path.join(projectPath, scenario.source.path).replace(/\\/g, "/")
+    const projectId = "compile-project"
+    const options = (taskId: string) => ({ taskId, projectId, bindIdempotency: vi.fn(async () => {}) })
+    let latest: ReturnType<typeof verifiedIndexResult> | null = null
+    sourceIndexMock.read.mockImplementation(async () => latest)
+    sourceIndexMock.index.mockImplementation(async (input: { sourceId: string; sourceRevision: string }) => {
+      latest = verifiedIndexResult({ sourceId: input.sourceId, sourceRevision: input.sourceRevision, status: "failed", message: "temporary index outage" })
+      return latest
+    })
+    sourceIndexMock.retry.mockImplementation(async (input: { sourceId: string; config: unknown; attemptToken: string }) => {
+      const phase = Object.values((await loadPhaseReceiptRecords(projectPath)).receipts).find((entry) => entry.sourceId === input.sourceId)
+      latest = verifiedIndexResult({ sourceId: input.sourceId, sourceRevision: phase?.sourceRevision ?? "a".repeat(64), status: "succeeded" })
+      return latest
+    })
+    await expect(autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("index-failure"))).rejects.toMatchObject({ code: "index_incomplete" })
+    const source = (await loadIngestRecords(projectPath)).sources[sourcePath]
+    const revision = await hashReceiptRevision(await readFileRaw(sourcePath))
+    const failed = Object.values((await loadPhaseReceiptRecords(projectPath)).receipts).find((entry) => entry.sourceId === source.id && entry.sourceRevision === revision)
+    expect(failed).toMatchObject({ stages: { compile: { status: "succeeded" }, index: { status: "failed", error: { message: "temporary index outage" } } }, summary: { contentReady: true, knowledgeReady: false } })
+    const callsBeforeRetry = streamCallCount
+    await autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("index-retry"))
+    expect(streamCallCount).toBe(callsBeforeRetry)
+    expect(sourceIndexMock.index).toHaveBeenCalledTimes(1)
+    expect(sourceIndexMock.retry).toHaveBeenCalledTimes(1)
+    const repaired = Object.values((await loadPhaseReceiptRecords(projectPath)).receipts).find((entry) => entry.sourceId === source.id && entry.sourceRevision === revision)
+    expect(repaired).toMatchObject({ stages: { compile: { status: "succeeded" }, index: { status: "succeeded" } }, summary: { knowledgeReady: true } })
+  })
+
+  it("keeps feedback pending during Vault disconnect and completes the same receipt after reconnect", async () => {
+    const scenario = ingestScenarios[0]
+    ctx = await setup(scenario)
+    const projectPath = ctx.tmp.path
+    const vaultPath = `${projectPath}-vault`
+    await fs.mkdir(path.join(vaultPath, ".obsidian"), { recursive: true })
+    await phaseReceipts.configureVault(projectPath, vaultPath)
+    const writeSpy = vi.spyOn(realFs, "writeVaultReceipt")
+    writeSpy.mockRejectedValueOnce(new Error("vault disconnected"))
+    const sourcePath = path.join(projectPath, scenario.source.path).replace(/\\/g, "/")
+    const projectId = "compile-project"
+    const options = (taskId: string) => ({ taskId, projectId, bindIdempotency: vi.fn(async () => {}) })
+    try {
+      await expect(autoIngest(projectPath, sourcePath, useWikiStore.getState().llmConfig, undefined, undefined, undefined, options("vault-offline"))).rejects.toThrow("vault disconnected")
+      const source = (await loadIngestRecords(projectPath)).sources[sourcePath]
+      const revision = await hashReceiptRevision(await readFileRaw(sourcePath))
+      const beforeReconnect = Object.values((await loadPhaseReceiptRecords(projectPath)).receipts).find((entry) => entry.sourceId === source.id && entry.sourceRevision === revision)
+      expect(beforeReconnect).toMatchObject({ stages: { compile: { status: "succeeded" }, feedback: { status: "failed" } }, delivery: "pending" })
+      const callsBefore = streamCallCount
+      expect(await phaseReceipts.sync(projectPath)).toMatchObject({ delivered: 2, failed: [] })
+      const deliveredButFailed = Object.values((await loadPhaseReceiptRecords(projectPath)).receipts).find((entry) => entry.sourceId === source.id && entry.sourceRevision === revision)
+      expect(deliveredButFailed).toMatchObject({ stages: { feedback: { status: "failed" } }, delivery: "delivered" })
+      await retryIngestionFeedback(projectPath, deliveredButFailed!.id)
+      expect(streamCallCount).toBe(callsBefore)
+      const final = Object.values((await loadPhaseReceiptRecords(projectPath)).receipts).find((entry) => entry.sourceId === source.id && entry.sourceRevision === revision)
+      expect(final).toMatchObject({ stages: { compile: { status: "succeeded" }, feedback: { status: "succeeded" } }, delivery: "delivered" })
+      const target = path.join(vaultPath, "kb-ingest-records", `${source.id}-${revision}.json`)
+      expect(JSON.parse(await fs.readFile(target, "utf8")).stages.feedback.status).toBe("succeeded")
+    } finally {
+      writeSpy.mockRestore()
+      await fs.rm(vaultPath, { recursive: true, force: true })
+    }
   })
 
   it("rejects when a compiled revision cannot be durably receipted", async () => {

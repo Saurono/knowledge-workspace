@@ -215,7 +215,7 @@ export function createIngestQueue<Model>(ports: IngestQueuePorts<Model>) {
       resetQueueAccounting()
     }
     const normalizedSourcePath = normalizeSourcePathForQueue(sourcePath)
-    const hasIdentity = !!(identity?.sourceId || identity?.sourceRevision || identity?.idempotencyKey)
+    const hasIdentity = !!(identity?.sourceRevision || identity?.idempotencyKey)
     if (hasIdentity && !(identity?.sourceId && identity.sourceRevision && identity.idempotencyKey))
       throw new Error("A queue idempotency identity must include source ID, revision, and key")
     if (identity?.idempotencyKey) {
