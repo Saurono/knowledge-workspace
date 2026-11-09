@@ -454,3 +454,8 @@
 - 验收边界：使用临时合成文件、独立 Vault 和确定性模型/embedding 提供者；生产链实际调用原生 hash、LanceDB、验证、检索及 Vault 写入。真实商业模型、公共 HTTPS 浏览器兼容、正式安装器与完整共享编译执行器不由本项冒充通过；跨文件/跨介质不是事务，互斥也非跨进程严格恰好一次。
 - 修复后主控独立完整回归：219 文件、2463 项通过；另 1 文件/1 项原生 opt-in 因没有 CDP 明确跳过，不计入通过。类型、18 模块边界、503 生产文件审计通过；桌面/Web/服务构建通过。共享浏览器 12 组 pageErrors=[]、CLI/MCP 8 组、HTTP Vault 配对/同步/撤销/CLI pull smoke 通过。日志为 TEMP 下 kw-d-final-regression-fixed.log、kw-d-final-build.log、kw-d-final-web-build.log、kw-d-final-browser.log、kw-d-final-vault-browser.log。
 - 真实候选 CI 42627547041：Linux 成功；Windows 唯一失败为 connector 权限集成测试默认 5000ms 超时（实际约5534ms，另142项通过），未出现权限断言失败。该测试创建六套真实 HTTP/SQLite/密码 fixture；Luna 仅把此单项超时设为有限 20000ms，保留全部断言、没有全局放宽或跳过。主控独立重跑该文件5项通过；修正后另推提交并重新收集三平台与原生产物。
+- 最终产品/测试候选94130f5的CI42628307283三平台成功，HTTP/持久化各143项；Rust Windows425项、Linux/macOS各443项通过，各另2 ignored。下载artifact13679888405，ZIP SHA256 8dfc28842b7ba1ca69b35b2aaf05a5c9ab65e31e8097b086f22d86a312f9a2e0与GitHub一致，EXE SHA256 eddbcd7e595a72e1ffc9c1ced121794403d9c505e68eae1e635113895df857bb。
+- 主控对应最终产物独立验收已通过：native production opt-in 2项（明确required、无跳过），Vault/真实watcher 8项，索引提供者503失败→恢复→停止确切隔离PID→重新启动→无提供者仍验证持久proof及向量命中1。原笔记SHA始终不变。桌面领域UI脚本补验仍待完成，不提前把脚本校验成功当UI成功；最终记录另补。
+- 最终桌面UI由主控独立重跑8组通过，日志kw-d-final-native-domains-independent.log：UI原生创建项目、真实FS合成文件、预览新增领域、来源/Wiki/对话本地检索归类与ANY/ALL/未分类、时间字段、跨项目筛选/查询/结果清理。普通点击/键盘，无force、store注入或伪造入库记录。初版脚本的角色选择器、异步勾选等待与菜单关闭错误已修正，只有真实通过轮次计入验收。
+- 收尾：TASKS准确勾选D01–D09，HANDOFF标明历史待办已被最终记录取代，入口矩阵与原生产物证据同步。主控核对隔离EXE精确路径后停止最后PID41380；既有业务PID27888未触碰。既有K段及next-priorities建议保留在工作区，不进入本次D提交；未启动其他系列。
+- 最终追加只含文档与已实际运行的验收脚本，不改94130f5产品/测试实现；对应最终运行产物与CI仍明确绑定94130f5。跨文件事务、真实商业模型、正式安装器、公网HTTPS→loopback和实际周期tick等边界如上保留，不把D交付写成J发布验收。

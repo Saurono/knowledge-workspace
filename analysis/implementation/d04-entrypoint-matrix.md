@@ -5,7 +5,7 @@
 | 入口 | 来源接收证据 | 编译与时间边界 | 当前验收限制 |
 | --- | --- | --- | --- |
 | 本地文件/目录导入 | source-lifecycle 在实际复制后 confirmImportedSource；失败保留预留身份 | 队列进入 autoIngest，解析文本修订与原始文件 SHA 分开 | D02 回归与 D09 临时真实文件生产链；模型使用确定性 fixture |
-| 来源目录观察/定时扫描 | registerObservedSourcePaths 记录首次观察，不能推断文件创建时间 | 使用同一来源稳定 ID 和队列入口 | 原生 watcher 与定时真实触发尚需 D09 |
+| 来源目录观察/定时扫描 | registerObservedSourcePaths 记录首次观察，不能推断文件创建时间 | 使用同一来源稳定 ID 和队列入口；JS/Rust 均排除 kb-ingest-records | 最终原生产物真实 watcher 创建/修改、显式 rescan 及回执排除通过；定时扫描规则有回归，Windows 60 秒周期 tick 未由短时验收证明 |
 | URL 下载 | 下载成功写入后确认；原 URL 作为来源；重试沿既有路径 | 同 URL 不因标题变化重复登记；失败不报编译完成 | URL 入口合成传输回归已覆盖；真实网络提供者不是本次完成依据 |
 | 来源页手动编译 | 复用已登记来源，不重新赋首次时间 | enqueueSourceIngest；缓存证据不回填历史未知首次时间 | 页面/时间投影回归；生产链重跑保留首次时间 |
 | 共享 Web/HTTP/CLI/MCP 上传 | 受保护上传记录服务接收时间及原始字节修订 | 仅接收不代表 parse/compile/index 成功；无证据显示未知 | 共享服务与浏览器回归；共享编译执行器不因本系列自动宣称存在 |
