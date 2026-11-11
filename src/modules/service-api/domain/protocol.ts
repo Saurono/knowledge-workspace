@@ -6,6 +6,7 @@ export interface MemoryGraphNode {
   access?: unknown | null; source?: { kind: string; actorId?: string | null } | null
   validityUntil?: string | null
 }
+export interface MemoryConflict { a: string; b: string; relation: "contradicts"; since: string }
 export interface MemorySummaryCursor { updatedAt: string; id: string }
 export interface MemorySummary {
   id: string; title: string; status: string; version: number

@@ -1,6 +1,6 @@
 import { ServiceError } from "../domain"
 import type { MemoryGraphNode } from "@/modules/service-api/domain"
-import type { ApiSuccess, ApiFailure, ProjectRecord, ResourceRecord, WikiContent, ProjectEvent, MemorySummary } from "../domain"
+import type { ApiSuccess, ApiFailure, ProjectRecord, ResourceRecord, WikiContent, ProjectEvent, MemorySummary, MemoryConflict } from "../domain"
 import type { SharedWorkspace } from "./workspace"
 import type { IngestionCheckpointV1, IngestionSummary } from "@/modules/ingestion/domain"
 import type { PhaseReceiptV2 } from "@/modules/obsidian/domain"
@@ -31,6 +31,8 @@ export function createSharedClient(transport: ApiTransport) {
     memoryGraph: (id: string, options?: { limit?: number }) =>
       request<{ items: Array<Pick<MemoryGraphNode, "id" | "title" | "status" | "category" | "domainIds" | "relations" | "updatedAt" | "owner">> }>(
         "GET", `${root(id)}/memories/graph${options?.limit === undefined ? "" : `?limit=${options.limit}`}`),
+    memoryConflicts: (id: string, options?: { limit?: number }) =>
+      request<{ items: MemoryConflict[] }>("GET", `${root(id)}/memories/conflicts${options?.limit === undefined ? "" : `?limit=${options.limit}`}`),
     memory: (id: string, memoryId: string) =>
       request<{ memory: unknown; revision: number }>("GET", `${root(id)}/memories/${memoryId}`),
     memorySummaries: (id: string, options?: { limit?: number; cursor?: string | null }) =>

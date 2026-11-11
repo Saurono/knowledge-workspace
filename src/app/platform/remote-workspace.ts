@@ -37,6 +37,9 @@ export function createRemoteWorkspace(api: ReturnType<typeof createSharedClient>
     /** 列表页用：只拿摘要，不读整份 workspace。 */
     listMemorySummaries: (options?: { limit?: number; cursor?: string | null }) =>
       api.memorySummaries(projectId, options).then(response => response.data),
+    /** 摘要模式下取当前项目的冲突对；只读，不写。 */
+    listMemoryConflicts: (options?: { limit?: number }) =>
+      api.memoryConflicts(projectId, options).then(response => response.data.items),
     /** 选中某条后再拉整条记录；失败时抛出（不吞、不返回 null）。 */
     loadMemory: async (memoryId: string) => {
       const cached = snapshot?.data.memories.find(item => item.id === memoryId)

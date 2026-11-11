@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { createRemoteWorkspace } from "./remote-workspace"
+import { createWebPlatform } from "./web"
 import { createMemoryRecord } from "@/modules/memory/domain"
 import type { createSharedClient } from "@/modules/service-api/application"
 
@@ -20,6 +21,31 @@ async function setup(existing = true) {
   await workspace.load()
   return { api, workspace }
 }
+describe("remote memory conflicts", () => {
+  const items = [{ a: "a", b: "b", relation: "contradicts", since: "2026-11-10T00:00:00Z" }]
+  function setupConflicts(status = 200) {
+    const payload = status === 200
+      ? { data: { items }, meta: { requestId: "r" } }
+      : { error: { code: "forbidden", message: "Access denied", requestId: "r" } }
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify(payload), { status }))
+    const { api } = createWebPlatform("https://service.test", "", fetch)
+    return { fetch, workspace: createRemoteWorkspace(api, "p") }
+  }
+  it("fetches conflicts without a query and returns items", async () => {
+    const { fetch, workspace } = setupConflicts()
+    expect(await workspace.listMemoryConflicts()).toEqual(items)
+    expect(fetch).toHaveBeenCalledExactlyOnceWith("https://service.test/api/v1/projects/p/memories/conflicts", expect.objectContaining({ method: "GET" }))
+  })
+  it("fetches conflicts with the requested limit", async () => {
+    const { fetch, workspace } = setupConflicts()
+    expect(await workspace.listMemoryConflicts({ limit: 5 })).toEqual(items)
+    expect(fetch).toHaveBeenCalledExactlyOnceWith("https://service.test/api/v1/projects/p/memories/conflicts?limit=5", expect.objectContaining({ method: "GET" }))
+  })
+  it("rejects when the server returns a non-success status", async () => {
+    const { workspace } = setupConflicts(403)
+    await expect(workspace.listMemoryConflicts()).rejects.toMatchObject({ code: "forbidden", status: 403, message: "Access denied" })
+  })
+})
 describe("remote memory writes", () => {
   it("loads the workspace with undefined options by default", async () => {
     const { api } = await setup()
