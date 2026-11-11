@@ -1,16 +1,16 @@
 # J05 发布验收矩阵（2026-11-10）
 
-最后核对：2026-11-11 09:20
+最后核对：2026-11-11 13:43
 
-统计：绿 5 行 / 未验证 25 行 / 未做 24 行（仅计矩阵数据行，分类不互斥）。
+统计：绿 9 行 / 未验证 28 行 / 未做 27 行（仅计矩阵数据行，分类不互斥）。
 
-**怎么用这张表**：发布前逐行核对证据与当前候选版本，任何“未验证”不得当成绿。绿仅限注明的验证口径；已有记录不等于本轮重跑。固定状态列使用绿 / 红 / 未做，“部分”写入备注。本轮只运行模块边界检查；不运行构建、基准或真实模型。工作区原有大量修改，状态检查应比较增量，不能要求整个工作区只剩本文件。
+**怎么用这张表**：发布前逐行核对证据与当前候选版本，任何“未验证”不得当成绿。绿仅限注明的验证口径；已有记录不等于本轮重跑。固定状态列使用绿 / 红 / 未做，“部分”写入备注。本轮（11-11 下午）运行了类型检查、全量 mock 测试、模块边界与模块审计；不运行构建、基准或真实模型。工作区原有大量修改，状态检查应比较增量，不能要求整个工作区只剩本文件。
 
 | 能力 | 证据在哪（文件/测试/命令） | 验证方式（自动测试 / 手工 / 未验证） | 现状（绿 / 红 / 未做） | 备注 |
 | --- | --- | --- | --- | --- |
-| 全量 mock 测试 | [脚本](../../package.json)、[回归记录](../implementation/project-gaps-20261110.md)；`npm run test:mocks` | 自动测试 | 绿 | 既有完整回归记录；排除 real-llm 与 mcp-server，本轮未重跑，不能代表并行修改后的结果。 |
-| 类型检查 | [基线验证记录](../evaluation/retrieval-baseline-20261110.md)、[脚本](../../package.json)；`npm run typecheck` | 自动测试 | 绿 | 文档记录 tsc --build EXIT_CODE=0；本轮未重跑。 |
-| 模块边界 | [检查器](../../scripts/check-module-boundaries.mjs)；`npm run check:modules` | 自动测试 | 绿 | 本轮直接用指定 Node 执行检查器，结果见下文。 |
+| 全量 mock 测试 | [脚本](../../package.json)、[回归记录](../implementation/project-gaps-20261110.md)；`vitest run src server --reporter=dot` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑：Test Files 284 passed \| 8 skipped (292)，Tests 2989 passed \| 77 skipped (3066)，EXIT 0；跳过不算通过。 |
+| 类型检查 | [基线验证记录](../evaluation/retrieval-baseline-20261110.md)、[脚本](../../package.json)；`tsc --build` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑：tsc --build，EXIT 0。 |
+| 模块边界 | [检查器](../../scripts/check-module-boundaries.mjs)；`node scripts/check-module-boundaries.mjs` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑：Module boundaries passed (19 modules)，EXIT 0。 |
 | 检索基线 | [报告](../evaluation/retrieval-baseline-20261110.md)、[评估器](../../scripts/eval-retrieval.mjs)；`node scripts/eval-retrieval.mjs` | 自动测试 | 绿 | recall@5 与 citationHitRate 均为 0.9714285714285714；越权返回 0。仅 mock 索引契约层。 |
 | 读路径基准 | [M10 报告](../evaluation/m10-read-path-20261110.md) | 自动测试 | 绿 | 1000 条 p50/p95 ms：A 22.9/27.6，B 29.8/33.5，C 3.6/4.0，D 并发组 A 111.6/190.1、C 17.5/29.4。D 为进程内同步调用；本轮未跑基准。 |
 | 私有/角色记忆可见性 | [测试](../../server/memory-summaries-auth.test.ts) | 未验证 | 未做 | 已有自动测试源码；本轮未运行，缺候选版本通过日志。 |
@@ -29,7 +29,7 @@
 | 嵌入/检索真实质量 | [契约基线](../evaluation/retrieval-baseline-20261110.md) | 未验证 | 未做 | 部分：只有契约层基线；缺真实嵌入、真实检索质量快照。 |
 | Web 前端构建 | [脚本](../../package.json)；`npm run build` | 未验证 | 未做 | 本轮禁止运行；前提为依赖安装、模块边界与类型检查通过，随后 vite build。 |
 | 服务构建与启动 | [入口](../../package.json)、[build-service.mjs](../../scripts/build-service.mjs)；`npm run build:service`、`npm run start:service` | 未验证 | 未做 | 构建脚本已使用 rolldown，并配置 @ 别名与 node: 外部依赖，输出 server.mjs、cli.mjs、vault-connector.mjs；已核对修复脚本，缺候选版本构建与启动通过日志，本轮未运行。 |
-| 模块审计快照一致性 | [model-gateway README](../../src/modules/model-gateway/README.md)、[审计脚本](../../scripts/audit-modules.mjs)、[JSON 快照](../architecture/module-audit-v1.json)、[审计报告](../architecture/module-boundary-audit.md)；`npm run audit:modules -- --check` | 未验证 | 未做 | 缺失 README 已补，现有快照包含 model-gateway；未验证：本轮未运行审计，缺候选版本 --check 通过日志。 |
+| 模块审计快照一致性 | [model-gateway README](../../src/modules/model-gateway/README.md)、[审计脚本](../../scripts/audit-modules.mjs)、[JSON 快照](../architecture/module-audit-v1.json)、[审计报告](../architecture/module-boundary-audit.md)；`node scripts/audit-modules.mjs --check` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑：Module audit passed (19 modules, 544 production source files)，EXIT 0；快照已在本轮重生成并随提交落库。 |
 | Tauri 桌面构建 | [桌面目录](../../src-tauri)、[构建脚本](../../package.json) | 未验证 | 红 | 任务卡提供的环境阻塞：缺 MSVC Build Tools；报错摘要 `link.exe returned an unexpected error`。本轮未复现，仓库日志未定位；缺工具链修复后的构建证据。 |
 | 安装包 | [桌面目录](../../src-tauri) | 未验证 | 未做 | 未产出；缺安装包文件、安装与启动验收。 |
 | 摘要模式冲突块 | [手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 手册明确摘要模式没有冲突块。 |
@@ -38,8 +38,15 @@
 | 跨进程队列 | [手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 进程内队列不能作为跨进程调度证据。 |
 | I01 完整适配 | [手册](../operations/handbook-20261110.md)、[任务清单](../../TASKS.md) | 未验证 | 未做 | 完整外部 CLI 适配契约未完成，缺本机真实 CLI 验收。 |
 | Vault 双向同步 | [手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 当前仅处理回执同步；缺任意 Vault 笔记上传及双向同步。 |
+| 统一任务收养通道（不进调度器） | [队列](../../src/modules/tasks/application/task-queue.ts)、[调度器](../../src/modules/tasks/application/scheduler.ts)、[收养测试](../../src/app/tasks/task-pipeline-adopt.test.ts)、[运行时](../../src/app/tasks/task-runtime.ts) | 未验证 | 未做 | H06-E1：只有类型与单测，没有浏览器/真实 MCP 客户端验证。 |
+| 旧入库队列→统一任务镜像（执行权仍在旧队列） | [镜像](../../src/app/tasks/ingest-mirror.ts)、[测试](../../src/app/tasks/ingest-mirror.test.ts)、[接线](../../src/components/workspace/task-manager.tsx) | 未验证 | 未做 | H06-E2：只有类型与单测，没有浏览器/真实 MCP 客户端验证。 |
+| 任务页镜像去重与旧队列操作映射 | [镜像测试](../../src/app/tasks/ingest-mirror.test.ts)、[任务页](../../src/components/workspace/task-manager.tsx) | 未验证 | 未做 | H05-C1：payload.legacyTaskId → toActivityViews.taskId；只有类型与单测，没有浏览器/真实 MCP 客户端验证。 |
+| 共享 CLI `/cli` 记忆只读工具（memory.summaries / memory.graph） | [工具](../../server/resource-tools.ts)、[测试](../../server/cli-resource-tools.test.ts)、[远程入口](../../src/modules/cli/application/remote.ts) | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑 `server/cli-resource-tools.test.ts`：5 passed、EXIT 0；覆盖 200/403/501/400 四类。 |
+| 共享 CLI `/cli` 提案工具（proposal.submit / proposal.list） | [工具](../../server/resource-tools.ts)、[测试](../../server/cli-proposal-tools.test.ts)、[远程入口](../../src/modules/cli/application/remote.ts) | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑 `server/cli-proposal-tools.test.ts`：8 passed、EXIT 0；覆盖 pending、批准前不可见、幂等、指纹冲突、空证据、多余字段、列表、降权 403。 |
+| 共享 MCP 工具表扩展（kw_memory_summaries / kw_memory_graph / kw_proposal_submit / kw_proposal_list） | [共享工具表](../../mcp-server/src/shared-tools.ts)、[断言](../../mcp-server/test/shared-tools.test.ts) | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑 `mcp-server` 构建与 `node --test version.test.js shared-tools.test.js`：8 pass / 0 fail、EXIT 0；真实 MCP 客户端未端到端验证。 |
+| I01 CLI/Agent 适配契约文档 | [契约文档](../implementation/cli-agent-contract-20261111.md) | 未验证 | 未做 | 文档完成不等于本机真实 CLI 验证；实现证据只有类型与单测，没有浏览器/真实 MCP 客户端验证。 |
 
-统计口径：仅计矩阵数据行，绿 5 行、验证方式含“未验证”25 行、状态“未做”24 行；三者不是互斥分类。已有测试源码与修复脚本不等于本轮执行通过；其他数字引用已有报告。
+统计口径：仅计矩阵数据行，绿 9 行、验证方式含“未验证”28 行、状态“未做”27 行；三者不是互斥分类。已有测试源码与修复脚本不等于本轮执行通过；其他数字引用已有报告。
 
 ## 本轮（11-11）新证据
 
@@ -49,3 +56,14 @@
 - 服务构建：[scripts/build-service.mjs](../../scripts/build-service.mjs) 已配置 rolldown 三个入口；本轮只核对脚本，未执行构建。
 - 模块审计：[scripts/audit-modules.mjs](../../scripts/audit-modules.mjs) 检查 README；[model-gateway/README.md](../../src/modules/model-gateway/README.md) 与 [module-audit-v1.json](../architecture/module-audit-v1.json) 已存在，本轮未执行 --check。
 - 网页星图：[src/web/memory-graph-view.tsx](../../src/web/memory-graph-view.tsx) 已由 [src/web/workspace.tsx](../../src/web/workspace.tsx) 接入；未验证（没有浏览器交互验证）。
+
+### 下午段（13:45 前后）
+
+以下为主控提供的本轮实跑证据；上方上午段记录保留原貌。
+
+- 仓库根 `tsc --build`（按任务卡原文：`node C:\Users\D1761\SnowLuma\nodedist\node-v24.22.2-win-x64\node.exe node_modules/typescript/bin/tsc --build`）→ EXIT 0。
+- `vitest run src server --reporter=dot` → Test Files 284 passed | 8 skipped (292)，Tests 2989 passed | 77 skipped (3066)，EXIT 0。
+- `node scripts/check-module-boundaries.mjs` → Module boundaries passed (19 modules)，EXIT 0。
+- `node scripts/audit-modules.mjs --check` → Module audit passed (19 modules, 544 production source files)，EXIT 0；快照已在本轮重生成并随提交落库。
+- `vitest run server/cli-resource-tools.test.ts` → 5 passed；`vitest run server/cli-proposal-tools.test.ts` → 8 passed（同一轮定向跑过）。
+- `mcp-server`：`tsc -p tsconfig.json` EXIT 0；`node --test dist/test/version.test.js dist/test/shared-tools.test.js` → 8 pass / 0 fail。
