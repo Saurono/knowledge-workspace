@@ -8,4 +8,6 @@ export const SHARED_TOOL_OPERATIONS: Record<string, string> = {
   kw_memory_graph: "memory.graph",
   kw_search: "search",
   kw_switch_context: "context.switch",
+  kw_proposal_submit: "proposal.submit",
+  kw_proposal_list: "proposal.list",
 }

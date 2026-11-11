@@ -1,5 +1,5 @@
 export interface SharedCliTransport { request(path: string, body: Record<string, unknown>, contextId?: string): Promise<unknown> }
-const TOOLS = ["wiki.list", "wiki.read", "wiki.write", "documents.list", "memory.list", "memory.summaries", "memory.graph", "search"]
+const TOOLS = ["wiki.list", "wiki.read", "wiki.write", "documents.list", "memory.list", "memory.summaries", "memory.graph", "search", "proposal.submit", "proposal.list"]
 /** Remote CLI/MCP share the same guarded resource API; caller arguments never become an identity. */
 export function createRemoteCli(transport: SharedCliTransport) {
   return {

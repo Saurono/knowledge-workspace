@@ -7,7 +7,7 @@ test("shared tools expose read-only memory summaries and graph", () => {
   assert.equal(SHARED_TOOL_OPERATIONS.kw_memory_graph, "memory.graph")
 })
 
-test("shared tools preserve all seven existing mappings", () => {
+test("shared tools expose all eleven mappings", () => {
   assert.equal(SHARED_TOOL_OPERATIONS.kw_wiki_list, "wiki.list")
   assert.equal(SHARED_TOOL_OPERATIONS.kw_wiki_read, "wiki.read")
   assert.equal(SHARED_TOOL_OPERATIONS.kw_wiki_write, "wiki.write")
@@ -15,6 +15,11 @@ test("shared tools preserve all seven existing mappings", () => {
   assert.equal(SHARED_TOOL_OPERATIONS.kw_memories, "memory.list")
   assert.equal(SHARED_TOOL_OPERATIONS.kw_search, "search")
   assert.equal(SHARED_TOOL_OPERATIONS.kw_switch_context, "context.switch")
+  assert.equal(SHARED_TOOL_OPERATIONS.kw_memory_summaries, "memory.summaries")
+  assert.equal(SHARED_TOOL_OPERATIONS.kw_memory_graph, "memory.graph")
+  assert.equal(SHARED_TOOL_OPERATIONS.kw_proposal_submit, "proposal.submit")
+  assert.equal(SHARED_TOOL_OPERATIONS.kw_proposal_list, "proposal.list")
+  assert.equal(Object.keys(SHARED_TOOL_OPERATIONS).length, 11)
 })
 
 test("shared tool names are unique and use the kw_ prefix", () => {
@@ -26,7 +31,7 @@ test("shared tool names are unique and use the kw_ prefix", () => {
 test("shared operations use only allowed prefixes or exact operations", () => {
   for (const operation of Object.values(SHARED_TOOL_OPERATIONS)) {
     assert.ok(
-      /^(wiki\.|documents\.|memory\.)/.test(operation) || operation === "search" || operation === "context.switch",
+      /^(wiki\.|documents\.|memory\.|proposal\.)/.test(operation) || operation === "search" || operation === "context.switch",
     )
   }
 })

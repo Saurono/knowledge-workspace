@@ -1,4 +1,5 @@
 import { ServiceError } from "@/modules/service-api/domain"
+import type { SubmitProposalInput } from "@/modules/service-api/domain"
 import { requireContextPermission } from "@/modules/identity/domain"
 import type { AccessContext, ProjectPermission } from "@/modules/identity/domain"
 import { createSharedService, domainFilterFromInput } from "@/modules/service-api/application"
@@ -20,7 +21,19 @@ export async function resourceTool(service: ReturnType<typeof createSharedServic
   if (tool === "memory.list") return (await service.readWorkspace(project)).data as SharedWorkspace
   if (tool === "memory.summaries") { requireContextPermission(access.context, "memory.read"); return service.readMemorySummaries(project, input.limit as string, input.cursor as string) }
   if (tool === "memory.graph") { requireContextPermission(access.context, "memory.read"); return service.readMemoryGraph(project, input.limit as string) }
+  if (tool === "proposal.submit") {
+    requireContextPermission(access.context, "wiki.write")
+    if (Object.keys(input).some(key => !["tool", "target", "idempotencyKey", "evidence"].includes(key))) throw new ServiceError("invalid_argument", "Unexpected field")
+    return service.submitProposal(project, { target: input.target, idempotencyKey: input.idempotencyKey, evidence: input.evidence } as SubmitProposalInput, actorFromContext(access.context))
+  }
+  if (tool === "proposal.list") {
+    requireContextPermission(access.context, "wiki.read")
+    return service.proposals(project)
+  }
   throw new ServiceError("unsupported", "Resource tool is not supported")
+}
+function actorFromContext(context: AccessContext) {
+  return { kind: context.actorKind === "admin" ? "user" as const : context.actorKind, id: context.actorId, entrypoint: context.entrypoint }
 }
 export async function keywordSearch(service: ReturnType<typeof createSharedService>, project: string, input: Record<string, unknown>) {
   if (typeof input.query !== "string" || !input.query.trim() || input.query.length > 2000) throw new ServiceError("invalid_argument", "A search query of 1–2000 characters is required")
