@@ -2,7 +2,7 @@
 
 最后核对：2026-11-11 13:43
 
-统计：绿 11 行 / 未验证 28 行 / 未做 27 行（仅计矩阵数据行，分类不互斥）。
+统计：绿 14 行 / 未验证 26 行 / 未做 25 行（仅计矩阵数据行，分类不互斥）。
 
 **怎么用这张表**：发布前逐行核对证据与当前候选版本，任何“未验证”不得当成绿。绿仅限注明的验证口径；已有记录不等于本轮重跑。固定状态列使用绿 / 红 / 未做，“部分”写入备注。本轮（11-11 下午）运行了类型检查、全量 mock 测试、模块边界与模块审计；不运行构建、基准或真实模型。工作区原有大量修改，状态检查应比较增量，不能要求整个工作区只剩本文件。
 
@@ -27,10 +27,11 @@
 | real-llm 套件 | [脚本](../../package.json)、[模型测试](../../src/lib/llm-client.real-llm.test.ts)、[嵌入测试](../../src/lib/embedding.real-llm.test.ts)；`npm run test:llm` | 未验证 | 未做 | 有入口但本轮未运行，未确认真实凭据可用。嵌入测试需 RUN_LLM_TESTS=1、EMBEDDING_ENDPOINT、EMBEDDING_MODEL，按服务提供 EMBEDDING_API_KEY；缺真实模型通过日志，跳过不算通过。 |
 | 本地小模型接入 | [缺口记录](../implementation/project-gaps-20261110.md)、[任务清单](../../TASKS.md) | 未验证 | 未做 | 没有实现；缺接入实现及实机验收。 |
 | 嵌入/检索真实质量 | [契约基线](../evaluation/retrieval-baseline-20261110.md) | 未验证 | 未做 | 部分：只有契约层基线；缺真实嵌入、真实检索质量快照。 |
-| Web 前端构建 | [脚本](../../package.json)；`npm run build` | 未验证 | 未做 | 本轮禁止运行；前提为依赖安装、模块边界与类型检查通过，随后 vite build。 |
-| 服务构建与启动 | [入口](../../package.json)、[build-service.mjs](../../scripts/build-service.mjs)；`npm run build:service`、`npm run start:service` | 未验证 | 未做 | 构建脚本已使用 rolldown，并配置 @ 别名与 node: 外部依赖，输出 server.mjs、cli.mjs、vault-connector.mjs；已核对修复脚本，缺候选版本构建与启动通过日志，本轮未运行。 |
+| Web 前端构建 | [脚本](../../package.json)；`npm run build` | 自动测试 | 绿 | CI run [42970068338](https://github.com/Saurono/knowledge-workspace/actions/runs/42970068338)（提交 `fb0852e`）在 ubuntu/macos/windows 三平台跑 `npm run typecheck && npx vite build` 与 `npm run build:web`，全绿；本地 11-11 早上也单独跑过 vite build EXIT 0。 |
+| 服务构建与启动 | [入口](../../package.json)、[build-service.mjs](../../scripts/build-service.mjs)；`npm run build:service`、`npm run start:service` | 自动测试 | 绿 | CI 三平台 `npm run build:service` 绿（run 42970068338）；CI 的共享客户端冒烟会真起 `dist-service/server.mjs`；本地 11-11 下午用构建产物起服务 + Agent Token 全链冒烟 `SMOKE_EXIT=0`（见证据文件）。 |
+| CI 三平台 | [工作流](../../.github/workflows/ci.yml) | 自动测试 | 绿 | 提交 `fb0852e` 的 [run 42970068338](https://github.com/Saurono/knowledge-workspace/actions/runs/42970068338)：`check (ubuntu-22.04)`、`check (macos-latest)`、`check (windows-latest)` 全部 success；含类型/构建/服务子集测试/CLI-MCP 冒烟/Rust `cargo build`+`cargo test --lib`。 |
 | 模块审计快照一致性 | [model-gateway README](../../src/modules/model-gateway/README.md)、[审计脚本](../../scripts/audit-modules.mjs)、[JSON 快照](../architecture/module-audit-v1.json)、[审计报告](../architecture/module-boundary-audit.md)；`node scripts/audit-modules.mjs --check` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑：Module audit passed (19 modules, 544 production source files)，EXIT 0；快照已在本轮重生成并随提交落库。 |
-| Tauri 桌面构建 | [桌面目录](../../src-tauri)、[构建脚本](../../package.json) | 未验证 | 红 | 任务卡提供的环境阻塞：缺 MSVC Build Tools；报错摘要 `link.exe returned an unexpected error`。本轮未复现，仓库日志未定位；缺工具链修复后的构建证据。 |
+| Tauri 桌面构建 | [桌面目录](../../src-tauri)、[构建脚本](../../package.json) | 未验证 | 红 | 本机缺 MSVC Build Tools（`link.exe returned an unexpected error`），本地 `tauri build` 未跑。**但 CI 三平台已绿**：run 42970068338 里 `cargo build`、`cargo test --lib`、`cargo build --features custom-protocol` 全过（含 Windows）。差别是 CI 不是本机、也没打安装包。 |
 | 安装包 | [桌面目录](../../src-tauri) | 未验证 | 未做 | 未产出；缺安装包文件、安装与启动验收。 |
 | 摘要模式冲突块 | [手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 手册明确摘要模式没有冲突块。 |
 | 网页星图/审批页 | [星图组件](../../src/web/memory-graph-view.tsx)、[网页接线](../../src/web/workspace.tsx)、[手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 星图已接入网页 graph 标签并检查 memory.read；未验证（没有浏览器交互验证）。审批页仍缺本轮页面验收证据。 |
@@ -48,7 +49,7 @@
 | I01 CLI/Agent 适配契约文档 | [契约文档](../implementation/cli-agent-contract-20261111.md) | 未验证 | 未做 | 文档完成不等于本机真实 CLI 验证；实现证据只有类型与单测，没有浏览器/真实 MCP 客户端验证。 |
 | I04 Agent 令牌与越权边界 | [测试](../../server/i04-agent-token-boundaries.test.ts) | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑：7 passed、全量 285 文件 / 2996 通过、EXIT 0；覆盖吊销/过期/缺权限/角色作用域/跨项目/事件流关闭/无执行后端 501。**取消语义未验证**（没有执行后端）。 |
 
-统计口径：仅计矩阵数据行，绿 11 行、验证方式含“未验证”28 行、状态“未做”27 行；三者不是互斥分类。已有测试源码与修复脚本不等于本轮执行通过；其他数字引用已有报告。
+统计口径：仅计矩阵数据行，绿 14 行、验证方式含“未验证”26 行、状态“未做”25 行；三者不是互斥分类。已有测试源码与修复脚本不等于本轮执行通过；其他数字引用已有报告。
 
 ## 本轮（11-11）新证据
 
