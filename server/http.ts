@@ -16,6 +16,7 @@ import type { ProjectPermission, SessionIdentity, AccessContext } from "@/module
 import type { AccountAuthentication } from "./auth-http"
 import { createDocumentCheckpointRepository } from "./ingestion-checkpoints"
 import { summarizeIngestion } from "@/modules/ingestion/domain"
+import { detectConflicts, migrateMemoriesV1 } from "@/modules/memory/domain"
 import { projectPhaseReceipt } from "@/modules/obsidian/application"
 import { domainFilterFromQuery, recallForContext, createExportBundle, validateExportBundle, planImport, validateSharedWorkspace } from "@/modules/service-api/application"
 import type { SharedWorkspace } from "@/modules/service-api/application"
@@ -155,6 +156,14 @@ export function createServiceHttp(options: ServiceOptions) {
       if (part === "memories/expire" && method === "POST") { requireContextPermission(context, "memory.write"); return send(200, await service.expireMemories(id, options.authentication.now())) }
       if (part === "memories/summaries" && method === "GET") { requireContextPermission(context, "memory.read"); return send(200, await service.readMemorySummaries(id, url.searchParams.get("limit"), url.searchParams.get("cursor"))) }
       if (part === "memories/graph" && method === "GET") { requireContextPermission(context, "memory.read"); return send(200, await service.readMemoryGraph(id, url.searchParams.get("limit"))) }
+      if (part === "memories/conflicts" && method === "GET") {
+        requireContextPermission(context, "memory.read")
+        const limit = url.searchParams.get("limit") ?? "200"
+        if (!/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 1000) throw new ServiceError("invalid_argument", "limit must be 1–1000")
+        const workspace = (await service.readWorkspace(id)).data as SharedWorkspace
+        const items = detectConflicts(migrateMemoriesV1(workspace.memories)).slice(0, Number(limit))
+        return send(200, { items })
+      }
       if (part === "memories/search" && method === "POST") {
         requireContextPermission(context, "memory.read")
         const body = await json(), limit = body.limit ?? 20
