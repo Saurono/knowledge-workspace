@@ -48,7 +48,8 @@ SMOKE_EXIT=0
 - **再导一次不会把记忆变成两条**（`memory.summaries` 里 `m1` 仍只 1 条）；
 - 孤儿上传：磁盘上造一个没有文档记录的 `uploads/<projectId>/<sourceId>/blob.bin`，扫描能发现；**不带 `confirm=1` 删除返回 400**；带 `confirm=1` 删除返回 200 且文件真的没了。
 - 文档生命周期：`POST /projects/:id/documents`（`X-File-Name` 头 + 原始字节）→ **201**，返回资源记录 `key` 就是 documentId；`DELETE /projects/:id/documents/<id>` **不带 `If-Match` 返回 428**（不是 400），带 `If-Match: "v<revision>"` 返回 200，之后文档列表里不再有它。
-- 轻量 workspace：`GET /workspace?memories=none` 的 `memories` 为空但 `revision` 与完整 GET 一致（元数据没被裁）；非法 `memories=all` → **400**。
+- 轻量 workspace：`GET /workspace?memories=none` 的 `memories` 为空、`revision` 与完整 GET 一致（**实测：轻量 0 条、完整 1 条、`revision` 都是 4**）；非法 `memories=all` → **400**。
+  - **更正（2026-11-11 17:15）**：这份证据最初那两条断言取错了 JSON 层级（读的是 `data.memories`，实际是 `data.data.memories`），所以"轻量 0 条 / revision 保持"当时**其实没被真正验证**。脚本已改成读 `data.data.memories` 与 `data.revision`，并加了一条"完整 GET 的 memories 不能为空（防夹具坏掉）"，重跑后输出 `light workspace: memories=0, full memories=1, revision kept 4`。
 - 提案批量批准：两条提案 dryRun 能列出 eligible，真批 approved 两条，批准后 `memory.summaries` 里能看到；**按 ids 再批一次逐条 `not_pending`**。注意：**不带 `ids` 时 `failed` 恒为空**——这是既有语义（只有显式传 ids 才会校验），不是 bug。
 
 **它没证明什么**：
