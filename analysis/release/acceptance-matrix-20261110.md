@@ -2,7 +2,7 @@
 
 最后核对：2026-11-11 13:43
 
-统计：绿 30 行 / 未验证 15 行 / 未做 15 行（仅计矩阵数据行，分类不互斥）。
+统计：绿 31 行 / 未验证 14 行 / 未做 14 行（仅计矩阵数据行，分类不互斥）。
 
 **怎么用这张表**：发布前逐行核对证据与当前候选版本，任何“未验证”不得当成绿。绿仅限注明的验证口径；已有记录不等于本轮重跑。固定状态列使用绿 / 红 / 未做，“部分”写入备注。本轮（11-11 下午）运行了类型检查、全量 mock 测试、模块边界与模块审计；不运行构建、基准或真实模型。工作区原有大量修改，状态检查应比较增量，不能要求整个工作区只剩本文件。
 
@@ -34,7 +34,7 @@
 | 模块审计快照一致性 | [model-gateway README](../../src/modules/model-gateway/README.md)、[审计脚本](../../scripts/audit-modules.mjs)、[JSON 快照](../architecture/module-audit-v1.json)、[审计报告](../architecture/module-boundary-audit.md)；`node scripts/audit-modules.mjs --check` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑：Module audit passed (19 modules, 544 production source files)，EXIT 0；快照已在本轮重生成并随提交落库。 |
 | Tauri 桌面构建 | [桌面目录](../../src-tauri)、[构建脚本](../../package.json) | 未验证 | 红 | 本机缺 MSVC Build Tools（`link.exe returned an unexpected error`），本地 `tauri build` 未跑。**但 CI 三平台已绿**：run 42970068338 里 `cargo build`、`cargo test --lib`、`cargo build --features custom-protocol` 全过（含 Windows）。差别是 CI 不是本机、也没打安装包。 |
 | 安装包 | [桌面目录](../../src-tauri)、[CI 产物证据](evidence/2026-11-11-windows-installer.md) | 手工（产物产出，未安装） | 未做 | 部分：CI run [42971789528](https://github.com/Saurono/knowledge-workspace/actions/runs/42971789528) 已产出 MSI / NSIS / portable zip（0.6.13，未签名，SHA256 见证据文件）；**未安装、未启动、未验数据目录与端口**。 |
-| 摘要模式冲突块 | [路由](../../server/http.ts)、[测试](../../server/memory-conflicts.test.ts)、[手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 部分：2026-11-11 已加 `GET /projects/:id/memories/conflicts`（`memory.read`、limit 1–1000、授权后取可见集合、GET 不落库），7 个场景单测通过；**UI 还没接**，摘要模式界面仍不显示冲突块。 |
+| 摘要模式冲突块 | [路由](../../server/http.ts)、[路由测试](../../server/memory-conflicts.test.ts)、[组件](../../src/modules/memory/ui/memory-library.tsx)、[组件测试](../../src/modules/memory/ui/memory-library.test.tsx)、[Web 接线](../../src/web/workspace.tsx) | 自动测试 | 绿 | 2026-11-11：服务端 `GET /memories/conflicts`（7 场景）+ 组件三模式渲染断言 + Web 在每次摘要加载后刷新冲突；全量 287 文件 / 3005 通过。**Web 页面没有在浏览器里点过**。 |
 | 网页星图/审批页 | [星图组件](../../src/web/memory-graph-view.tsx)、[网页接线](../../src/web/workspace.tsx)、[手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 星图已接入网页 graph 标签并检查 memory.read；未验证（没有浏览器交互验证）。审批页仍缺本轮页面验收证据。 |
 | 全入口 Agent 强制审批 | [手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 缺统一禁止 Agent 直写/自批的角色拦截及全入口验收。 |
 | 跨进程队列 | [手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 进程内队列不能作为跨进程调度证据。 |
@@ -55,7 +55,7 @@
 | 孤儿上传扫描/清理 HTTP | [路由](../../server/http.ts)、[测试](../../server/orphan-uploads-route.test.ts)、[冒烟证据](evidence/2026-11-11-release-http-smoke.md) | 手工（真实服务） | 绿 | 本轮（11-11 下午）真实服务：磁盘造孤儿 → 扫描发现 → 不带 `confirm=1` 删除 400 → 带 `confirm=1` 删除 200 且文件消失。 |
 | 文档上传与级联删除 HTTP | [路由](../../server/http.ts)、[测试](../../server/document-lifecycle.test.ts)、[冒烟证据](evidence/2026-11-11-release-http-smoke.md) | 手工（真实服务） | 绿 | 本轮（11-11 下午）真实服务：上传 201（`X-File-Name` + 原始字节）→ 无 `If-Match` 删除 **428** → 带 `If-Match` 删除 200，字节与记录一起消失。 |
 
-统计口径：仅计矩阵数据行，绿 30 行、验证方式含“未验证”15 行、状态“未做”15 行；三者不是互斥分类。已有测试源码与修复脚本不等于本轮执行通过；其他数字引用已有报告。
+统计口径：仅计矩阵数据行，绿 31 行、验证方式含“未验证”14 行、状态“未做”14 行；三者不是互斥分类。已有测试源码与修复脚本不等于本轮执行通过；其他数字引用已有报告。
 
 ## 本轮（11-11）新证据
 

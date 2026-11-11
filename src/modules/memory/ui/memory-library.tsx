@@ -17,6 +17,8 @@ export interface MemorySummaryView {
 export interface MemoryLibraryProps {
   memories?: MemoryRecord[]
   summaries?: MemorySummaryView[]
+  /** 摘要模式下由调用方取好的冲突对（服务端 GET /memories/conflicts 的结果）。 */
+  conflicts?: Array<{ a: string; b: string }>
   onLoadMemory?: (id: string) => Promise<MemoryRecord | null>
   domains: { id: string; name: string }[]
   loading: boolean
@@ -37,6 +39,7 @@ export interface MemoryLibraryProps {
 export function MemoryLibrary({
   memories = [],
   summaries,
+  conflicts: summaryConflicts,
   onLoadMemory,
   domains,
   loading,
@@ -90,7 +93,7 @@ export function MemoryLibrary({
     // Loading is driven by selection; failures wait for an explicit retry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [summaryMode, selected])
-  const conflicts = summaryMode ? [] : detectConflicts(memories).filter((c) => c.a === current?.id || c.b === current?.id)
+  const conflicts = summaryMode ? (summaryConflicts ?? []).filter((c) => c.a === current?.id || c.b === current?.id) : detectConflicts(memories).filter((c) => c.a === current?.id || c.b === current?.id)
   const filtered = summaryMode ? summaryList.filter(m =>
     `${m.title} ${m.category}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
   ) : memories.filter(
@@ -230,7 +233,7 @@ export function MemoryLibrary({
                 <h2 className="font-semibold">{t("workspace.memoryDisplay.conflicts")}</h2>
                 <ul>{conflicts.map((c) => {
                   const id = c.a === current.id ? c.b : c.a
-                  return <li key={id}>{id} / {memories.find((m) => m.id === id)?.title}
+                  return <li key={id}>{id} / {(summaryMode ? summaryList : memories).find((m) => m.id === id)?.title ?? id}
                     {onResolve && <>
                       <button disabled={disabled} onClick={() => void onResolve(current.id, id, "both-intentional")}>{t("workspace.memoryDisplay.resolveBoth")}</button>
                       <button disabled={disabled} onClick={() => void onResolve(current.id, id, "merged")}>{t("workspace.memoryDisplay.resolveMerged")}</button>

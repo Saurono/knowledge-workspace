@@ -23,6 +23,23 @@ const render = (memories = [record("a")]) => renderToStaticMarkup(createElement(
   onSelect: vi.fn(), onSave: vi.fn(), onRemove: vi.fn(), onRetry: vi.fn(),
 }))
 describe("MemoryLibrary display", () => {
+  it("renders supplied summary conflicts and preserves full-record detection", () => {
+    const a = record("a"), b = record("b")
+    const props: MemoryLibraryProps = {
+      memories: [a], summaries: [
+        { id: "a", title: "Alpha", status: "active", version: 1, updatedAt: "2026-11-11", owner: null, category: "fact" },
+        { id: "b", title: "Beta", status: "active", version: 1, updatedAt: "2026-11-11", owner: null, category: "fact" },
+      ], conflicts: [{ a: "a", b: "b" }],
+      domains: [], loading: false, saving: false, error: null, selected: "a",
+      onSelect: vi.fn(), onSave: vi.fn(), onRemove: vi.fn(), onRetry: vi.fn(),
+    }
+    const html = renderToStaticMarkup(createElement(MemoryLibrary, props))
+    expect(html).toContain("workspace.memoryDisplay.conflicts")
+    expect(html).toContain("b / Beta")
+    expect(renderToStaticMarkup(createElement(MemoryLibrary, { ...props, conflicts: undefined }))).not.toContain("workspace.memoryDisplay.conflicts")
+    b.relations = [{ type: "contradicts", targetId: "a" }]
+    expect(renderToStaticMarkup(createElement(MemoryLibrary, { ...props, summaries: undefined, memories: [a, b], conflicts: [] }))).toContain("b / b")
+  })
   it("renders category as a whitelist select and writes changes to the draft", () => {
     const previousUseState = vi.mocked(React.useState).getMockImplementation()!
     const setDraft = vi.fn()
