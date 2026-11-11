@@ -28,7 +28,16 @@ ok upload document -> 201
 ok delete document without If-Match -> 428
 ok delete document with If-Match -> 200
 ok document byte + record removed
-SMOKE_OK project=1c31b7f5-5fdf-487c-b0cc-d9f55dc113bd
+ok workspace?memories=none -> 200
+ok light workspace: memories=0, domains=0, revision kept
+ok workspace invalid projection -> 400
+ok submit batch-k1 -> 200
+ok submit batch-k2 -> 200
+ok approve-batch dryRun -> 200
+ok approve-batch applied -> 200
+ok batch approved proposals visible as memories
+ok re-approve by ids reports not_pending
+SMOKE_OK project=19e9ca01-450e-47cc-8a64-a09583476df9
 SMOKE_EXIT=0
 ```
 
@@ -39,6 +48,8 @@ SMOKE_EXIT=0
 - **再导一次不会把记忆变成两条**（`memory.summaries` 里 `m1` 仍只 1 条）；
 - 孤儿上传：磁盘上造一个没有文档记录的 `uploads/<projectId>/<sourceId>/blob.bin`，扫描能发现；**不带 `confirm=1` 删除返回 400**；带 `confirm=1` 删除返回 200 且文件真的没了。
 - 文档生命周期：`POST /projects/:id/documents`（`X-File-Name` 头 + 原始字节）→ **201**，返回资源记录 `key` 就是 documentId；`DELETE /projects/:id/documents/<id>` **不带 `If-Match` 返回 428**（不是 400），带 `If-Match: "v<revision>"` 返回 200，之后文档列表里不再有它。
+- 轻量 workspace：`GET /workspace?memories=none` 的 `memories` 为空但 `revision` 与完整 GET 一致（元数据没被裁）；非法 `memories=all` → **400**。
+- 提案批量批准：两条提案 dryRun 能列出 eligible，真批 approved 两条，批准后 `memory.summaries` 里能看到；**按 ids 再批一次逐条 `not_pending`**。注意：**不带 `ids` 时 `failed` 恒为空**——这是既有语义（只有显式传 ids 才会校验），不是 bug。
 
 **它没证明什么**：
 

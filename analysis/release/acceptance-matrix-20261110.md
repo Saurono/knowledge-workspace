@@ -2,7 +2,7 @@
 
 最后核对：2026-11-11 13:43
 
-统计：绿 19 行 / 未验证 25 行 / 未做 25 行（仅计矩阵数据行，分类不互斥）。
+统计：绿 21 行 / 未验证 24 行 / 未做 24 行（仅计矩阵数据行，分类不互斥）。
 
 **怎么用这张表**：发布前逐行核对证据与当前候选版本，任何“未验证”不得当成绿。绿仅限注明的验证口径；已有记录不等于本轮重跑。固定状态列使用绿 / 红 / 未做，“部分”写入备注。本轮（11-11 下午）运行了类型检查、全量 mock 测试、模块边界与模块审计；不运行构建、基准或真实模型。工作区原有大量修改，状态检查应比较增量，不能要求整个工作区只剩本文件。
 
@@ -20,7 +20,8 @@
 | 记忆更新 409 修复 | [memory-update-metadata.test.ts](../../server/memory-update-metadata.test.ts)：`updates metadata over HTTP, skips equivalent writes and rejects stale versions` | 未验证 | 未做 | 已有回归断言：元数据更新返回 200、版本递增；等价写不增版本；旧版本仍返回 409。未验证：本轮未运行，缺通过日志。 |
 | GET /memories/summaries | [memory-summaries-route.test.ts](../../server/memory-summaries-route.test.ts)：`routes memory summaries with pagination, defaults, validation and permission checks` | 未验证 | 未做 | 项目路径下接口已有分页、默认值、非法参数及 403 断言；未验证：缺本轮通过日志。 |
 | GET /memories/graph | [memory-graph-route.test.ts](../../server/memory-graph-route.test.ts)：`routes graph before memory IDs, validates limits, orders nodes and checks permissions` | 未验证 | 未做 | 项目路径下接口已有路由优先级、数量限制、排序及权限断言；未验证：缺本轮通过日志。 |
-| GET /workspace?memories=none | [workspace-projection.test.ts](../../server/workspace-projection.test.ts)：`projects memories to an empty array while preserving domains and real metadata`、`projects an authorized view without exposing a hidden memory ID in any field` | 未验证 | 未做 | 已断言 memories 为空、其余数据及 ETag 保持、隐藏 ID 不泄露；未验证：缺本轮通过日志。 |
+| GET /workspace?memories=none | [workspace-projection.test.ts](../../server/workspace-projection.test.ts)、[冒烟证据](evidence/2026-11-11-release-http-smoke.md) | 手工（真实服务） | 绿 | 本轮（11-11 下午）真实服务：`memories` 为空、`revision` 与完整 GET 相同（元数据真实）、非法投影 `memories=all` 返回 **400**；单测另有"隐藏 ID 不泄露"断言。 |
+| 提案批量批准 HTTP | [路由](../../server/http.ts)、[测试](../../server/proposal-batch.test.ts)、[冒烟证据](evidence/2026-11-11-release-http-smoke.md) | 手工（真实服务） | 绿 | 本轮（11-11 下午）真实服务：两条提案 dryRun 能列出 eligible、真批 approved 两条、批准后 `memory.summaries` 里出现两条；**按 ids 再批一次逐条报 `not_pending`**（不带 ids 时 `failed` 恒为空，是既有语义）。 |
 | 重启恢复 running/report/ingest 为 queued | [队列测试](../../src/modules/tasks/application/task-queue.test.ts) | 未验证 | 未做 | 新查：存在 interrupted records 恢复测试；进程内模拟，缺本轮执行日志。 |
 | 并发上限、同域串行、取消、重试 | [调度测试](../../src/modules/tasks/application/scheduler.test.ts) | 未验证 | 未做 | 新查：具备上述用例；进程内验证，缺本轮通过日志。 |
 | 任务恢复接真实入库执行器 | [队列](../../src/modules/tasks/application/task-queue.test.ts)、[调度器](../../src/modules/tasks/application/scheduler.test.ts) | 未验证 | 未做 | 未验证（缺端到端接线）；两套进程内测试不能证明真实入库执行器恢复。 |
@@ -54,7 +55,7 @@
 | 孤儿上传扫描/清理 HTTP | [路由](../../server/http.ts)、[测试](../../server/orphan-uploads-route.test.ts)、[冒烟证据](evidence/2026-11-11-release-http-smoke.md) | 手工（真实服务） | 绿 | 本轮（11-11 下午）真实服务：磁盘造孤儿 → 扫描发现 → 不带 `confirm=1` 删除 400 → 带 `confirm=1` 删除 200 且文件消失。 |
 | 文档上传与级联删除 HTTP | [路由](../../server/http.ts)、[测试](../../server/document-lifecycle.test.ts)、[冒烟证据](evidence/2026-11-11-release-http-smoke.md) | 手工（真实服务） | 绿 | 本轮（11-11 下午）真实服务：上传 201（`X-File-Name` + 原始字节）→ 无 `If-Match` 删除 **428** → 带 `If-Match` 删除 200，字节与记录一起消失。 |
 
-统计口径：仅计矩阵数据行，绿 19 行、验证方式含“未验证”25 行、状态“未做”25 行；三者不是互斥分类。已有测试源码与修复脚本不等于本轮执行通过；其他数字引用已有报告。
+统计口径：仅计矩阵数据行，绿 21 行、验证方式含“未验证”24 行、状态“未做”24 行；三者不是互斥分类。已有测试源码与修复脚本不等于本轮执行通过；其他数字引用已有报告。
 
 ## 本轮（11-11）新证据
 
