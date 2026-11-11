@@ -71,10 +71,8 @@ jobs:
       - name: Check shared HTTP and persistence
         run: npx vitest run server src/modules/platform src/modules/service-api src/modules/identity src/modules/ingestion analysis/evaluation/d01-acceptance.test.ts analysis/evaluation/d02-acceptance.test.ts analysis/evaluation/d02-local-import-acceptance.test.ts --exclude='**/mcp-server/**' --exclude='**/*.real-llm.test.ts'
 
-      # 全量套件（src + server）暂时没加进 CI：2026-11-11 试过一次，windows/macos 上稳定失败的
-      # 是 src/lib/ingest.scenarios.test.ts（Vault 回执同步）、src/app/obsidian/phase-receipts.real-fs.test.ts，
-      # 另有一次 server/k04-e2e.test.ts 在老步骤里也抖了；这三条要单独修稳再加，
-      # 卡：tools/cards/2026-11-11-flaky-tests-ci.md。加之前别在这里放 red 步骤。
+      - name: Run full mock test suite
+        run: npx vitest run src server --exclude='**/mcp-server/**' --exclude='**/*.real-llm.test.ts'
 
       - name: Prepare MCP server resources
         run: |

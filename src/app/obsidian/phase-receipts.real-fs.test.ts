@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest"
 import { createHash } from "node:crypto"
-import { rename, mkdir, readFile } from "node:fs/promises"
+import { rename, mkdir, readFile, realpath } from "node:fs/promises"
 import { realFs, createTempProject, writeFileRaw } from "@/test-helpers/fs-temp"
 
 vi.mock("@/commands/fs", () => realFs)
@@ -10,6 +10,9 @@ let vaultTmp: Awaited<ReturnType<typeof createTempProject>>
 beforeAll(async () => {
   projectTmp = await createTempProject("phase-receipts-project")
   vaultTmp = await createTempProject("phase-receipts-vault")
+  // The real-fs adapter requires the root in the same canonical form as its
+  // realpath(directory) check (runner temp roots may be aliases or differ in case).
+  vaultTmp.path = await realpath(vaultTmp.path)
   await mkdir(`${vaultTmp.path}/.obsidian`, { recursive: true })
   await writeFileRaw(`${projectTmp.path}/raw/source.md`, "user source unchanged")
 })
@@ -45,6 +48,7 @@ it("persists pending state locally, verifies external JSON after restart, and re
   await restarted.configureVault(projectTmp.path, vaultTmp.path)
   const externalPath = `${vaultTmp.path}/kb-ingest-records/source1-${revision}.json`
   const external = JSON.parse(await readFile(externalPath, "utf8"))
+  expect(JSON.parse(await readFile(await realpath(externalPath), "utf8"))).toEqual(external)
   expect(external).toMatchObject({ schemaVersion: 2, sourceId: "source1", sourceRevision: revision })
   expect(createHash("sha256").update(await readFile(`${projectTmp.path}/raw/source.md`, "utf8")).digest("hex")).toBe(originalHash)
 })

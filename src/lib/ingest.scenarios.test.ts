@@ -458,8 +458,11 @@ describe("ingest scenarios (fixture-driven)", () => {
     const scenario = ingestScenarios[0]
     ctx = await setup(scenario)
     const projectPath = ctx.tmp.path
-    const vaultPath = `${projectPath}-vault`
-    await fs.mkdir(path.join(vaultPath, ".obsidian"), { recursive: true })
+    const temporaryVaultPath = `${projectPath}-vault`
+    await fs.mkdir(path.join(temporaryVaultPath, ".obsidian"), { recursive: true })
+    // The real-fs test adapter compares realpath(directory) with the supplied root.
+    // Resolve runner temp aliases/casing before configuring that adapter.
+    const vaultPath = await fs.realpath(temporaryVaultPath)
     await phaseReceipts.configureVault(projectPath, vaultPath)
     const writeSpy = vi.spyOn(realFs, "writeVaultReceipt")
     writeSpy.mockRejectedValueOnce(new Error("vault disconnected"))
@@ -482,6 +485,7 @@ describe("ingest scenarios (fixture-driven)", () => {
       expect(final).toMatchObject({ stages: { compile: { status: "succeeded" }, feedback: { status: "succeeded" } }, delivery: "delivered" })
       const target = path.join(vaultPath, "kb-ingest-records", `${source.id}-${revision}.json`)
       expect(JSON.parse(await fs.readFile(target, "utf8")).stages.feedback.status).toBe("succeeded")
+      expect(await fs.readFile(await fs.realpath(target), "utf8")).toBe(await fs.readFile(target, "utf8"))
     } finally {
       writeSpy.mockRestore()
       await fs.rm(vaultPath, { recursive: true, force: true })
