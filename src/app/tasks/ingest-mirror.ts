@@ -55,6 +55,7 @@ export function createLegacyIngestMirror(options: {
           await write({
             id, kind: "ingest", executorId: LEGACY_INGEST_EXECUTOR, scopeId, parentId: null, stage,
             payload: { sourcePath: task.sourcePath, projectId: task.projectId,
+              legacyTaskId: task.id,
               ...(task.sourceId === undefined ? {} : { sourceId: task.sourceId }),
               ...(task.sourceRevision === undefined ? {} : { sourceRevision: task.sourceRevision }),
               folderContext: task.folderContext, retryCount: task.retryCount,

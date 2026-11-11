@@ -7,6 +7,19 @@ const task = (patch: Partial<TaskProtocol> = {}): TaskProtocol => ({
   ...createTaskProtocol({ id: "a", kind: "other", scopeId: "s", executorId: "e", now: at }), ...patch,
 })
 const stages = ["queued", "running", "report", "ingest", "done", "failed", "cancelled"] as const
+it("maps a legacy task id while preserving unified identity", () => {
+  const t = task({ id: "legacy-ingest:p:old-1", payload: { legacyTaskId: "old-1" } })
+  expect(toActivityViews([t])[0].taskId).toBe("old-1")
+  expect(toActivityViews([t])[0].id).toBe(t.id)
+})
+it("keeps the unified task id when no legacy id exists", () => {
+  const t = task()
+  expect(toActivityViews([t])[0].taskId).toBe(t.id)
+})
+it.each(["", 123])("falls back to the unified task id for legacy id %j", legacyTaskId => {
+  const t = task({ payload: { legacyTaskId } })
+  expect(toActivityViews([t])[0].taskId).toBe(t.id)
+})
 it("projects every import stage", () => {
   expect(stages.map(stage => toImportTaskViews([task({ stage })])[0].status)).toEqual(["pending", "processing", "processing", "processing", "done", "failed", "cancelled"])
 })

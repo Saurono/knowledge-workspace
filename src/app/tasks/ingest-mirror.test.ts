@@ -16,7 +16,7 @@ function setup(seed: TaskProtocol[] = [], fail = false) {
 it("1 maps pending fields", async () => {
   const h = setup(); await h.sync([task()]); const t = h.get()
   expect(t).toMatchObject({ id: "legacy-ingest:p:a", kind: "ingest", executorId: LEGACY_INGEST_EXECUTOR, stage: "queued", createdAt: new Date(1000).toISOString(), log: [], result: { report: null, ingest: null } })
-  expect(t.payload).toEqual({ sourcePath: "/docs/a.pdf", projectId: "p", sourceId: "s", sourceRevision: "r", folderContext: "docs", retryCount: 0, title: "a.pdf" })
+  expect(t.payload).toEqual({ sourcePath: "/docs/a.pdf", projectId: "p", legacyTaskId: "a", sourceId: "s", sourceRevision: "r", folderContext: "docs", retryCount: 0, title: "a.pdf" })
 })
 it("2 preserves start and reports no counts", async () => {
   const h = setup(); await h.sync([task("processing")]); const start = h.get().startedAt

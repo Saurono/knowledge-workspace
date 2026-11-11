@@ -25,13 +25,17 @@ export function toImportTaskViews(tasks: readonly TaskProtocol[]): ImportTaskVie
 }
 
 export function toActivityViews(tasks: readonly TaskProtocol[]): TaskActivityView[] {
-  return sorted(tasks).map(task => ({
-    id: task.id, taskId: task.id, parentTaskId: task.parentId ?? undefined,
-    type: task.kind === "ingest" ? "ingest" : task.kind === "lint" ? "lint" : "query",
-    title: payloadString(task, "title") ?? `${task.kind} · ${task.id}`,
-    status: activityStatus[task.stage], detail: task.progress ?? "",
-    log: task.log.length ? task.log.map(entry => `${entry.at} ${entry.level}: ${entry.message}`) : undefined,
-    // result.ingest contains counts, not paths; never invent written file paths.
-    filesWritten: [], createdAt: time(task.createdAt),
-  }))
+  return sorted(tasks).map(task => {
+    const legacyTaskId = payloadString(task, "legacyTaskId")
+    // Use the legacy queue id for display deduplication and its retry/cancel actions.
+    return {
+      id: task.id, taskId: legacyTaskId ? legacyTaskId : task.id, parentTaskId: task.parentId ?? undefined,
+      type: task.kind === "ingest" ? "ingest" : task.kind === "lint" ? "lint" : "query",
+      title: payloadString(task, "title") ?? `${task.kind} · ${task.id}`,
+      status: activityStatus[task.stage], detail: task.progress ?? "",
+      log: task.log.length ? task.log.map(entry => `${entry.at} ${entry.level}: ${entry.message}`) : undefined,
+      // result.ingest contains counts, not paths; never invent written file paths.
+      filesWritten: [], createdAt: time(task.createdAt),
+    }
+  })
 }
