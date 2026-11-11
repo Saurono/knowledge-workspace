@@ -14,7 +14,12 @@ export async function accountFixture(executions?: ExecutionGateway) {
   let authentication = createAccountAuthentication(repository, setupKey, false, () => now)
   const makeHttp = () => createServiceHttp({ repository, authentication, executions, uploads: new DiskUploads(directory) })
   let http = makeHttp()
-  const listen = async () => { await new Promise<void>(resolve => http.server.listen(0, "127.0.0.1", resolve)); origin = `http://127.0.0.1:${(http.server.address() as AddressInfo).port}` }
+  const listen = async () => {
+    // 关掉 keep-alive 空闲超时：慢用例（例如写 200 页再导出）会让客户端连接闲置超过 Node 默认 5s，
+    // undici 复用到已被服务端关掉的 socket 就报 ECONNRESET（Windows runner 上稳定复现）。
+    http.server.keepAliveTimeout = 0
+    await new Promise<void>(resolve => http.server.listen(0, "127.0.0.1", resolve)); origin = `http://127.0.0.1:${(http.server.address() as AddressInfo).port}`
+  }
   const closeHttp = async () => { http.closeStreams(); http.server.closeAllConnections(); await new Promise<void>(resolve => http.server.close(() => resolve())); repository.close() }
   await listen()
   const request = (path: string, method = "GET", body?: unknown, cookie = "", extra: Record<string, string> = {}) => fetch(origin + "/api/v1" + path, { method, headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie, "X-KW-CSRF": "1" } : {}), ...extra }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
