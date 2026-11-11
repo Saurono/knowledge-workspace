@@ -18,6 +18,8 @@ export async function resourceTool(service: ReturnType<typeof createSharedServic
   }
   if (tool === "documents.list") return service.list(project, "document", input.limit as string, input.cursor as string, domainFilterFromInput(input.domainFilter))
   if (tool === "memory.list") return (await service.readWorkspace(project)).data as SharedWorkspace
+  if (tool === "memory.summaries") { requireContextPermission(access.context, "memory.read"); return service.readMemorySummaries(project, input.limit as string, input.cursor as string) }
+  if (tool === "memory.graph") { requireContextPermission(access.context, "memory.read"); return service.readMemoryGraph(project, input.limit as string) }
   throw new ServiceError("unsupported", "Resource tool is not supported")
 }
 export async function keywordSearch(service: ReturnType<typeof createSharedService>, project: string, input: Record<string, unknown>) {
