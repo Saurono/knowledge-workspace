@@ -119,7 +119,7 @@ export async function enrichWithWikilinks(
     return true
   }
   const changed = fp.startsWith(`${pp.replace(/\/+$/, "")}/wiki/`)
-    ? await withWikiProjectCommit(pp, (commit) => applyLatest(commit.read, commit.write))
+    ? await withWikiProjectCommit(pp, (commit) => applyLatest(commit.read, commit.write), { actor: { kind: "system", id: "local-system", entrypoint: "wikilink-enrichment" } })
     // Preserve legacy utility callers that enrich a non-Wiki project file.
     : await withProjectLock(pp, () => applyLatest(readFile, writeFile))
   if (!changed) return

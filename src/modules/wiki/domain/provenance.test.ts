@@ -1,5 +1,5 @@
 import { expect, it } from "vitest"
-import { moveWikiProvenance, preserveWikiCreatedFrontmatter, recordWikiProvenance, recordWikiWrite } from "./provenance"
+import { isWikiProvenance, moveWikiProvenance, preserveWikiCreatedFrontmatter, recordWikiProvenance, recordWikiWrite } from "./provenance"
 it("preserves unknown source creation time when moving into a known destination", () => {
   expect(moveWikiProvenance({
     "wiki/source.md": { createdAt: null, sources: ["source"] },
@@ -29,6 +29,26 @@ it("records only proven first writes and never fills legacy unknown timestamps",
   const legacy = recordWikiWrite({}, "wiki/legacy.md", { existed: true, now: "t3" })
   expect(legacy["wiki/legacy.md"]).toEqual({ createdAt: null, sources: [] })
   expect(recordWikiWrite(legacy, "wiki/legacy.md", { existed: true, now: "t4" })["wiki/legacy.md"].createdAt).toBeNull()
+})
+it("tracks substantive body authorship by hash and leaves review/metadata out of origins", () => {
+  const user = { actor: { kind: "user" as const, id: "local-user", entrypoint: "editor" } }
+  const agent = { actor: { kind: "agent" as const, id: "local-agent-run", entrypoint: "compile" } }
+  const first = recordWikiWrite({}, "wiki/page.md", { existed: false, now: "t1", contentHash: "a".repeat(64), attribution: user })
+  const same = recordWikiWrite(first, "wiki/page.md", { existed: true, now: "t2", contentHash: "a".repeat(64), attribution: agent })
+  expect(same["wiki/page.md"].revisions).toHaveLength(1)
+  const next = recordWikiWrite(same, "wiki/page.md", { existed: true, now: "t3", contentHash: "b".repeat(64), attribution: { ...agent, metadataOnly: true } })
+  expect(next["wiki/page.md"].revisions).toHaveLength(1)
+  const changed = recordWikiWrite(next, "wiki/page.md", { existed: true, now: "t4", contentHash: "c".repeat(64), attribution: agent })
+  expect(changed["wiki/page.md"].creator).toEqual(user.actor)
+  expect(changed["wiki/page.md"].revisions?.[1].originKinds).toEqual(["user", "agent"])
+  expect(isWikiProvenance(changed["wiki/page.md"])).toBe(true)
+})
+it("keeps legacy unknown creator unknown after a later known edit and rejects malformed authorship", () => {
+  const legacy = recordWikiWrite({ "wiki/old.md": { createdAt: null, sources: [] } }, "wiki/old.md", {
+    existed: true, now: "later", contentHash: "d".repeat(64), attribution: { actor: { kind: "user", id: "local-user", entrypoint: "editor" } },
+  })
+  expect(legacy["wiki/old.md"].creator).toBeUndefined()
+  expect(isWikiProvenance({ ...legacy["wiki/old.md"], revisions: [{ revision: 4 }] })).toBe(false)
 })
 it("protects only top-level YAML created and leaves a missing created field missing", () => {
   expect(preserveWikiCreatedFrontmatter(

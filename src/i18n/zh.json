@@ -623,7 +623,6 @@
           "max": "最大",
           "custom": "自定义",
           "budgetTokens": "thinking token 预算",
-
           "hint": "控制聊天时的推理强度；文档摄取使用下方的独立设置。",
           "ingestTitle": "导入时的推理",
           "ingestHint": "通常应关闭：导入需要结构化输出，推理只会增加耗时而无助于质量。仅当模型拒绝在关闭推理的情况下运行时才调高。"
@@ -1178,6 +1177,8 @@
     "daysAgo": "{{count}} 天前"
   },
   "workspace": {
+    "loadingMemory": "加载中…",
+    "memoryDisplay": {"compacted":"v1–v{{to}} 的正文已归档","resolveBoth":"两者都保留","resolveMerged":"已合并","promote":"提升为生效","archive":"归档","supersede":"替代为…","supersedeTarget":"选择替代目标","candidate":"候选","active":"生效","superseded":"已替代","expired":"已过期","archived":"已归档","until":"有效至","importance":"重要性","credibility":"可信度","unknown":"未知","history":"版本历史","audit":"状态审计","access":"授权范围","project":"项目内可见","role":"角色可见","private":"私有","owner":"所有者","roles":"工作角色","conflicts":"冲突"},
     "domains": "知识领域",
     "newDomain": "新增领域标签",
     "add": "添加",
@@ -1191,7 +1192,16 @@
     "noMemories": "当前范围暂无记忆，可在记忆库中创建。",
     "title": "标题",
     "category": "记忆分类",
-    "categoryHint": "可留空，使用你的专门分类方案",
+    "categoryHint": "分类是软词表，可在七类里选",
+    "categoryOption": {
+      "identity": "身份",
+      "preference": "偏好",
+      "fact": "事实",
+      "decision": "决定",
+      "procedure": "步骤",
+      "context": "上下文",
+      "reflection": "反思"
+    },
     "content": "内容",
     "relatedMemories": "关联记忆",
     "createdAt": "建立时间",
@@ -1233,6 +1243,7 @@
     "connectedVault": "生成独立 JSON 记录，不修改原笔记。",
     "seaCanvas": "可交互三维关系星海",
     "canvasUnavailable": "当前无法使用 Canvas，可通过节点选择器查看关系数据。",
+    "canvasFallback": "当前环境不支持 2D 画布，已切换为列表视图",
     "focus": "高亮焦点",
     "labels": "标签",
     "motion": "动态效果",

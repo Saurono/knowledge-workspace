@@ -8,7 +8,7 @@ if (token && token.length < 24) throw new Error("KW_BOOTSTRAP_KEY must contain a
 const directory = resolve(process.env.KW_SERVICE_DATA ?? ".knowledge-workspace-service")
 const repository = new SqliteRepository(directory)
 if (!token && !(await repository.authentication.initialized())) { repository.close(); throw new Error("Set KW_BOOTSTRAP_KEY (at least 24 characters) for initial administrator setup") }
-const { server, closeStreams } = createServiceHttp({ repository, authentication: createAccountAuthentication(repository, token, process.env.KW_SECURE_COOKIE === "1"), uploads: new DiskUploads(directory), webRoot: resolve(process.env.KW_SERVICE_WEB_ROOT ?? "dist-web") })
+const { server, closeStreams } = createServiceHttp({ repository, authentication: createAccountAuthentication(repository, token, process.env.KW_SECURE_COOKIE === "1"), uploads: new DiskUploads(directory), dataRoot: directory, webRoot: resolve(process.env.KW_SERVICE_WEB_ROOT ?? "dist-web") })
 const port = Number(process.env.KW_SERVICE_PORT ?? 4317), host = process.env.KW_SERVICE_HOST ?? "127.0.0.1"
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid KW_SERVICE_PORT")
 server.listen(port, host, () => console.log(`Knowledge Workspace service listening on ${host}:${port}`))

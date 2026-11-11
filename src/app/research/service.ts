@@ -517,7 +517,7 @@ async function executeResearch(
           const pageContent = buildResearchPageContent(input.topic, date, synthesis, references)
           await commit.write(filePath, pageContent)
           return filePath.slice(`${input.projectPath}/`.length)
-        }),
+        }, { actor: { kind: "agent", id: "local-agent-run", entrypoint: "research-writeback", taskId: context.taskId } }),
       update: (id, patch) => {
         updateTaskIfActive(pp, id, patch)
       },

@@ -1,4 +1,5 @@
 import { canonicalWikiPagePath, WikiRevisionConflict, type WikiTextPage } from "../domain/page"
+import type { WikiWriteAttribution } from "../domain/provenance"
 export interface WikiPageRepository {
   read(projectPath: string, path: string): Promise<string>
   /** Adapter serializes read/check/write with the project commit lock. */
@@ -6,6 +7,7 @@ export interface WikiPageRepository {
     projectPath: string,
     path: string,
     change: (previous: string | null) => Promise<WikiTextPage>,
+    attribution?: WikiWriteAttribution,
   ): Promise<WikiTextPage>
 }
 export function createWikiPageService(
@@ -18,7 +20,7 @@ export function createWikiPageService(
       const content = await repository.read(projectPath, canonical)
       return { path: canonical, content, revision: await revision(content) }
     },
-    transform: async (projectPath: string, path: string, change: (previous: string) => string) => {
+    transform: async (projectPath: string, path: string, change: (previous: string) => string, attribution?: WikiWriteAttribution) => {
       const canonical = canonicalWikiPagePath(path)
       let changed = false
       const page = await repository.update(projectPath, canonical, async (previous) => {
@@ -26,7 +28,7 @@ export function createWikiPageService(
         const content = change(previous)
         changed = content !== previous
         return { path: canonical, content, revision: await revision(content) }
-      })
+      }, attribution)
       return { page, changed }
     },
     save: async (input: {
@@ -34,6 +36,7 @@ export function createWikiPageService(
       path: string
       content: string
       expectedRevision?: string | null
+      attribution?: WikiWriteAttribution
     }) => {
       const path = canonicalWikiPagePath(input.path)
       return repository.update(input.projectPath, path, async (previous) => {
@@ -41,7 +44,7 @@ export function createWikiPageService(
         if (input.expectedRevision !== undefined && input.expectedRevision !== actual)
           throw new WikiRevisionConflict(path, input.expectedRevision, actual)
         return { path, content: input.content, revision: await revision(input.content) }
-      })
+      }, input.attribution)
     },
   }
 }

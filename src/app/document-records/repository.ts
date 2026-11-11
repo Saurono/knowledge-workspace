@@ -3,6 +3,7 @@ import { normalizePath } from "@/lib/path-utils"
 import { withProjectLock } from "@/lib/project-mutex"
 import type { IngestRecords } from "./snapshot"
 import { isCanonicalIngestionIdempotencyKey } from "@/modules/ingestion/domain"
+import { isWikiProvenance } from "@/modules/wiki/domain"
 export const withRecordsLock = <T>(path: string, operation: () => Promise<T>) =>
   withProjectLock(`${normalizePath(path)}\0ingest-records`, operation)
 export const emptyRecords = (): IngestRecords => ({
@@ -51,9 +52,7 @@ export async function loadIngestRecords(projectPath: string): Promise<IngestReco
       (item.ingestedAt === null || typeof item.ingestedAt === "string") &&
       (item.contentRevision === undefined || item.contentRevision === null || typeof item.contentRevision === "string" && /^[a-f0-9]{64}$/.test(item.contentRevision))
   })
-  const validPages = record(value.pages) && Object.entries(value.pages).every(([, page]) =>
-    record(page) && Array.isArray((page as { sources?: unknown }).sources) &&
-    ((page as { sources: unknown[] }).sources).every(source => typeof source === "string"))
+  const validPages = record(value.pages) && Object.entries(value.pages).every(([, page]) => isWikiProvenance(page))
   const validReceipts = record(value.receipts) && Object.entries(value.receipts).every(([id, receipt]) =>
     record(receipt) && (() => {
       const item = receipt as unknown as Record<string, unknown>
@@ -91,6 +90,7 @@ export async function loadIngestRecords(projectPath: string): Promise<IngestReco
     throw new Error("Conflicting source identities after project path relocation; original file preserved")
   const pages = Object.fromEntries(Object.entries(value.pages).map(([path, page]) => [path, {
     ...page,
+    createdAt: page.createdAt ?? null,
     sources: page.sources.map(source => rebaseProjectSourcePath(projectPath, storedRoot, source)),
   }]))
   return { ...value, projectRootPath: normalizePath(projectPath), sources, pages }

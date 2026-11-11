@@ -1,0 +1,332 @@
+[
+  {
+    "id": "exact-zh-battery",
+    "query": "电池",
+    "expectedDocIds": [
+      "zh-battery"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-battery",
+    "query": "battery",
+    "expectedDocIds": [
+      "en-battery"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-inverter",
+    "query": "逆变器",
+    "expectedDocIds": [
+      "zh-inverter"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-inverter",
+    "query": "inverter",
+    "expectedDocIds": [
+      "en-inverter"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-solar",
+    "query": "太阳能",
+    "expectedDocIds": [
+      "zh-solar"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-solar",
+    "query": "solar",
+    "expectedDocIds": [
+      "en-solar"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-motor",
+    "query": "电机",
+    "expectedDocIds": [
+      "zh-motor"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-motor",
+    "query": "motor",
+    "expectedDocIds": [
+      "en-motor"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-bearing",
+    "query": "轴承",
+    "expectedDocIds": [
+      "zh-bearing"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-bearing",
+    "query": "bearing",
+    "expectedDocIds": [
+      "en-bearing"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-heatsink",
+    "query": "散热器",
+    "expectedDocIds": [
+      "zh-heatsink"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-heatsink",
+    "query": "heatsink",
+    "expectedDocIds": [
+      "en-heatsink"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-router",
+    "query": "路由器",
+    "expectedDocIds": [
+      "zh-router"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-router",
+    "query": "router",
+    "expectedDocIds": [
+      "en-router"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-firewall",
+    "query": "防火墙",
+    "expectedDocIds": [
+      "zh-firewall"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-firewall",
+    "query": "firewall",
+    "expectedDocIds": [
+      "en-firewall"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-gateway",
+    "query": "网关",
+    "expectedDocIds": [
+      "zh-gateway"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-gateway",
+    "query": "gateway",
+    "expectedDocIds": [
+      "en-gateway"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-index",
+    "query": "索引",
+    "expectedDocIds": [
+      "zh-index"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-index",
+    "query": "index",
+    "expectedDocIds": [
+      "en-index"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-cache",
+    "query": "缓存",
+    "expectedDocIds": [
+      "zh-cache"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-cache",
+    "query": "cache",
+    "expectedDocIds": [
+      "en-cache"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-queue",
+    "query": "队列",
+    "expectedDocIds": [
+      "zh-queue"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-queue",
+    "query": "queue",
+    "expectedDocIds": [
+      "en-queue"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-sensor",
+    "query": "传感器",
+    "expectedDocIds": [
+      "zh-sensor"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-sensor",
+    "query": "sensor",
+    "expectedDocIds": [
+      "en-sensor"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-controller",
+    "query": "控制器",
+    "expectedDocIds": [
+      "zh-controller"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-controller",
+    "query": "controller",
+    "expectedDocIds": [
+      "en-controller"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-zh-supply",
+    "query": "电源",
+    "expectedDocIds": [
+      "zh-supply"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "exact-en-supply",
+    "query": "supply",
+    "expectedDocIds": [
+      "en-supply"
+    ],
+    "category": "exact"
+  },
+  {
+    "id": "paraphrase-zh",
+    "query": "保养电池",
+    "expectedDocIds": [
+      "zh-battery"
+    ],
+    "category": "paraphrase"
+  },
+  {
+    "id": "paraphrase-en",
+    "query": "servicing battery",
+    "expectedDocIds": [
+      "en-battery"
+    ],
+    "category": "paraphrase"
+  },
+  {
+    "id": "multihop-zh",
+    "query": "电池",
+    "expectedDocIds": [
+      "zh-battery",
+      "zh-inverter"
+    ],
+    "category": "multi-hop"
+  },
+  {
+    "id": "multihop-en",
+    "query": "battery",
+    "expectedDocIds": [
+      "en-battery",
+      "en-inverter"
+    ],
+    "category": "multi-hop"
+  },
+  {
+    "id": "empty-zh",
+    "query": "独角兽",
+    "expectedDocIds": [],
+    "category": "empty"
+  },
+  {
+    "id": "empty-en",
+    "query": "nonexistent unicorn",
+    "expectedDocIds": [],
+    "category": "empty"
+  },
+  {
+    "id": "domain-zh",
+    "query": "电池",
+    "domainFilter": [
+      "network"
+    ],
+    "expectedDocIds": [],
+    "category": "domain"
+  },
+  {
+    "id": "domain-en",
+    "query": "battery",
+    "domainFilter": [
+      "energy"
+    ],
+    "expectedDocIds": [
+      "en-battery"
+    ],
+    "category": "domain"
+  },
+  {
+    "id": "scope-zh",
+    "query": "逆变器",
+    "accessScope": {
+      "allowedProjectIds": [
+        "alpha"
+      ]
+    },
+    "expectedDocIds": [],
+    "category": "unauthorized",
+    "expectedDeniedCount": 1
+  },
+  {
+    "id": "scope-en",
+    "query": "inverter",
+    "accessScope": {
+      "allowedProjectIds": [
+        "alpha"
+      ]
+    },
+    "expectedDocIds": [],
+    "category": "unauthorized",
+    "expectedDeniedCount": 1
+  }
+]

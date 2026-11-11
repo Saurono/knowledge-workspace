@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "scope": "src and server production imports and type imports; feature layers/manifests; compatibility facade references including tests",
-  "productionFiles": 503,
-  "moduleCount": 18,
+  "productionFiles": 544,
+  "moduleCount": 19,
   "modules": [
     {
       "id": "agent",
@@ -63,7 +63,7 @@
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 6
+          "productionImporters": 7
         }
       ],
       "dependencies": [],
@@ -81,7 +81,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 14
+          "productionImporters": 15
         },
         {
           "path": "application/index.ts",
@@ -106,7 +106,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 23
+          "productionImporters": 24
         },
         {
           "path": "application/index.ts",
@@ -130,7 +130,7 @@
       "publicEntrypoints": [
         {
           "path": "index.ts",
-          "productionImporters": 0
+          "productionImporters": 1
         },
         {
           "path": "domain/index.ts",
@@ -149,7 +149,32 @@
     },
     {
       "id": "memory",
-      "productionFiles": 7,
+      "productionFiles": 13,
+      "testFiles": 8,
+      "publicEntrypoints": [
+        {
+          "path": "index.ts",
+          "productionImporters": 2
+        },
+        {
+          "path": "domain/index.ts",
+          "productionImporters": 9
+        },
+        {
+          "path": "application/index.ts",
+          "productionImporters": 4
+        }
+      ],
+      "dependencies": [],
+      "externalPackages": [
+        "react",
+        "react-i18next"
+      ],
+      "legacyExceptions": []
+    },
+    {
+      "id": "model-gateway",
+      "productionFiles": 4,
       "testFiles": 1,
       "publicEntrypoints": [
         {
@@ -158,18 +183,15 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 4
+          "productionImporters": 2
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 2
+          "productionImporters": 1
         }
       ],
       "dependencies": [],
-      "externalPackages": [
-        "react",
-        "react-i18next"
-      ],
+      "externalPackages": [],
       "legacyExceptions": []
     },
     {
@@ -308,11 +330,11 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 18
+          "productionImporters": 20
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 8
+          "productionImporters": 11
         }
       ],
       "dependencies": [],
@@ -321,8 +343,8 @@
     },
     {
       "id": "service-api",
-      "productionFiles": 12,
-      "testFiles": 2,
+      "productionFiles": 14,
+      "testFiles": 7,
       "publicEntrypoints": [
         {
           "path": "index.ts",
@@ -330,7 +352,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 18
+          "productionImporters": 21
         },
         {
           "path": "application/index.ts",
@@ -374,26 +396,27 @@
     },
     {
       "id": "star-map",
-      "productionFiles": 8,
-      "testFiles": 3,
+      "productionFiles": 12,
+      "testFiles": 7,
       "publicEntrypoints": [
         {
           "path": "index.ts",
-          "productionImporters": 1
+          "productionImporters": 2
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 6
+          "productionImporters": 7
         },
         {
           "path": "application/index.ts",
-          "productionImporters": 2
+          "productionImporters": 3
         }
       ],
       "dependencies": [
         "domains",
         "memory",
-        "retrieval"
+        "retrieval",
+        "service-api"
       ],
       "externalPackages": [
         "react",
@@ -403,16 +426,16 @@
     },
     {
       "id": "tasks",
-      "productionFiles": 5,
-      "testFiles": 2,
+      "productionFiles": 10,
+      "testFiles": 5,
       "publicEntrypoints": [
         {
           "path": "index.ts",
-          "productionImporters": 6
+          "productionImporters": 13
         },
         {
           "path": "ui/index.ts",
-          "productionImporters": 1
+          "productionImporters": 2
         }
       ],
       "dependencies": [],
@@ -424,8 +447,8 @@
     },
     {
       "id": "wiki",
-      "productionFiles": 18,
-      "testFiles": 3,
+      "productionFiles": 20,
+      "testFiles": 5,
       "publicEntrypoints": [
         {
           "path": "index.ts",
@@ -433,7 +456,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 16
+          "productionImporters": 18
         },
         {
           "path": "application/index.ts",

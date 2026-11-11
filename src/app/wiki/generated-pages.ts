@@ -20,7 +20,7 @@ export async function saveGeneratedQuery(projectPath: string, content: string) {
       (pages) => `- ${date}: Saved query page \`${pages[0].fileName}\``,
     )
     return { ...page, filePath: `${normalizePath(projectPath).replace(/\/+$/, "")}/${page.path}` }
-  })
+  }, { actor: { kind: "agent", id: "local-agent-run", entrypoint: "wiki-generated-query" } })
 }
 export async function saveGeneratedReviewPages(
   projectPath: string,
@@ -52,5 +52,5 @@ export async function saveGeneratedReviewPages(
       ...page,
       filePath: `${normalizePath(projectPath).replace(/\/+$/, "")}/${page.path}`,
     }))
-  })
+  }, { actor: { kind: "agent", id: "local-agent-run", entrypoint: "wiki-generated-review" } })
 }

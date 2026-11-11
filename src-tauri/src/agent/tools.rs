@@ -92,12 +92,79 @@ pub trait ToolRegistry {
 #[derive(Debug, Clone, Default)]
 pub struct BuiltinToolRegistry;
 
+/// A local UI turn's retrieval allowlist. This does not grant access by itself;
+/// the command boundary validates it against the resolved project and run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRetrievalScope {
+    pub project_root: String,
+    pub run_id: String,
+    pub allowed_wiki_paths: Vec<String>,
+    pub allowed_raw_source_paths: Vec<String>,
+}
+
+/// Validate and canonicalize an allowlist supplied by the trusted local app
+/// composition root. Empty lists are meaningful: they allow no retrieval.
+pub fn validate_retrieval_scope(
+    mut scope: AgentRetrievalScope,
+    project_root: &str,
+    run_id: &str,
+) -> Result<AgentRetrievalScope, String> {
+    let project = Path::new(project_root)
+        .canonicalize()
+        .map_err(|_| "Retrieval scope project root is unavailable".to_string())?;
+    let supplied_root = Path::new(&scope.project_root)
+        .canonicalize()
+        .map_err(|_| "Retrieval scope project root does not match the active project".to_string())?;
+    if supplied_root != project || scope.run_id != run_id || run_id.trim().is_empty() {
+        return Err("Retrieval scope project or run does not match the active Agent turn".to_string());
+    }
+    scope.project_root = project.to_string_lossy().replace('\\', "/");
+    scope.allowed_wiki_paths = validate_scope_paths(
+        &project,
+        &scope.allowed_wiki_paths,
+        "wiki/",
+    )?;
+    scope.allowed_raw_source_paths = validate_scope_paths(
+        &project,
+        &scope.allowed_raw_source_paths,
+        "raw/sources/",
+    )?;
+    Ok(scope)
+}
+
+fn validate_scope_paths(project: &Path, values: &[String], prefix: &str) -> Result<Vec<String>, String> {
+    let mut canonical = BTreeSet::new();
+    for value in values {
+        let path = Path::new(value);
+        if value.trim().is_empty()
+            || path.is_absolute()
+            || path.components().any(|component| !matches!(component, Component::Normal(_)))
+            || !value.replace('\\', "/").starts_with(prefix)
+        {
+            return Err("Retrieval scope contains an unsafe or out-of-scope path".to_string());
+        }
+        let resolved = project.join(path)
+            .canonicalize()
+            .map_err(|_| "Retrieval scope path is missing from the active project".to_string())?;
+        let relative = resolved.strip_prefix(project)
+            .map_err(|_| "Retrieval scope path resolves outside the active project".to_string())?;
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        if !relative.starts_with(prefix) || relative != value.replace('\\', "/") {
+            return Err("Retrieval scope path is not a canonical project-relative path".to_string());
+        }
+        canonical.insert(relative);
+    }
+    Ok(canonical.into_iter().collect())
+}
+
 #[derive(Clone)]
 pub struct ToolContext<'a> {
     pub project_path: &'a str,
     pub embedding_config: Option<SearchEmbeddingConfig>,
     pub web_search_config: Option<WebSearchConfig>,
     pub anytxt_config: Option<AnyTxtConfig>,
+    pub retrieval_scope: Option<AgentRetrievalScope>,
 }
 
 impl ToolRegistry for BuiltinToolRegistry {
@@ -142,6 +209,12 @@ impl ToolRegistry for BuiltinToolRegistry {
                         .get("includeContent")
                         .and_then(Value::as_bool)
                         .unwrap_or(false);
+                    if context.retrieval_scope.as_ref().is_some_and(|scope| scope.allowed_wiki_paths.is_empty()) {
+                        return Ok(serde_json::to_value(WikiSearchToolOutput {
+                            mode: "keyword".to_string(), token_hits: 0, vector_hits: 0,
+                            graph_hits: 0, references: Vec::new(),
+                        }).unwrap_or(Value::Null));
+                    }
                     serde_json::to_value(
                         run_wiki_search(
                             context.project_path.to_string(),
@@ -149,6 +222,7 @@ impl ToolRegistry for BuiltinToolRegistry {
                             top_k,
                             include_content,
                             context.embedding_config,
+                            context.retrieval_scope.as_ref().map(|scope| scope.allowed_wiki_paths.clone()),
                         )
                         .await?,
                     )
@@ -161,9 +235,18 @@ impl ToolRegistry for BuiltinToolRegistry {
                         .map(str::trim)
                         .filter(|path| !path.is_empty())
                         .ok_or_else(|| "wiki.read_page requires path".to_string())?;
+                    if let Some(scope) = &context.retrieval_scope {
+                        let rel = normalize_rel_path(path);
+                        if !scope.allowed_wiki_paths.iter().any(|allowed| allowed == &rel) {
+                            return Err("wiki.read_page is outside the selected local retrieval scope".to_string());
+                        }
+                    }
                     let content = read_wiki_page(context.project_path, path)?;
                     let normalized_path = normalize_rel_path(path);
-                    let mut knowledge_context = build_knowledge_context_index(context.project_path)
+                    let mut knowledge_context = build_knowledge_context_index(
+                        context.project_path,
+                        context.retrieval_scope.as_ref().map(|scope| scope.allowed_wiki_paths.as_slice()),
+                    )
                         .remove(&normalized_path);
                     attach_latest_version(
                         context.project_path,
@@ -213,11 +296,12 @@ impl ToolRegistry for BuiltinToolRegistry {
                     let query = tool_query(&input, "source.search")?.to_string();
                     let project_path = context.project_path.to_string();
                     let top_k = tool_top_k(&input);
+                    let allowed = context.retrieval_scope.as_ref().map(|scope| scope.allowed_raw_source_paths.clone());
                     // `search_sources` walks the filesystem synchronously.
                     // Keep it off Tokio worker threads so a large source tree
                     // cannot stall unrelated Agent/API work.
                     let references = tokio::task::spawn_blocking(move || {
-                        search_sources(&project_path, &query, top_k)
+                        search_sources(&project_path, &query, top_k, allowed.as_deref())
                     })
                     .await
                     .map_err(|err| format!("source.search worker failed: {err}"))??;
@@ -228,11 +312,15 @@ impl ToolRegistry for BuiltinToolRegistry {
                     let query = tool_query(&input, "graph.search")?.to_string();
                     let project_path = context.project_path.to_string();
                     let top_k = tool_top_k(&input);
+                    if context.retrieval_scope.as_ref().is_some_and(|scope| scope.allowed_wiki_paths.is_empty()) {
+                        return Ok(serde_json::to_value(Vec::<AgentReference>::new()).unwrap_or(Value::Null));
+                    }
+                    let allowed = context.retrieval_scope.as_ref().map(|scope| scope.allowed_wiki_paths.clone());
                     // Graph search also performs synchronous markdown walks.
                     // Run it in the blocking pool for the same reason as
                     // `source.search`.
                     let references = tokio::task::spawn_blocking(move || {
-                        search_graph(&project_path, &query, top_k)
+                        search_graph(&project_path, &query, top_k, allowed.as_deref())
                     })
                     .await
                     .map_err(|err| format!("graph.search worker failed: {err}"))??;
@@ -240,6 +328,7 @@ impl ToolRegistry for BuiltinToolRegistry {
                         .map_err(|err| format!("Failed to serialize graph.search result: {err}"))
                 }
                 "web.search" => {
+                    if context.retrieval_scope.is_some() { return Err("web.search is disabled while a local retrieval scope is active".to_string()); }
                     let query = tool_query(&input, "web.search")?;
                     serde_json::to_value(
                         run_web_search(query, context.web_search_config, tool_top_k(&input))
@@ -248,6 +337,7 @@ impl ToolRegistry for BuiltinToolRegistry {
                     .map_err(|err| format!("Failed to serialize web.search result: {err}"))
                 }
                 "anytxt.search" => {
+                    if context.retrieval_scope.is_some() { return Err("anytxt.search is disabled while a local retrieval scope is active".to_string()); }
                     let query = tool_query(&input, "anytxt.search")?;
                     serde_json::to_value(
                         run_anytxt_search(query, context.anytxt_config, tool_top_k(&input)).await?,
@@ -263,6 +353,7 @@ impl ToolRegistry for BuiltinToolRegistry {
                     .map_err(|err| format!("Failed to serialize deep_research.run result: {err}"))
                 }
                 "shell.exec" => {
+                    if context.retrieval_scope.is_some() { return Err("shell.exec is disabled while a local retrieval scope is active".to_string()); }
                     let command = input
                         .get("command")
                         .or_else(|| input.get("query"))
@@ -945,6 +1036,7 @@ pub async fn run_wiki_search(
     top_k: usize,
     include_content: bool,
     embedding_config: Option<SearchEmbeddingConfig>,
+    allowed_wiki_paths: Option<Vec<String>>,
 ) -> Result<WikiSearchToolOutput, String> {
     let query_embedding = search::resolve_query_embedding(query, None, embedding_config).await?;
     let search = search::search_project_inner(
@@ -955,9 +1047,10 @@ pub async fn run_wiki_search(
         query_embedding,
     )
     .await?;
+    let allowed = allowed_wiki_paths.clone();
     let project_for_context = project_path.clone();
     let context_index =
-        tokio::task::spawn_blocking(move || build_knowledge_context_index(&project_for_context))
+        tokio::task::spawn_blocking(move || build_knowledge_context_index(&project_for_context, allowed.as_deref()))
             .await
             .map_err(|err| format!("wiki.search graph context worker failed: {err}"));
     // Retrieval must remain useful if optional graph enrichment fails. The
@@ -966,6 +1059,7 @@ pub async fn run_wiki_search(
     let references = search
         .results
         .iter()
+        .filter(|result| allowed_wiki_paths.as_ref().is_none_or(|allowed| allowed.contains(&normalize_rel_path(&result.path))))
         .map(|result| {
             let normalized_path = normalize_rel_path(&result.path);
             let mut knowledge_context = context_index.remove(&normalized_path);
@@ -2199,13 +2293,14 @@ struct KnowledgePage {
 /// Build one bounded graph/provenance index for a complete retrieval tool
 /// invocation. Never call this once per result: large projects would otherwise
 /// turn top-k retrieval into top-k full filesystem scans.
-fn build_knowledge_context_index(project_path: &str) -> BTreeMap<String, AgentKnowledgeContext> {
-    build_knowledge_graph_snapshot(project_path, None).1
+fn build_knowledge_context_index(project_path: &str, allowed_paths: Option<&[String]>) -> BTreeMap<String, AgentKnowledgeContext> {
+    build_knowledge_graph_snapshot(project_path, None, allowed_paths).1
 }
 
 fn build_knowledge_graph_snapshot(
     project_path: &str,
     query: Option<&str>,
+    allowed_paths: Option<&[String]>,
 ) -> (Vec<KnowledgePage>, BTreeMap<String, AgentKnowledgeContext>) {
     let wiki_root = Path::new(project_path).join("wiki");
     if !wiki_root.is_dir() {
@@ -2225,6 +2320,9 @@ fn build_knowledge_graph_snapshot(
         };
         let path = relative_to_project(project_path, entry.path());
         if is_hidden_rel(&path) {
+            continue;
+        }
+        if allowed_paths.is_some_and(|allowed| !allowed.iter().any(|item| item == &path)) {
             continue;
         }
         let title = search::extract_title(&content, entry.file_name().to_string_lossy().as_ref());
@@ -2445,12 +2543,13 @@ pub fn search_graph(
     project_path: &str,
     query: &str,
     top_k: usize,
+    allowed_paths: Option<&[String]>,
 ) -> Result<Vec<AgentReference>, String> {
     let query = query.trim().to_lowercase();
     if query.is_empty() {
         return Ok(Vec::new());
     }
-    let (pages, mut context_index) = build_knowledge_graph_snapshot(project_path, Some(&query));
+    let (pages, mut context_index) = build_knowledge_graph_snapshot(project_path, Some(&query), allowed_paths);
     let seed_paths: BTreeSet<String> = pages
         .iter()
         .filter(|page| page.matches_query)
@@ -2511,6 +2610,7 @@ pub fn search_sources(
     project_path: &str,
     query: &str,
     top_k: usize,
+    allowed_paths: Option<&[String]>,
 ) -> Result<Vec<AgentReference>, String> {
     let query = query.trim();
     if query.is_empty() {
@@ -2530,6 +2630,9 @@ pub fn search_sources(
         }
         let rel = relative_to_project(project_path, entry.path());
         if is_hidden_rel(&rel) {
+            continue;
+        }
+        if allowed_paths.is_some_and(|allowed| !allowed.iter().any(|item| item == &rel)) {
             continue;
         }
         seen_files += 1;
@@ -2968,7 +3071,7 @@ mod tests {
         .unwrap();
         crate::commands::file_history::record_file_version(&alpha, "agent", "test.write");
 
-        let mut contexts = build_knowledge_context_index(root.to_str().unwrap());
+        let mut contexts = build_knowledge_context_index(root.to_str().unwrap(), None);
         let mut alpha_context = contexts.remove("wiki/entities/alpha.md");
         attach_latest_version(
             root.to_str().unwrap(),
@@ -3004,6 +3107,7 @@ mod tests {
             embedding_config: None,
             web_search_config: None,
             anytxt_config: None,
+            retrieval_scope: None,
         };
         let read = registry
             .execute(
@@ -3034,6 +3138,7 @@ mod tests {
             embedding_config: None,
             web_search_config: None,
             anytxt_config: None,
+            retrieval_scope: None,
         };
         let output = registry
             .execute(
@@ -3512,7 +3617,7 @@ mod tests {
         fs::create_dir_all(&source_dir).unwrap();
         fs::write(source_dir.join("paper.txt"), "Coal mine safety case study.").unwrap();
 
-        let refs = search_sources(root.to_str().unwrap(), "safety", 5).unwrap();
+        let refs = search_sources(root.to_str().unwrap(), "safety", 5, None).unwrap();
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].kind, "source");
         assert!(refs[0].snippet.as_deref().unwrap().contains("safety"));
@@ -3533,8 +3638,8 @@ mod tests {
         )
         .unwrap();
 
-        let org_refs = search_sources(root.to_str().unwrap(), "org wording", 5).unwrap();
-        let pdf_refs = search_sources(root.to_str().unwrap(), "cached regulation", 5).unwrap();
+        let org_refs = search_sources(root.to_str().unwrap(), "org wording", 5, None).unwrap();
+        let pdf_refs = search_sources(root.to_str().unwrap(), "cached regulation", 5, None).unwrap();
 
         assert!(org_refs
             .iter()
@@ -3563,10 +3668,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(search_sources(root.to_str().unwrap(), "needle", 5)
+        assert!(search_sources(root.to_str().unwrap(), "needle", 5, None)
             .unwrap()
             .is_empty());
-        assert!(search_graph(root.to_str().unwrap(), "needle", 5)
+        assert!(search_graph(root.to_str().unwrap(), "needle", 5, None)
             .unwrap()
             .is_empty());
         let _ = fs::remove_dir_all(root);
@@ -3579,7 +3684,7 @@ mod tests {
         fs::create_dir_all(&source_dir).unwrap();
         fs::write(source_dir.join("煤矿.txt"), "煤矿安全治理 source details.").unwrap();
 
-        let refs = search_sources(root.to_str().unwrap(), "原始资料 煤矿安全", 5).unwrap();
+        let refs = search_sources(root.to_str().unwrap(), "原始资料 煤矿安全", 5, None).unwrap();
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].kind, "source");
         let _ = fs::remove_dir_all(root);
@@ -3611,7 +3716,7 @@ mod tests {
         )
         .unwrap();
 
-        let refs = search_graph(root.to_str().unwrap(), "Agent Graph", 5).unwrap();
+        let refs = search_graph(root.to_str().unwrap(), "Agent Graph", 5, None).unwrap();
         assert_eq!(refs.len(), 3);
         assert_eq!(refs[0].title, "Agent Graph");
         assert!(refs[0]

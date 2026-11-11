@@ -16,6 +16,7 @@ import {
   updateWorkspaceData,
   type MemoryRecord,
 } from "./workspace-data"
+import { createMemoryRecord } from "@/modules/memory/domain"
 beforeEach(() => files.clear())
 describe("project workspace persistence", () => {
   it("serializes simultaneous updates and isolates projects", async () => {
@@ -38,7 +39,7 @@ describe("project workspace persistence", () => {
     expect(files.get("/one/.llm-wiki/workspace.json")).toBe("broken")
   })
   it("cleans domain and memory relationships without deleting other content", () => {
-    const memory: MemoryRecord = {
+    const memory: MemoryRecord = createMemoryRecord({
       id: "a",
       title: "A",
       content: "Keep",
@@ -47,7 +48,7 @@ describe("project workspace persistence", () => {
       relatedIds: ["b"],
       createdAt: "2026-10-31T00:00:00Z",
       updatedAt: "2026-10-31T00:00:00Z",
-    }
+    })
     const data = {
       ...emptyWorkspaceData(),
       domains: [{ id: "domain", name: "Domain" }],

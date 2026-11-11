@@ -54,6 +54,7 @@ export default defineConfig(async ({ mode }) => ({
 
   test: {
     environment: "node",
+    exclude: ["**/node_modules/**", "**/.git/**", "**/mcp-server/**", "**/dist/**"],
     // Loads .env.test.local into process.env for real-LLM tests.
     // The loader itself is a no-op if the file is absent, so this is
     // safe to keep on for every test run.

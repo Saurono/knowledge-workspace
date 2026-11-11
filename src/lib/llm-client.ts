@@ -1,3 +1,4 @@
+import { recordChatUsage } from "./chat-usage"
 import type { LlmConfig } from "@/stores/wiki-store"
 import { isAzureOpenAiEndpoint } from "@/lib/azure-openai"
 import { getProviderConfig, type RequestOverrides } from "./llm-providers"
@@ -218,13 +219,39 @@ export async function streamChat(
    */
   requestOverrides?: RequestOverrides,
 ): Promise<void> {
+  const started = performance.now()
+  const original = callbacks
+  let completionChars = 0
+  let promptTokens: number | null = null
+  let completionTokens: number | null = null
+  let recorded = false
+  const promptChars = messages.reduce((sum, message) => sum + [...(typeof message.content === "string" ? message.content : message.content.filter(block => block.type === "text").map(block => block.text).join(""))].length, 0)
+  const finishUsage = (error?: unknown) => {
+    if (recorded) return
+    recorded = true
+    void recordChatUsage({ provider: config.provider, model: config.model, operation: "chat", promptChars, completionChars, promptTokens, completionTokens, latencyMs: performance.now() - started, outcome: error ? "failed" : "ok", ...(error ? { errorCode: isFetchNetworkError(error) || /connection lost|network error reaching/i.test(String(error)) ? "network_unavailable" : error instanceof Error ? error.name : "Error" } : {}) })
+  }
+  const readUsage = (value: { usage?: { prompt_tokens?: number; completion_tokens?: number; input_tokens?: number; output_tokens?: number } }) => {
+    const usage = value.usage
+    const prompt = usage?.prompt_tokens ?? usage?.input_tokens
+    const completion = usage?.completion_tokens ?? usage?.output_tokens
+    if (typeof prompt === "number") promptTokens = prompt
+    if (typeof completion === "number") completionTokens = completion
+  }
+  callbacks = {
+    onToken: text => { completionChars += [...text].length; original.onToken(text) },
+    onReasoningToken: text => { completionChars += [...text].length; original.onReasoningToken?.(text) },
+    onDone: completion => { finishUsage(); original.onDone(completion) },
+    onError: error => { finishUsage(error); original.onError(error) },
+  }
+  try {
   const { onToken, onDone, onError } = callbacks
 
   // Claude Code CLI uses a subprocess transport (stdin/stdout), not
   // HTTP. Dispatch before getProviderConfig — that function throws for
   // this provider because it has no URL/headers.
   if (config.provider === "claude-code") {
-    return streamViaClaudeCodeCli(
+    return await streamViaClaudeCodeCli(
       config,
       messages,
       config.streamingEnabled === false ? bufferedStreamCallbacks(callbacks) : callbacks,
@@ -234,7 +261,7 @@ export async function streamChat(
   }
 
   if (config.provider === "codex-cli") {
-    return streamViaCodexCli(
+    return await streamViaCodexCli(
       config,
       messages,
       config.streamingEnabled === false ? bufferedStreamCallbacks(callbacks) : callbacks,
@@ -324,7 +351,7 @@ export async function streamChat(
     }
     if (shouldRetryWithoutTemperature(config, response.status, errorDetail, requestOverrides)) {
       const { temperature: _temperature, ...retryOverrides } = requestOverrides ?? {}
-      return streamChat(config, messages, callbacks, signal, retryOverrides)
+      return streamChat(config, messages, original, signal, retryOverrides)
     }
     if (
       response.status === 404 &&
@@ -421,6 +448,7 @@ export async function streamChat(
     const trimmed = line.trim()
     if (!trimmed) return null
 
+    try { readUsage(JSON.parse(trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed)) } catch { /* Non-JSON SSE records. */ }
     reasoningCharsObserved += countReasoningCharsInLine(trimmed)
     finishReason = streamFinishReason(trimmed) ?? finishReason
     recordReasoning(trimmed)
@@ -529,5 +557,9 @@ export async function streamChat(
     onError(err instanceof Error ? err : new Error(String(err)))
   } finally {
     reader.releaseLock()
+  }
+  } catch (error) {
+    finishUsage(error)
+    throw error
   }
 }

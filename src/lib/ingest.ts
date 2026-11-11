@@ -970,8 +970,8 @@ async function autoIngestImpl(
   const sourceSummaryPath = `wiki/sources/${sourceSummarySlug}.md`
   const queueCommit = options?.runCommit
   const runCommit: <T>(operation: (commit: ProjectWikiCommit) => Promise<T>) => Promise<T> = queueCommit
-    ? ((operation) => queueCommit(() => withWikiProjectCommit(pp, operation)))
-    : ((operation) => withWikiProjectCommit(pp, operation))
+    ? ((operation) => queueCommit(() => withWikiProjectCommit(pp, operation, { actor: { kind: "agent", id: "local-agent-run", entrypoint: "ingestion-compile" } })))
+    : ((operation) => withWikiProjectCommit(pp, operation, { actor: { kind: "agent", id: "local-agent-run", entrypoint: "ingestion-compile" } }))
   console.log(`[ingest:diag] autoIngestImpl ENTRY for "${fileName}" (project="${pp}", source="${sp}")`)
   const activityId = activity.addItem({
     type: "ingest",

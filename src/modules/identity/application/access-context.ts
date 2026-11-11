@@ -1,7 +1,7 @@
 import { AuthError, PROJECT_PERMISSIONS, evaluateProjectPermission, freezeAccessContext, identityId } from "../domain"
 import type { AccessContext, IdentitySnapshot, Principal } from "../domain"
 /** Principal is supplied exclusively by the server credential verifier. */
-export function captureAccessContext(snapshot: IdentitySnapshot, principal: Principal, projectId: string, runtime: { id(): string; now(): string }, workRoleId?: string): AccessContext {
+export function captureAccessContext(snapshot: IdentitySnapshot, principal: Principal, projectId: string, runtime: { id(): string; now(): string }, workRoleId?: string, entrypoint = "api"): AccessContext {
   identityId(projectId)
   const { catalog, revision } = snapshot, account = catalog.accounts.find(account => account.id === principal.accountId && account.status === "active")
   if (!account) throw new AuthError("unauthenticated", "Account unavailable")
@@ -13,5 +13,5 @@ export function captureAccessContext(snapshot: IdentitySnapshot, principal: Prin
   if (scope?.workRoleId && selected !== scope.workRoleId) throw new AuthError("forbidden", "Work role exceeds Token scope")
   if (selected && evaluateProjectPermission(catalog, { accountId: account.id, projectId, workRoleId: selected, permission: "project.read" }).reason === "role_not_granted") throw new AuthError("forbidden", "Work role is not granted")
   const permissions = PROJECT_PERMISSIONS.filter(permission => (!scope || scope.permissions.includes(permission)) && evaluateProjectPermission(catalog, { accountId: account.id, projectId, workRoleId: selected, permission }).allowed)
-  return freezeAccessContext({ id: runtime.id(), actorId: account.id, effectiveAccountId: account.id, projectId, workRoleId: selected ?? null, credential: { channel: principal.channel, id: principal.credentialId }, permissions, basis: { membershipId: member.id, catalogRevision: revision, tokenId: principal.channel === "token" ? principal.credentialId : null, delegationId: null }, capturedAt: runtime.now() })
+  return freezeAccessContext({ id: runtime.id(), actorId: account.id, actorKind: "user", entrypoint, effectiveAccountId: account.id, projectId, workRoleId: selected ?? null, credential: { channel: principal.channel, id: principal.credentialId }, permissions, basis: { membershipId: member.id, catalogRevision: revision, tokenId: principal.channel === "token" ? principal.credentialId : null, delegationId: null }, capturedAt: runtime.now() })
 }

@@ -14,8 +14,9 @@ export interface TaskActivityView {
   parentTaskId?: string
   type: "ingest" | "lint" | "query"
   title: string
-  status: "running" | "done" | "error"
+  status: "running" | "done" | "error" | "cancelled"
   detail: string
+  log?: string[]
   filesWritten: string[]
   createdAt: number
 }
@@ -167,6 +168,13 @@ export function TaskManagerView({
                 <div className="mt-2 space-y-2 text-xs">
                   <p>{new Date(item.createdAt).toLocaleString()}</p>
                   <p className="whitespace-pre-wrap">{item.detail}</p>
+                  {item.log && item.log.length > 0 && (
+                    <ol aria-label="Task progress log" className="list-inside list-disc space-y-1 text-muted-foreground">
+                      {item.log.map((entry, index) => (
+                        <li key={`${index}:${entry}`} className="whitespace-pre-wrap">{entry}</li>
+                      ))}
+                    </ol>
+                  )}
                   {items
                     .filter((child) => child.parentTaskId === item.id)
                     .map((child) => (

@@ -1,4 +1,4 @@
-import { validateMemories } from "@/modules/memory/domain"
+import { migrateMemoriesV1, validateMemories } from "@/modules/memory/domain"
 import { validateDomainState } from "@/modules/domains/domain"
 import type { MemoryRecord } from "@/modules/memory/domain"
 import type { DomainTag } from "@/modules/domains/domain"
@@ -8,7 +8,7 @@ export const emptySharedWorkspace = (): SharedWorkspace => ({ version: 1, domain
 export function validateSharedWorkspace(value: unknown): SharedWorkspace {
   try {
     if (!value || typeof value !== "object" || (value as SharedWorkspace).version !== 1) throw new Error("Unsupported workspace schema")
-    const workspace = value as SharedWorkspace
+    const workspace = { ...value as SharedWorkspace, memories: migrateMemoriesV1((value as SharedWorkspace).memories) }
     validateDomainState(workspace); validateMemories(workspace.memories)
     const domains = new Set(workspace.domains.map(domain => domain.id)), memories = new Set(workspace.memories.map(memory => memory.id))
     if (workspace.memories.some(memory => memory.domainIds.some(id => !domains.has(id)) || memory.relatedIds.some(id => !memories.has(id)))

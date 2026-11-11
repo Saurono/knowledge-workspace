@@ -564,3 +564,18 @@ describe("streamChat — mid-stream abort mapping", () => {
     }
   })
 })
+
+
+describe("chat usage", () => {
+ for (const failed of [false, true]) it(failed ? "meters network failure" : "meters success", async () => {
+ const { setChatUsageSink } = await import("./chat-usage")
+ const sink = vi.fn(); setChatUsageSink(sink)
+ if (failed) mockHttpFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"))
+ else mockHttpFetch.mockResolvedValueOnce(new Response('data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n'))
+ const onToken = vi.fn()
+ await streamChat(customStreamingCfg, [], { onToken, onDone: vi.fn(), onError: vi.fn() })
+ expect(sink).toHaveBeenCalledTimes(1)
+ expect(sink.mock.calls[0][0]).toMatchObject(failed ? { outcome: "failed", errorCode: "network_unavailable" } : { outcome: "ok", promptTokens: null, completionChars: [...onToken.mock.calls.map(c => c[0]).join("")].length })
+ setChatUsageSink(() => {})
+ })
+})

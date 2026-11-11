@@ -10,7 +10,10 @@ const principal: Principal = { accountId: "agent", credentialId: "token", channe
 describe("trusted AccessContext capture", () => {
   it("records actual/effective identity and authority, intersects scope, and freezes independent execution snapshots", () => {
     const catalog = fixture(), first = captureAccessContext(catalog, principal, "project", runtime)
-    const second = captureAccessContext(catalog, principal, "project", runtime, "role")
+    const second = captureAccessContext(catalog, principal, "project", runtime, "role", "cli")
+    expect(first.actorKind).toBe("user")
+    expect(first.entrypoint).toBe("api")
+    expect(second.entrypoint).toBe("cli")
     expect(first).toMatchObject({ actorId: "agent", effectiveAccountId: "agent", credential: { id: "token", channel: "token" }, basis: { membershipId: "member", catalogRevision: 4, tokenId: "token", delegationId: null } })
     expect(first.permissions).toContain("wiki.write"); expect(second.permissions).toEqual(["project.read", "wiki.read"])
     expect(() => requireContextPermission(second, "wiki.write")).toThrow()
@@ -23,4 +26,17 @@ describe("trusted AccessContext capture", () => {
     const catalog = fixture()
     for (const action of [() => captureAccessContext(catalog, principal, "other", runtime), () => captureAccessContext(catalog, { ...principal, scope: undefined }, "project", runtime), () => captureAccessContext(catalog, principal, "project", runtime, "missing"), () => captureAccessContext(catalog, { ...principal, scope: { ...principal.scope!, workRoleId: "role" } }, "project", runtime, "other")]) expect(action).toThrow()
   })
+})
+
+it("captures delegated agent as the real actor", async () => {
+  const { createContextService } = await import("./delegation")
+  const snapshot = fixture()
+  snapshot.catalog.accounts.push({ ...snapshot.catalog.accounts[0], id: "human", kind: "user" })
+  snapshot.catalog.memberships.push({ ...snapshot.catalog.memberships[0], id: "human-member", accountId: "human" })
+  const service = createContextService({ identities: async () => snapshot, delegations: async () => [{ id: "grant", grantorId: "human", granteeId: "agent", projectId: "project", workRoleId: null, permissions: ["project.read", "wiki.write"], expiresAt: "2099-01-01T00:00:00Z", createdAt: now, revokedAt: null }], saveDelegation: async () => {}, revokeDelegation: async () => {}, context: async () => null, saveContext: async () => {} }, runtime)
+  const access = await service.capture(principal, "project", { effectiveAccountId: "human", delegationId: "grant" })
+  expect(access.actorId).toBe("agent")
+  expect(access.effectiveAccountId).toBe("human")
+  expect(access.actorKind).toBe("agent")
+  expect(access.entrypoint).toBe("api")
 })

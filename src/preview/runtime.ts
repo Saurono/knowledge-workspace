@@ -1,6 +1,7 @@
 /** Explicit preview entry only. All file/native operations stay in this tab's memory. */
 import type { FileNode } from "@/types/wiki"
 import type { WorkspaceData } from "@/lib/workspace-data"
+import { createMemoryRecord } from "@/modules/memory/domain"
 
 export const PREVIEW_PROJECT = {
   id: "preview-project",
@@ -11,7 +12,7 @@ const STATE_KEY = "llm-wiki-interactive-preview-v1"
 const now = new Date().toISOString()
 const topics = ["资料入库", "知识领域", "智能体记忆", "任务管理"]
 const domainIds = topics.map((_, i) => `demo-domain-${i}`)
-const memories: WorkspaceData["memories"] = Array.from({ length: 64 }, (_, i) => ({
+const memories: WorkspaceData["memories"] = Array.from({ length: 64 }, (_, i) => createMemoryRecord({
   id: `demo-memory-${i}`,
   title: `${topics[Math.floor(i / 16)]} · 示例记忆 ${(i % 16) + 1}`,
   content: `这是用于体验界面的合成记忆，不是你的真实知识。\n\n你可以修改标题、内容、领域标签与关联，再切换回星海查看变化。\n记忆的正式分类方案仍等待你补充。`,

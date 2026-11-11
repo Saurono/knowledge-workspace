@@ -1,4 +1,4 @@
-import { seaColor, visibleSeaEdges } from "../domain"
+import { bodyAesthetics, seaColor, visibleSeaEdges, planLevelOfDetail, samplePoints } from "../domain"
 import type { SeaPoint, SeaEdge, GraphNode, GraphEdge } from "../domain"
 import type { MemoryRecord } from "@/modules/memory/domain"
 import type { DomainTag } from "@/modules/domains/domain"
@@ -10,9 +10,11 @@ export function buildWorkspaceScene(input: {
   data: { domains: readonly DomainTag[]; resourceDomains: Record<string, string[]>; memories: readonly MemoryRecord[] }
   wikiNodes: readonly GraphNode[]; wikiEdges: readonly GraphEdge[]
   labels: { uncategorized: string; type(type: string): string }
+  now?: string
 }) {
   const { mode, domain, query, projectPath, data, wikiNodes, wikiEdges, labels } = input
-  const MAX_POINTS = MAX_SCENE_POINTS, MAX_EDGES = MAX_SCENE_EDGES
+  const now = input.now ?? new Date().toISOString()
+  const MAX_EDGES = MAX_SCENE_EDGES
   const domainNames = new Map(data.domains.map((d) => [d.id, d.name]))
   const matches = (text: string) =>
     text.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())
@@ -42,6 +44,8 @@ export function buildWorkspaceScene(input: {
           color: seaColor(group),
           weight: 1 + Math.min(4, m.relatedIds.length * 0.3),
           createdAt: m.createdAt,
+          ...bodyAesthetics({ status: m.status, importance: m.importance, credibility: m.credibility,
+            validityUntil: m.validity.until, relationCount: m.relations.length, now }),
         }
       })
     edges = data.memories.flatMap((m) =>
@@ -79,12 +83,16 @@ export function buildWorkspaceScene(input: {
     }))
   }
   const total = points.length
-  const displayed = points.slice(0, MAX_POINTS)
+  // Rendering sampling is not permission filtering: inaccessible nodes were filtered server-side.
+  // Never use lod to hide nodes that the user is entitled to access in other views.
+  const plan = planLevelOfDetail({ total: points.length })
+  const displayed = samplePoints(points, plan)
   const allEdges = visibleSeaEdges(displayed, edges)
   return {
     points: displayed,
     edges: allEdges.slice(0, MAX_EDGES),
     total,
     totalEdges: allEdges.length,
+    lod: { tier: plan.tier, stride: plan.stride, rendered: displayed.length, total },
   }
 }

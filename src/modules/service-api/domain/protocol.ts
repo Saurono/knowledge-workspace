@@ -1,4 +1,19 @@
 export const API_VERSION = "v1"
+export interface MemoryGraphNode {
+  id: string; title: string; status: string; category: string | null
+  domainIds: string[]; relations: Array<{ type: string; targetId: string }>
+  updatedAt: string; owner: string | null
+  access?: unknown | null; source?: { kind: string; actorId?: string | null } | null
+  validityUntil?: string | null
+}
+export interface MemorySummaryCursor { updatedAt: string; id: string }
+export interface MemorySummary {
+  id: string; title: string; status: string; version: number
+  updatedAt: string; owner: string | null; category: string | null
+  access?: unknown | null
+  source?: { kind: string; actorId?: string | null } | null
+  validityUntil?: string | null
+}
 export type ErrorCode = "invalid_argument" | "unauthenticated" | "forbidden" | "not_found" | "conflict" | "precondition_required" | "too_large" | "unsupported" | "internal" | "too_many_requests"
 export const ERROR_STATUS: Record<ErrorCode, number> = { invalid_argument: 400, unauthenticated: 401, forbidden: 403, not_found: 404, conflict: 409, precondition_required: 428, too_large: 413, unsupported: 501, internal: 500, too_many_requests: 429 }
 export class ServiceError extends Error {
@@ -10,7 +25,36 @@ export interface ApiFailure { error: { code: ErrorCode; message: string; request
 export type ResourceKind = "wiki" | "workspace" | "document"
 export interface ProjectRecord { id: string; name: string; createdAt: string }
 export interface ResourceRecord<T = unknown> { projectId: string; kind: ResourceKind; key: string; data: T; revision: number; createdAt: string; updatedAt: string }
-export interface WikiContent { path: string; content: string }
+// 跨模块 domain 依赖被边界检查禁止，这里刻意重复声明；改动 wiki 侧字段时必须同步。
+type WikiAuthorKind = "user" | "agent" | "system"
+interface WikiActor {
+  kind: WikiAuthorKind
+  id: string
+  principalKind?: "user" | "agent" | "admin"
+  effectivePrincipalId?: string
+  workRoleId?: string
+  entrypoint: string
+  taskId?: string
+  reason?: string
+}
+interface WikiBodyRevision {
+  revision: number
+  contentHash: string
+  actor: WikiActor
+  originKinds: WikiAuthorKind[]
+  createdAt: string
+  sourceRefs: string[]
+  evidenceRefs: string[]
+}
+interface WikiReviewEvent {
+  actor: WikiActor
+  reviewedRevision: number
+  createdAt: string
+  decision: "approved" | "rejected" | "commented"
+  reason?: string
+}
+export interface WikiAuthorship { creator?: WikiActor; revisions?: WikiBodyRevision[]; reviews?: WikiReviewEvent[] }
+export interface WikiContent { path: string; content: string; authorship?: WikiAuthorship }
 export interface ProjectEvent { sequence: number; projectId: string; type: string; resource: { kind: ResourceKind | "project"; key: string; revision: number }; recordedAt: string }
 export interface Page<T> { items: T[]; nextCursor: string | null }
 export const etag = (revision: number) => `"v${revision}"`
@@ -40,4 +84,20 @@ export const pageCursor = (scope: string, after: string) => encodeURIComponent(J
 export function requireId(value: string) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value)) throw new ServiceError("invalid_argument", "Invalid project identifier")
   return value
+}
+export type WriteProposalStatus = "pending" | "approved" | "rejected"
+export type WriteProposalTarget =
+  | { kind: "wiki"; path: string; content: string; expectedRevision: number | null }
+  | { kind: "memory"; memoryId: string | null; payload: Record<string, unknown> }
+export interface ProposalActor { kind: "user" | "agent" | "system"; id: string; entrypoint: string; model?: string }
+export interface SubmitProposalInput { target: WriteProposalTarget; idempotencyKey: string; evidence: Array<{ source: string; ref: string }> }
+export interface WriteProposal {
+  id: string; projectId: string; status: WriteProposalStatus; target: WriteProposalTarget
+  idempotencyKey: string; fingerprint: string
+  source: { kind: "user" | "agent" | "system"; actorId: string; model?: string; entrypoint: string }
+  evidence: Array<{ source: string; ref: string }>
+  createdAt: string; decidedAt?: string
+  decidedBy?: { actorId: string; via: "rule" | "manual" }
+  rejectionReason?: string
+  appliedRevision?: number | null
 }

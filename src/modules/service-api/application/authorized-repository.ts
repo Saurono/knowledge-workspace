@@ -3,8 +3,8 @@ import type { AccessContext, MemoryGrant, ProjectPermission } from "@/modules/id
 import type { SharedRepository } from "./ports"
 import { validateSharedWorkspace } from "./workspace"
 import type { SharedWorkspace } from "./workspace"
-import { mergeAuthorizedWorkspace, visibleWorkspace } from "./workspace-authorization"
-import type { ProjectEvent } from "../domain"
+import { canAccessMemoryView, mergeAuthorizedWorkspace, visibleWorkspace, type MemoryAccessView } from "./workspace-authorization"
+import type { MemorySummary, ProjectEvent } from "../domain"
 import { canonicalDomainResourceKey } from "@/modules/domains/domain"
 import { ServiceError } from "../domain"
 /** All downstream adapters (uploads, retrieval, executors) receive this guarded port. */
@@ -51,6 +51,44 @@ export function createAuthorizedRepository(repository: SharedRepository, access:
     }
   }
   return {
+    async memoryGraph(project, options) {
+      const context = await check(project, "memory.read")
+      const granted = await grants(project), at = now()
+      const visible = (await repository.memoryGraph(project, options)).filter(node =>
+        canAccessMemoryView(context, { ...node, source: node.source ?? { kind: "legacy" } } as MemoryAccessView, granted, at, "read") &&
+        !(node.validityUntil && Date.parse(node.validityUntil) <= Date.parse(at)))
+      const ids = new Set(visible.map(node => node.id))
+      return visible.map(({ access: _a, source: _s, validityUntil: _v, ...node }) => ({ ...node, relations: node.relations.filter(relation => ids.has(relation.targetId)) }))
+    },
+    async memorySummaries(project, options) {
+      const context = await check(project, "memory.read")
+      const granted = await grants(project)
+      const items: MemorySummary[] = []
+      let cursor = options.after ?? null
+      for (let page = 0; page < 20; page++) {
+        const result = await repository.memorySummaries(project, { limit: Math.min(200, Math.max(options.limit, 1)), after: cursor })
+        for (const row of result.items) {
+          if (!canAccessMemoryView(context, { ...row, source: row.source ?? { kind: "legacy" } } as MemoryAccessView, granted, now(), "read")) continue
+          if (row.validityUntil && Date.parse(row.validityUntil) <= Date.parse(now())) continue
+          const { access: _a, source: _s, validityUntil: _v, ...rest } = row
+          items.push(rest as MemorySummary)
+          if (items.length === options.limit) return { items, nextCursor: { updatedAt: row.updatedAt, id: row.id } }
+        }
+        if (!result.nextCursor) return { items, nextCursor: null }
+        cursor = result.nextCursor
+      }
+      return { items, nextCursor: cursor }
+    },
+    async saveMemoryAtomic(project, next, expected) { await check(project, "memory.write"); return repository.saveMemoryAtomic(project, next, expected, now()) },
+    async archiveMemoryRevisions(project, memoryId, revisions) { await check(project, "memory.write"); return repository.archiveMemoryRevisions(project, memoryId, revisions) },
+    async memoryWriteReplay(project, key) { await check(project, "memory.write"); return repository.memoryWriteReplay(project, key) },
+    async saveMemoryWriteReplay(project, key, entry) { await check(project, "memory.write"); return repository.saveMemoryWriteReplay(project, key, entry) },
+    async governanceSaveWorkspace(project, data, expected) { await check(project, "memory.write"); const saved = await repository.save(project, "workspace", "default", data, expected, now()); return { data: saved.data as SharedWorkspace, revision: saved.revision } },
+    async governanceWorkspace(project) { await check(project, "memory.write"); return repository.governanceWorkspace(project) },
+    async proposals(project) { await check(project, "wiki.read"); return repository.proposals(project) },
+    async proposal(project, id) { await check(project, "wiki.read"); return repository.proposal(project, id) },
+    async saveProposal(proposal) { const context = await check(proposal.projectId, "wiki.write"); if (context.projectId !== proposal.projectId) throw new AuthError("forbidden", "Proposal project mismatch"); return repository.saveProposal(proposal) },
+    searchWiki: async (input) => { await check(input.projectId, "wiki.read"); return repository.searchWiki(input) },
     async createProject() { throw new AuthError("forbidden", "Project creation requires a global account operation") },
     async project(id) { await scoped(id); return repository.project(id) },
     async projects(after, limit) {

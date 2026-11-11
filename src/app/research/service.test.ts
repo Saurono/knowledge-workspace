@@ -65,6 +65,11 @@ describe("research application wiring", () => {
   it("runs a real queued task through validation and writes a query page", async () => {
     const id = queueResearch("/p", "Topic", model, config)
     await vi.advanceTimersByTimeAsync(51)
+    await vi.waitFor(() =>
+      expect(useResearchStore.getState().tasks.find((t) => t.id === id)).toMatchObject({
+        status: "done",
+      }),
+    )
     expect(useResearchStore.getState().tasks.find((t) => t.id === id)).toMatchObject({
       status: "done",
       projectPath: "/p",

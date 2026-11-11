@@ -7,6 +7,7 @@ import { createAccountAuthentication } from "./auth-http"
 import { createServiceHttp } from "./http"
 import { SqliteRepository } from "./repository"
 import { createSharedClient } from "@/modules/service-api/application"
+import { createMemoryRecord } from "@/modules/memory/domain"
 const token = "integration-fixture-service-key-only"
 const cleanups: Array<() => Promise<void>> = []
 async function fixture(maxJsonBytes?: number) {
@@ -130,7 +131,7 @@ describe("shared service HTTP and SQLite", () => {
   })
   it("validates workspace references and refuses stale updates through the shared SDK", async () => {
     const f = await fixture(), project = await f.create(), initial = (await f.client.workspace(project.id)).data
-    const value = { ...initial.data, domains: [{ id: "d", name: "Domain" }], memories: [{ id: "m", title: "Memory", content: "Content", category: "fact", relatedIds: [], domainIds: ["d"], createdAt: "time", updatedAt: "time" }] }
+    const value = { ...initial.data, domains: [{ id: "d", name: "Domain" }], memories: [createMemoryRecord({ id: "m", title: "Memory", content: "Content", category: "fact", relatedIds: [], domainIds: ["d"], createdAt: "time", updatedAt: "time" })] }
     await f.client.saveWorkspace(project.id, value, initial.revision)
     await expect(f.client.saveWorkspace(project.id, value, initial.revision)).rejects.toMatchObject({ code: "conflict", status: 409 })
     await expect(f.client.saveWorkspace(project.id, { ...value, domains: [] }, 2)).rejects.toMatchObject({ code: "invalid_argument" })

@@ -1,4 +1,5 @@
 import { canonicalWikiStoragePath } from "../domain/page"
+import type { WikiWriteAttribution } from "../domain/provenance"
 
 /** Unlocked storage supplied only while the repository owns the project lock. */
 export interface WikiCommitStorage {
@@ -7,16 +8,17 @@ export interface WikiCommitStorage {
   write(path: string, content: string): Promise<void>
 }
 export interface WikiCommitRepository {
-  run<T>(projectPath: string, operation: (storage: WikiCommitStorage) => Promise<T>): Promise<T>
+  run<T>(projectPath: string, operation: (storage: WikiCommitStorage) => Promise<T>, attribution?: WikiWriteAttribution): Promise<T>
 }
 export interface WikiCommitContext extends WikiCommitStorage {
   readonly projectPath: string
+  readonly attribution?: WikiWriteAttribution
 }
 
 /** A scoped commit, not a multi-file rollback transaction. */
 export function createWikiCommitService(repository: WikiCommitRepository) {
   return {
-    run<T>(projectPath: string, operation: (context: WikiCommitContext) => Promise<T>) {
+    run<T>(projectPath: string, operation: (context: WikiCommitContext) => Promise<T>, attribution?: WikiWriteAttribution) {
       return repository.run(projectPath, async (storage) => {
         let open = true
         const pending = new Set<Promise<unknown>>()
@@ -40,6 +42,7 @@ export function createWikiCommitService(repository: WikiCommitRepository) {
         }
         const context: WikiCommitContext = Object.freeze({
           projectPath,
+          attribution,
           read: (path: string) => perform(path, (canonical) => storage.read(canonical)),
           exists: (path: string) => perform(path, (canonical) => storage.exists(canonical)),
           write: (path: string, content: string) =>
@@ -63,7 +66,7 @@ export function createWikiCommitService(repository: WikiCommitRepository) {
         const rejected = outstanding.find((item) => item.status === "rejected")
         if (rejected?.status === "rejected") throw rejected.reason
         return result
-      })
+      }, attribution)
     },
   }
 }

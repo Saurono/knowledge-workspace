@@ -12,7 +12,7 @@ const history = createFileHistoryService({
       const target = full(projectPath, path)
       const restored = await wikiStorage.restoreHistory(projectPath, target, id)
       // Restoring a historical page does not prove it was created now.
-      await recordCompletedWikiWrite({ projectPath, relativePath: path, existed: true })
+      await recordCompletedWikiWrite({ projectPath, relativePath: path, existed: true, content: restored, attribution: { actor: { kind: "user", id: "local-user", entrypoint: "wiki-history-restore", reason: `restored:${id}` }, evidenceRefs: [`history:${id}`] } })
       return restored
     }),
 })

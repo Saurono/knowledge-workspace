@@ -623,7 +623,6 @@
           "max": "Max",
           "custom": "Custom",
           "budgetTokens": "thinking budget tokens",
-
           "hint": "Controls reasoning for chat. Document ingest uses the separate setting below.",
           "ingestTitle": "Reasoning during ingest",
           "ingestHint": "Off is usually right: ingest asks for structured output and thinking costs time without helping. Raise it only if the model refuses to run with reasoning disabled."
@@ -1178,6 +1177,8 @@
     "daysAgo": "{{count}} d ago"
   },
   "workspace": {
+    "loadingMemory": "Loading…",
+    "memoryDisplay": {"compacted":"Bodies for v1–v{{to}} are archived","resolveBoth":"Keep both","resolveMerged":"Merged","promote":"Promote to active","archive":"Archive","supersede":"Supersede with…","supersedeTarget":"Select replacement","candidate":"Candidate","active":"Active","superseded":"Superseded","expired":"Expired","archived":"Archived","until":"Valid until","importance":"Importance","credibility":"Credibility","unknown":"Unknown","history":"Version history","audit":"Status audit","access":"Access scope","project":"Project visible","role":"Role visible","private":"Private","owner":"Owner","roles":"Work roles","conflicts":"Conflicts"},
     "domains": "Knowledge domains",
     "newDomain": "New domain tag",
     "add": "Add",
@@ -1191,7 +1192,16 @@
     "noMemories": "No memories in this scope. Create a memory in the memory library.",
     "title": "Title",
     "category": "Memory category",
-    "categoryHint": "Optional; use your own memory taxonomy",
+    "categoryHint": "Categories form a soft vocabulary; choose from seven categories",
+    "categoryOption": {
+      "identity": "Identity",
+      "preference": "Preference",
+      "fact": "Fact",
+      "decision": "Decision",
+      "procedure": "Procedure",
+      "context": "Context",
+      "reflection": "Reflection"
+    },
     "content": "Content",
     "relatedMemories": "Related memories",
     "createdAt": "Created at",
@@ -1233,6 +1243,7 @@
     "connectedVault": "Independent JSON receipts; original notes are unchanged.",
     "seaCanvas": "Interactive 3D relationship star sea",
     "canvasUnavailable": "Canvas is unavailable. Use the node selector to inspect graph data.",
+    "canvasFallback": "This environment does not support a 2D canvas. Switched to list view.",
     "focus": "Highlight focus",
     "labels": "Labels",
     "motion": "Motion",

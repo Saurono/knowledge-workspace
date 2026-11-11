@@ -3,6 +3,8 @@ import type { Principal } from "./auth"
 import type { ProjectPermission } from "./model"
 export interface AccessContext {
   readonly id: string
+  readonly actorKind: "user" | "agent" | "system" | "admin"
+  readonly entrypoint: string
   readonly actorId: string
   readonly effectiveAccountId: string
   readonly projectId: string

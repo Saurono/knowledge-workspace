@@ -623,7 +623,6 @@
           "max": "Massimo",
           "custom": "Personalizzato",
           "budgetTokens": "token di budget per il ragionamento",
-
           "hint": "Controlla il ragionamento per la chat. L'elaborazione dei documenti usa l'impostazione separata qui sotto.",
           "ingestTitle": "Ragionamento durante l'ingest",
           "ingestHint": "Di norma va tenuto spento: l'ingest chiede output strutturato e il ragionamento costa tempo senza migliorarlo. Alzalo solo se il modello si rifiuta di funzionare con il ragionamento disattivato."
@@ -1178,6 +1177,8 @@
     "daysAgo": "{{count}} g fa"
   },
   "workspace": {
+    "loadingMemory": "Caricamento…",
+    "memoryDisplay": {"compacted":"I contenuti delle versioni v1–v{{to}} sono archiviati","resolveBoth":"Mantieni entrambe","resolveMerged":"Unite","promote":"Promuovi ad attiva","archive":"Archivia","supersede":"Sostituisci con…","supersedeTarget":"Seleziona sostituzione","candidate":"Candidata","active":"Attiva","superseded":"Sostituita","expired":"Scaduta","archived":"Archiviata","until":"Valida fino al","importance":"Importanza","credibility":"Credibilità","unknown":"Sconosciuto","history":"Cronologia versioni","audit":"Registro stati","access":"Ambito di accesso","project":"Visibile nel progetto","role":"Visibile ai ruoli","private":"Privata","owner":"Proprietario","roles":"Ruoli di lavoro","conflicts":"Conflitti"},
     "domains": "Knowledge domains",
     "newDomain": "New domain tag",
     "add": "Add",
@@ -1191,7 +1192,16 @@
     "noMemories": "No memories in this scope. Create a memory in the memory library.",
     "title": "Title",
     "category": "Memory category",
-    "categoryHint": "Optional; use your own memory taxonomy",
+    "categoryHint": "Le categorie formano un vocabolario flessibile; scegli tra sette categorie",
+    "categoryOption": {
+      "identity": "Identità",
+      "preference": "Preferenza",
+      "fact": "Fatto",
+      "decision": "Decisione",
+      "procedure": "Procedura",
+      "context": "Contesto",
+      "reflection": "Riflessione"
+    },
     "content": "Content",
     "relatedMemories": "Related memories",
     "createdAt": "Created at",
@@ -1233,6 +1243,7 @@
     "connectedVault": "Independent JSON receipts; original notes are unchanged.",
     "seaCanvas": "Interactive 3D relationship star sea",
     "canvasUnavailable": "Canvas is unavailable. Use the node selector to inspect graph data.",
+    "canvasFallback": "Questo ambiente non supporta un canvas 2D. È stata attivata la vista elenco.",
     "focus": "Highlight focus",
     "labels": "Labels",
     "motion": "Motion",

@@ -8,7 +8,8 @@
   "allowedModuleDependencies": [
     "retrieval",
     "memory",
-    "domains"
+    "domains",
+    "service-api"
   ],
   "allowedExternalImports": [
     "react",

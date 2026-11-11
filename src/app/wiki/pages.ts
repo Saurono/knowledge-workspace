@@ -8,14 +8,14 @@ const fullPath = (projectPath: string, path: string) =>
   `${normalizePath(projectPath).replace(/\/+$/, "")}/${path}`
 export const localWikiPages: WikiPageRepository = {
   read: (projectPath, path) => wikiStorage.read(fullPath(projectPath, path)),
-  update: (projectPath, path, change) =>
+  update: (projectPath, path, change, attribution) =>
     withProjectLock(normalizePath(projectPath), async () => {
       const file = fullPath(projectPath, path)
       const previous = (await wikiStorage.exists(file)) ? await wikiStorage.read(file) : null
       const page = await change(previous)
       if (page.content !== previous) {
         await wikiStorage.writeAtomic(file, page.content)
-        await recordCompletedWikiWrite({ projectPath, relativePath: path, existed: previous !== null })
+        await recordCompletedWikiWrite({ projectPath, relativePath: path, existed: previous !== null, content: page.content, attribution })
       }
       return page
     }),
@@ -43,7 +43,7 @@ export async function writeWikiEditorPage(
 ): Promise<void> {
   const relative = relativePath(projectPath, path)
   if (!relative) throw new Error("Wiki page is outside the selected project")
-  await wikiPages.save({ projectPath, path: relative, content })
+  await wikiPages.save({ projectPath, path: relative, content, attribution: { actor: { kind: "user", id: "local-user", entrypoint: "wiki-editor" } } })
 }
 
 export async function transformWikiPage(
@@ -53,5 +53,5 @@ export async function transformWikiPage(
 ) {
   const relative = relativePath(projectPath, path)
   if (!relative) throw new Error("Wiki page is outside the selected project")
-  return wikiPages.transform(projectPath, relative, change)
+  return wikiPages.transform(projectPath, relative, change, { actor: { kind: "user", id: "local-user", entrypoint: "wiki-editor-transform" } })
 }

@@ -15,7 +15,9 @@ import { ResourceDomainAssignment } from "@/components/workspace/resource-domain
 import { formatSourceTimestamp } from "@/components/workspace/source-time"
 import type { DomainFilter as DomainFilterValue } from "@/modules/domains/domain"
 import { VaultConnectorPanel } from "./vault-connector-panel"
+import { MemoryGraphView } from "./memory-graph-view"
 type Platform = ReturnType<typeof createWebPlatform>
+type MemorySummaryView = NonNullable<Parameters<typeof MemoryLibrary>[0]["summaries"]>[number]
 const message = (error: unknown) => error instanceof ApiClientError && error.code === "conflict"
   ? "资源已由其他客户端修改。草稿已保留，请复制草稿后刷新再合并。" : error instanceof ApiClientError && error.code === "unauthenticated" ? "会话已失效，请复制草稿后重新登录。" : error instanceof Error ? error.message : String(error)
 export function WebWorkspace() {
@@ -77,6 +79,7 @@ function ProjectPanel({ platform, project, access, onDirty, onBusy }: { platform
   const can = (permission: ProjectPermission) => access.permissions.includes(permission)
   const workspace = useMemo(() => createRemoteWorkspace(platform.api, project.id), [platform, project.id])
   const [snapshot, setSnapshot] = useState<ResourceRecord<SharedWorkspace> | null>(null)
+  const [summaries, setSummaries] = useState<MemorySummaryView[]>([]), [summariesBusy, setSummariesBusy] = useState(false), [summariesError, setSummariesError] = useState("")
   const [wiki, setWiki] = useState<ResourceRecord<WikiContent>[]>([]), [documents, setDocuments] = useState<ResourceRecord<ReceivedDocument>[]>([])
   const [tab, setTab] = useState(access.permissions.includes("wiki.read") ? "wiki" : access.permissions.includes("memory.read") ? "memories" : "domains"), [connection, setConnection] = useState<ConnectionState>("connecting")
   const [path, setPath] = useState("wiki/queries/new-page.md"), [content, setContent] = useState(""), [revision, setRevision] = useState<number | null>(null)
@@ -85,6 +88,35 @@ function ProjectPanel({ platform, project, access, onDirty, onBusy }: { platform
   const [domainDrafts, setDomainDrafts] = useState<Record<string, string[]>>({})
   const [filterBusy, setFilterBusy] = useState(false)
   const [domainNotice, setDomainNotice] = useState("")
+  const [importPreview, setImportPreview] = useState<{ bundle: unknown; plan: { wiki: { create: string[]; update: string[] }; documents: { create: string[]; skip: string[] }; memories: number; domains: number } } | null>(null)
+  const exportProject = async () => {
+    setBusy(true); setError("")
+    try {
+      const response = await platform.api.exportProject(project.id)
+      const url = URL.createObjectURL(new Blob([JSON.stringify(response.data, null, 2)], { type: "application/json" }))
+      const anchor = document.createElement("a")
+      try { anchor.href = url; anchor.download = `${project.name.replace(/[^A-Za-z0-9_-]/g, "_")}-export.json`; document.body.appendChild(anchor); anchor.click() }
+      finally { anchor.remove(); URL.revokeObjectURL(url) }
+    } catch (error) { setError(message(error)) } finally { setBusy(false) }
+  }
+  const previewImport = async (file: File) => {
+    setBusy(true); setError(""); setImportPreview(null)
+    try {
+      const text = await file.text()
+      let bundle: unknown
+      try { bundle = JSON.parse(text) } catch { setError("导入文件不是合法 JSON"); return }
+      const response = await platform.api.importProject(project.id, bundle, { dryRun: true })
+      const { plan } = response.data as { plan: NonNullable<typeof importPreview>["plan"] }
+      setImportPreview({ bundle, plan })
+    } catch (error) { setError(message(error)) } finally { setBusy(false) }
+  }
+  const confirmImport = async () => {
+    if (!importPreview) return
+    setBusy(true); setError("")
+    try { await platform.api.importProject(project.id, importPreview.bundle, { dryRun: false }); await reload(); setImportPreview(null) }
+    catch (error) { setError(message(error)) } finally { setBusy(false) }
+  }
+  const [expireNotice, setExpireNotice] = useState("")
   const resourceGeneration = useRef(0)
   const filterGeneration = useRef(0)
   const alive = useRef(true), pageGeneration = useRef(0), dirty = useRef(false)
@@ -108,11 +140,26 @@ function ProjectPanel({ platform, project, access, onDirty, onBusy }: { platform
       if (generation === resourceGeneration.current) throw error
     }
   }
+  const loadSummaries = async () => {
+    setSummariesBusy(true); setSummariesError("")
+    try {
+      const result: MemorySummaryView[] = []; let cursor: string | null | undefined
+      for (let page = 0; page < 20; page++) {
+        const value = await workspace.listMemorySummaries({ limit: 200, cursor })
+        result.push(...value.items.map(item => ({ ...item, status: item.status as MemorySummaryView["status"], category: item.category ?? "" })))
+        cursor = value.nextCursor
+        if (!cursor) break
+      }
+      if (alive.current) setSummaries(result)
+    } catch (error) { if (alive.current) setSummariesError(message(error)) }
+    finally { if (alive.current) setSummariesBusy(false) }
+  }
   const reload = async () => {
     setBusy(true)
     setDomainDrafts({})
     try {
-      const value = can("project.read") ? await workspace.load() : null
+      const value = can("project.read") ? await workspace.load({ memories: "none" }) : null
+      if (tab === "memories") await loadSummaries()
       let currentFilter = domainFilter
       if (value) {
         const known = new Set(value.data.domains.map(domain => domain.id))
@@ -187,7 +234,8 @@ function ProjectPanel({ platform, project, access, onDirty, onBusy }: { platform
     }
   }
   return <section className="panel space-y-4">
-    <header className="flex flex-wrap items-center justify-between gap-3"><nav role="tablist" aria-label="项目功能" className="flex flex-wrap gap-2">{[["wiki", "Wiki", "wiki.read"], ["documents", "文档", "documents.read"], ["memories", "记忆库", "memory.read"], ["domains", "知识领域", "project.read"]].filter(([, , permission]) => can(permission as ProjectPermission)).map(([id, label]) => <button role="tab" key={id} aria-selected={tab === id} onClick={() => setTab(id)}>{label}</button>)}</nav><p role="status" className="muted">事件连接：{connection === "connected" ? "已连接" : connection === "reconnecting" ? "重连中" : connection === "error" ? "连接失败" : "连接中"}</p></header>
+    <header className="flex flex-wrap items-center justify-between gap-3"><nav role="tablist" aria-label="项目功能" className="flex flex-wrap gap-2">{[["wiki", "Wiki", "wiki.read"], ["documents", "文档", "documents.read"], ["memories", "记忆库", "memory.read"], ["graph", "星图", "memory.read"], ["domains", "知识领域", "project.read"]].filter(([, , permission]) => can(permission as ProjectPermission)).map(([id, label]) => <button role="tab" key={id} aria-selected={tab === id} onClick={() => { setTab(id); if (id === "memories" && tab !== "memories" && !summaries.length && !summariesBusy) void loadSummaries() }}>{label}</button>)}</nav><div className="flex flex-wrap items-center gap-2"><button disabled={busy} onClick={() => void exportProject()}>导出项目</button><label>导入项目<input type="file" accept="application/json" disabled={busy} onChange={event => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void previewImport(file) }} /></label></div><p role="status" className="muted">事件连接：{connection === "connected" ? "已连接" : connection === "reconnecting" ? "重连中" : connection === "error" ? "连接失败" : "连接中"}</p></header>
+    {importPreview && <div role="status">wiki 新建 {importPreview.plan.wiki.create.length} / 更新 {importPreview.plan.wiki.update.length}，文档跳过 {importPreview.plan.documents.skip.length}，记忆 {importPreview.plan.memories} 条，领域 {importPreview.plan.domains} 个 <button disabled={busy} onClick={() => void confirmImport()}>确认导入</button></div>}
     {(error || updated) && <div role="alert" className={error ? "error" : "muted"}><p>{error || "服务已有新变更，可刷新读取。"}</p><button className="mt-2" disabled={busy} onClick={() => void reload()}>刷新资源（放弃未保存内容）</button></div>}
     {(tab === "wiki" || tab === "documents") && snapshot && <div className="space-y-2">
       <DomainFilter domains={snapshot.data.domains} value={activeDomainFilter} onChange={updateDomainFilter} disabled={busy || filterBusy} />
@@ -210,7 +258,8 @@ function ProjectPanel({ platform, project, access, onDirty, onBusy }: { platform
       try { await platform.upload(project.id, file); if (alive.current) await resources() } catch (error) { if (alive.current) setError(message(error)) } finally { if (alive.current) setBusy(false) }
     }} /></label><p className="muted">上传仅表示服务已接收原始文件；解析、入库和索引不会被标为已完成。最大 16 MiB。</p>{documents.map(record => { const key = `raw/documents/${record.data.sourceId}`; return <div key={record.key} className="flex items-start justify-between gap-3 rounded-lg border p-3"><div><b>{record.data.name}</b><p className="muted">已接收 · {record.data.size} 字节 · {formatSourceTimestamp(record.data.receivedAt, "未知")}</p><p className="muted">来源入库：{formatSourceTimestamp(record.data.sourceIngestedAt, "未知")}</p><p className="muted">当前修订入库：{formatSourceTimestamp((record.data as ReceivedDocument & { revisionIngestedAt?: string | null }).revisionIngestedAt, "未知")}</p></div>{can("domains.manage") && snapshot && <ResourceDomainAssignment label={record.data.name} domains={snapshot.data.domains} selectedIds={domainDrafts[key] ?? snapshot.data.resourceDomains[key] ?? []} disabled={busy} onChange={ids => void saveResourceDomains(key, ids)} />}</div>})}</div>}
     {tab === "documents" && can("documents.read") && <VaultConnectorPanel projectId={project.id} projectName={project.name} documents={documents.map(record => record.data)} enabled />}
-    {tab === "memories" && can("memory.read") && snapshot && <div className="min-h-[600px]"><MemoryLibrary readOnly={!can("memory.write")} key={snapshot.revision} memories={snapshot.data.memories} domains={snapshot.data.domains} loading={false} saving={busy} error={error || null} selected={selectedMemory} onSelect={setSelectedMemory} onRetry={() => void reload()} onSave={record => mutate(() => workspace.saveMemory(record))} onRemove={id => mutate(() => workspace.removeMemory(id))} /></div>}
+    {tab === "memories" && can("memory.read") && snapshot && <div className="min-h-[600px]"><button disabled={busy || !can("memory.write")} onClick={async () => { setBusy(true); setError(""); setExpireNotice(""); try { const result = await platform.api.expireMemories(project.id); await loadSummaries(); setExpireNotice(result.data.expired > 0 ? `已清理 ${result.data.expired} 条过期记忆` : "没有需要清理的过期记忆") } catch (error) { setError(message(error)) } finally { setBusy(false) } }}>清理过期记忆</button>{expireNotice && <p className="muted">{expireNotice}</p>}<MemoryLibrary readOnly={!can("memory.write")} key={snapshot.revision} summaries={summaries} onLoadMemory={async id => { try { return await workspace.loadMemory(id) } catch (error) { setError(message(error)); return null } }} domains={snapshot.data.domains} loading={summariesBusy} saving={busy} error={error || summariesError} selected={selectedMemory} onSelect={setSelectedMemory} onRetry={() => void reload()} onSave={record => mutate(async () => { const ok = await workspace.saveMemory(record); await loadSummaries(); return ok })} onRemove={id => mutate(async () => { const ok = await workspace.removeMemory(id); await loadSummaries(); return ok })} onPromote={id => mutate(async () => { const ok = await workspace.promoteMemory(id); await loadSummaries(); return ok })} onArchive={id => mutate(async () => { const ok = await workspace.archiveMemory(id); await loadSummaries(); return ok })} onSupersede={(oldId, newId) => mutate(async () => { const ok = await workspace.supersedeMemory(oldId, newId); await loadSummaries(); return ok })} /></div>}
+    {tab === "graph" && can("memory.read") && <MemoryGraphView platform={platform} projectId={project.id} domains={snapshot?.data.domains ?? []} />}
     {tab === "domains" && can("project.read") && snapshot && <DomainTagEditor readOnly={!can("domains.manage")} domains={snapshot.data.domains} loading={false} saving={busy} error={error || null} onRetry={() => void reload()} onAdd={tag => mutate(() => workspace.addDomain(tag))} onRemove={id => mutate(() => workspace.removeDomain(id))} onToggle={(path, id) => mutate(() => workspace.toggleDomain(path, id))} />}
     <footer className="muted border-t pt-3">Web 使用服务端资源；本机 Shell、文件监听和 Obsidian Vault 需本机连接器。</footer>
   </section>

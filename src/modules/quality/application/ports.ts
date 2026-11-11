@@ -1,8 +1,8 @@
 import type { QualityFileNode, ReviewItem, StructuralLintFinding, StructuralLintPage } from "../domain"
 import type { StructuralLintOptions } from "./lint"
 export interface QualityActivity {
-  addItem(input: { type: "lint" | "query"; title: string; parentTaskId?: string; status: "running" | "done" | "error"; detail: string; filesWritten: string[] }): string
-  updateItem(id: string, patch: { status?: "running" | "done" | "error"; detail?: string }): void
+  addItem(input: { type: "lint" | "query"; title: string; parentTaskId?: string; status: "running" | "done" | "error" | "cancelled"; detail: string; filesWritten: string[] }): string
+  updateItem(id: string, patch: { status?: "running" | "done" | "error" | "cancelled"; detail?: string }): void
 }
 export interface QualityCommonPorts<Config> {
   files: { read(path: string): Promise<string>; list(path: string): Promise<QualityFileNode[]> }

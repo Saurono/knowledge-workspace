@@ -23,6 +23,19 @@ export interface ChatAgentEvent {
 export type ChatAgentMode = "fast" | "standard" | "deep" | "local_first"
 export type ChatRetrievalMode = "standard" | "smart" | "faithful"
 
+/**
+ * A turn-scoped local retrieval boundary composed by the trusted workspace
+ * adapter. This is not shared-service authorization: the native command
+ * validates every path against its resolved project root and run identity.
+ * An empty pair of allowlists is an explicit empty scope.
+ */
+export interface AgentRetrievalScope {
+  projectRoot: string
+  runId: string
+  allowedWikiPaths: string[]
+  allowedRawSourcePaths: string[]
+}
+
 export type ChatAgentToolName =
   | "project_files"
   | "project_file_read"

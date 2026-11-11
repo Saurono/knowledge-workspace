@@ -45,6 +45,8 @@ export interface ExternalPreview {
 }
 
 interface WikiState {
+  indexStatus: "unknown" | "stale" | "ready"
+  setIndexStatus: (status: "unknown" | "stale" | "ready") => void
   project: WikiProject | null
   fileTree: FileNode[]
   /**
@@ -142,7 +144,9 @@ interface WikiState {
   bumpDataVersion: () => void
 }
 
-export const useWikiStore = create<WikiState>((set) => ({
+export const useWikiStore = create<WikiState>((set, get) => ({
+  indexStatus: "unknown",
+  setIndexStatus: (indexStatus) => set({ indexStatus }),
   project: null,
   fileTree: [],
   projectPathIndex: createEmptyProjectPathIndex(),
@@ -159,7 +163,15 @@ export const useWikiStore = create<WikiState>((set) => ({
 
   dataVersion: 0,
 
-  setProject: (project) => set({ project }),
+  setProject: (project) => {
+    set({ project, indexStatus: project ? "stale" : "unknown" })
+    const config = get().embeddingConfig
+    if (project && config) {
+      void import("@/app/retrieval/index-consistency").then(m => m.startProjectIndexConsistency(project.path, config, { fileTree: () => get().project === project ? get().fileTree : [] })).then(result => {
+        if (get().project === project && get().embeddingConfig === config) set({ indexStatus: result.status })
+      }).catch(error => console.error("Index consistency startup failed", error))
+    }
+  },
   setFileTree: (fileTree, options) => {
     if (options?.syncPathIndex === false) {
       set({ fileTree })

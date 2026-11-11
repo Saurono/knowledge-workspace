@@ -1,5 +1,11 @@
 # Modular development
 
+Markdown 文件是唯一真相源。向量、图谱、星图和索引全部是可重建派生数据；派生数据不写迁移，缺失或损坏一律从 Markdown 重建。
+`src/lib/index-consistency.ts` 提供启动检查、逐页重建队列及查询状态机；只有逐页提交并读回验证的证据才允许 ready，unknown 不等于 ready。
+重建期间查询通过 Markdown fallback 返回 stale；单页失败保留在队列，重试不重跑已验证页面或 ingest 编译链。
+`src/lib/rebuild-index.ts` 复用 ingest 的公开 VerifiedPageIndexPort 契约；`scripts/rebuild-index.mjs <project-path> <adapter.mjs>` 是薄壳，adapter 导出 createRebuildPorts(projectPath)，返回 config 和 IndexConsistencyPorts。
+各宿主须在提供查询前调用 startup，并消费 queued/rebuild；本入口不自动改写现有宿主启动链。adapter 负责真实索引传输、证据原子保存和 Markdown 查询降级，不能以空数组替代不可用错误。孤儿索引须由 adapter 清理后重新检查。
+
 New business functionality belongs in a feature module under `src/modules/`.
 Use a modular monolith with explicit public contracts, not shared mutable state
 or imports of another feature's private implementation.

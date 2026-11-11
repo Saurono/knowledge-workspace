@@ -3,9 +3,11 @@ import { useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import {
   DEFAULT_SEA_CAMERA,
+  canvasAvailable,
   SEA_FOCAL,
   layoutSea,
   projectSea,
+  planBodyRender,
   seaHash,
   visibleSeaEdges,
   type SeaCamera,
@@ -20,6 +22,24 @@ interface Props {
   selected: string | null
   onSelect: (id: string | null) => void
 }
+function MemorySeaFallback({ points, onSelect }: Pick<Props, "points" | "onSelect">) {
+  const { t } = useTranslation()
+  const groups = new Map<string, SeaPoint[]>()
+  for (const point of points) {
+    const members = groups.get(point.group)
+    if (members) members.push(point)
+    else groups.set(point.group, [point])
+  }
+  return <div className="memory-sea-fallback">
+    <div role="status">{t("workspace.canvasFallback")}</div>
+    {[...groups].map(([group, members]) => <section key={group}>
+      <h3>{group}</h3>
+      <ul>{members.map(point => <li key={point.id}>
+        <button onClick={() => onSelect(point.id)}>{point.id} — {point.title}</button>
+      </li>)}</ul>
+    </section>)}
+  </div>
+}
 export function MemorySeaCanvas({ points, edges, selected, onSelect }: Props) {
   const { t } = useTranslation()
   const root = useRef<HTMLDivElement>(null)
@@ -30,15 +50,40 @@ export function MemorySeaCanvas({ points, edges, selected, onSelect }: Props) {
   const [motion, setMotion] = useState(false)
   const [reset, setReset] = useState(0)
   const [canvasError, setCanvasError] = useState(false)
+  const [canvasReady, setCanvasReady] = useState(false)
   const select = useRef(onSelect)
+  const reducedMotion = useRef(false)
+  useEffect(() => {
+    const available = canvasAvailable({ createElement: document.createElement.bind(document) })
+    setCanvasError(!available)
+    setCanvasReady(available)
+  }, [])
+  useEffect(() => {
+    if (!window.matchMedia) return
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)")
+    const update = () => {
+      reducedMotion.current = preference.matches
+      setReset((value) => value + 1)
+    }
+    update()
+    preference.addEventListener("change", update)
+    return () => preference.removeEventListener("change", update)
+  }, [])
   useEffect(() => {
     select.current = onSelect
   }, [onSelect])
   useEffect(() => {
+    if (!canvasReady || canvasError) return
     const element = canvas.current
     const container = root.current
     if (!element || !container) return
-    const context = element.getContext("2d")
+    let context: CanvasRenderingContext2D | null
+    try {
+      context = element.getContext("2d")
+    } catch {
+      setCanvasError(true)
+      return
+    }
     if (!context) {
       setCanvasError(true)
       return
@@ -55,6 +100,7 @@ export function MemorySeaCanvas({ points, edges, selected, onSelect }: Props) {
       frameId = 0
     let hovered: string | null = null
     let last = new Map<string, ReturnType<typeof projectSea>>()
+    const pickRadii = new Map<string, number>()
     let drag: {
       x: number
       y: number
@@ -84,7 +130,7 @@ export function MemorySeaCanvas({ points, edges, selected, onSelect }: Props) {
       }
       last = new Map(
         positions.map((point) => {
-          const drift = motion ? Math.sin(time / 3200 + seaHash(point.id)) * 5 : 0
+          const drift = motion && !reducedMotion.current ? Math.sin(time / 3200 + seaHash(point.id)) * 5 : 0
           return [
             point.id,
             projectSea({ ...point, y: point.y + drift }, camera.current, width, height),
@@ -112,34 +158,91 @@ export function MemorySeaCanvas({ points, edges, selected, onSelect }: Props) {
         context.stroke()
       }
       const sorted = [...positions].sort((a, b) => last.get(b.id)!.depth - last.get(a.id)!.depth)
+      pickRadii.clear()
       for (const point of sorted) {
         const p = last.get(point.id)!
         if (p.depth < 140 || p.x < -80 || p.y < -80 || p.x > width + 80 || p.y > height + 80)
           continue
         const hot = point.id === selected || point.id === hovered
         const dim = focus && selected && !focusIds.has(point.id)
-        const size = Math.max(0.8, point.radius * p.scale * (hot ? 2.2 : 1.75))
-        context.globalAlpha = dim ? 0.1 : Math.min(1, 0.22 + p.scale)
-        if (hot || (!dim && point.weight > 2)) {
-          const glow = context.createRadialGradient(p.x, p.y, 0, p.x, p.y, size * 6)
-          glow.addColorStop(0, `${point.color}66`)
+        const plan = planBodyRender({ body: point.body, size: point.size,
+          brightness: point.brightness, weight: point.weight },
+        { reducedMotion: reducedMotion.current, time })
+        const scale = p.scale * (hot ? 2.2 : 1.75)
+        const size = plan.coreRadius * scale
+        pickRadii.set(point.id, size * 2.4)
+        context.save()
+        context.translate(p.x, p.y)
+        context.scale(scale, scale)
+        context.globalAlpha = (dim ? 0.1 : Math.min(1, 0.22 + p.scale)) * plan.alpha
+        const opacity = context.globalAlpha
+        context.fillStyle = point.color
+        context.strokeStyle = point.color
+        context.lineWidth = 0.7 / scale
+        for (let layer = 0; layer < plan.layers; layer++) {
+          const radius = plan.glowRadius * (1 - layer * 0.15)
+          context.save()
+          if (plan.shape === "comet") {
+            context.translate(-radius * 0.65, 0)
+            context.scale(1, 0.3)
+          }
+          const glow = context.createRadialGradient(0, 0, 0, 0, 0, radius)
+          glow.addColorStop(0, point.color)
           glow.addColorStop(1, `${point.color}00`)
+          context.globalAlpha = opacity * plan.glowAlpha / plan.layers
           context.fillStyle = glow
           context.beginPath()
-          context.arc(p.x, p.y, size * 6, 0, Math.PI * 2)
+          context.arc(0, 0, radius, 0, Math.PI * 2)
           context.fill()
+          context.restore()
         }
+        context.beginPath()
+        switch (plan.shape) {
+          case "sparkle":
+            context.arc(0, 0, plan.coreRadius, 0, Math.PI * 2)
+            context.fill()
+            context.beginPath()
+            context.moveTo(-plan.coreRadius * 3, 0)
+            context.lineTo(plan.coreRadius * 3, 0)
+            context.moveTo(0, -plan.coreRadius * 3)
+            context.lineTo(0, plan.coreRadius * 3)
+            context.stroke()
+            break
+          case "crescent":
+            context.arc(0, 0, plan.rimRadius, Math.PI * 0.3, Math.PI * 1.7)
+            context.lineWidth = plan.coreRadius
+            context.stroke()
+            break
+          case "faint":
+            break // Dashed rings below supply the visible outline.
+          case "disc":
+          case "comet":
+          case "cloud":
+            context.arc(0, 0, plan.coreRadius, 0, Math.PI * 2)
+            context.fill()
+            break
+        }
+        context.lineWidth = 0.7 / scale
+        if (plan.rings > 0) {
+          context.setLineDash(plan.shape === "faint" ? [2, 3] : [6, 1])
+          for (let ring = 0; ring < plan.rings; ring++) {
+            context.beginPath()
+            context.ellipse(0, 0, plan.rimRadius * (1 + ring * 0.5),
+              plan.rimRadius * (plan.shape === "disc" ? 0.55 : 1) * (1 + ring * 0.5),
+              -0.4, 0, plan.shape === "disc" ? Math.PI * 1.65 : Math.PI * 2)
+            context.stroke()
+          }
+          context.setLineDash([])
+        }
+        context.restore()
         if (hot) {
+          context.globalAlpha = dim ? 0.1 : 1
           context.strokeStyle = point.color
           context.lineWidth = 1
           context.beginPath()
           context.arc(p.x, p.y, size * 2.4, 0, Math.PI * 2)
           context.stroke()
         }
-        context.fillStyle = point.color
-        context.beginPath()
-        context.arc(p.x, p.y, size, 0, Math.PI * 2)
-        context.fill()
       }
       context.globalAlpha = 1
       const groups = new Map<string, { x: number; y: number; count: number }>()
@@ -198,7 +301,7 @@ export function MemorySeaCanvas({ points, edges, selected, onSelect }: Props) {
           context.fillText(title, p.x + 9, p.y - 5)
         }
       }
-      if (motion && !document.hidden) frameId = requestAnimationFrame(draw)
+      if (motion && !reducedMotion.current && !document.hidden) frameId = requestAnimationFrame(draw)
     }
     const invalidate = () => {
       if (!frameId && active) frameId = requestAnimationFrame(draw)
@@ -219,12 +322,12 @@ export function MemorySeaCanvas({ points, edges, selected, onSelect }: Props) {
     }
     const pick = (x: number, y: number) => {
       let id: string | null = null,
-        nearest = 16
+        nearest = Infinity
       for (const point of positions) {
         const p = last.get(point.id)
         if (!p || p.depth < 140) continue
         const distance = Math.hypot(p.x - x, p.y - y)
-        if (distance < nearest) {
+        if (distance < (pickRadii.get(point.id) ?? 0) && distance < nearest) {
           nearest = distance
           id = point.id
         }
@@ -322,15 +425,11 @@ export function MemorySeaCanvas({ points, edges, selected, onSelect }: Props) {
       element.removeEventListener("contextmenu", menu)
       document.removeEventListener("visibilitychange", visibility)
     }
-  }, [points, edges, selected, focus, labels, motion, reset])
+  }, [points, edges, selected, focus, labels, motion, reset, canvasReady, canvasError])
+  if (canvasError) return <MemorySeaFallback points={points} onSelect={onSelect} />
   return (
     <div ref={root} className="memory-sea-canvas">
       <canvas ref={canvas} aria-label={t("workspace.seaCanvas")} />
-      {canvasError && (
-        <p role="alert" className="memory-sea-fallback">
-          {t("workspace.canvasUnavailable")}
-        </p>
-      )}
       <div className="memory-sea-tools" role="toolbar" aria-label={t("workspace.starMap")}>
         <button aria-pressed={focus} onClick={() => setFocus((v) => !v)}>
           {t("workspace.focus")}

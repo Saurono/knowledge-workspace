@@ -21,7 +21,7 @@ export function createContextService(repository: ContextRepository, runtime: { i
     const grant = (await repository.delegations()).find(grant => grant.id === selection.delegationId && grant.grantorId === effectiveId && grant.granteeId === principal.accountId && grant.projectId === projectId && !grant.revokedAt && Date.parse(grant.expiresAt) > Date.parse(runtime.now()))
     if (!grant || (selection.workRoleId !== undefined && selection.workRoleId !== grant.workRoleId)) throw new AuthError("forbidden", "An active matching identity delegation is required")
     const effective = captureAccessContext(snapshot, { ...principal, accountId: effectiveId }, projectId, runtime, grant.workRoleId ?? undefined)
-    return freezeAccessContext({ ...effective, actorId: principal.accountId, permissions: effective.permissions.filter(permission => grant.permissions.includes(permission)), basis: { ...effective.basis, delegationId: grant.id } })
+    return freezeAccessContext({ ...effective, actorId: principal.accountId, actorKind: "agent", permissions: effective.permissions.filter(permission => grant.permissions.includes(permission)), basis: { ...effective.basis, delegationId: grant.id } })
   }
   return {
     capture,

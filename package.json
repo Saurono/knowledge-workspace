@@ -4,6 +4,7 @@
   "version": "0.6.13",
   "type": "module",
   "scripts": {
+    "eval:retrieval": "node scripts/eval-retrieval.mjs",
     "dev": "vite",
     "typecheck": "tsc --build --pretty",
     "build": "npm run check:modules && npm run typecheck && vite build",

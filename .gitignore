@@ -21,13 +21,22 @@ src-tauri/gen/
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
+
+# Local databases and dumps (J03 audit: these were uncovered)
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.db
+*.db-journal
 
 # Internal docs (not shipped)
 docs/
 AGENTS.md
 
 # Benchmark and test data (local only)
-tests/
+/tests/
 
 # Editor directories and files
 .vscode/*
@@ -53,5 +62,6 @@ pnpm-debug.log*
 
 # Shared service runtime and build output
 .knowledge-workspace-service/
+.kw-demo-preview/
 dist-service/
 dist-web/

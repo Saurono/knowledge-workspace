@@ -3,16 +3,18 @@ import { requireContextPermission } from "@/modules/identity/domain"
 import type { AccessContext, ProjectPermission } from "@/modules/identity/domain"
 import { createSharedService, domainFilterFromInput } from "@/modules/service-api/application"
 import type { SharedRepository, SharedWorkspace } from "@/modules/service-api/application"
-import { tokenizeQuery } from "@/modules/retrieval/domain"
 export interface ExecutionAccess { readonly context: AccessContext; check(permission: ProjectPermission): Promise<AccessContext>; readonly resources: SharedRepository }
 export interface ExecutionGateway { execute(kind: "tasks" | "cli", action: string, input: Record<string, unknown>, access: ExecutionAccess): Promise<unknown> }
 /** Allowlisted resource tools shared by remote CLI and MCP; never interprets a shell command. */
-export async function resourceTool(service: ReturnType<typeof createSharedService>, project: string, tool: unknown, input: Record<string, unknown>) {
+export async function resourceTool(service: ReturnType<typeof createSharedService>, project: string, tool: unknown, input: Record<string, unknown>, access: Pick<ExecutionAccess, "context">) {
   if (tool === "wiki.list") return service.list(project, "wiki", input.limit as string, input.cursor as string, domainFilterFromInput(input.domainFilter))
   if (tool === "wiki.read") return service.readWiki(project, String(input.path ?? ""))
   if (tool === "wiki.write") {
+    requireContextPermission(access.context, "wiki.write")
     if (input.expectedRevision !== null && (!Number.isSafeInteger(input.expectedRevision) || Number(input.expectedRevision) < 1)) throw new ServiceError("precondition_required", "Supply expectedRevision or null for creation")
-    return service.saveWiki(project, String(input.path ?? ""), input.content, input.expectedRevision as number | null)
+    if (Object.keys(input).some(key => !["tool", "path", "content", "expectedRevision"].includes(key))) throw new ServiceError("invalid_argument", "Unexpected field")
+    const context = access.context
+    return service.saveWiki(project, String(input.path ?? ""), { content: input.content }, input.expectedRevision as number | null, { kind: context.actorKind, id: context.actorId, entrypoint: context.entrypoint })
   }
   if (tool === "documents.list") return service.list(project, "document", input.limit as string, input.cursor as string, domainFilterFromInput(input.domainFilter))
   if (tool === "memory.list") return (await service.readWorkspace(project)).data as SharedWorkspace
@@ -22,19 +24,20 @@ export async function keywordSearch(service: ReturnType<typeof createSharedServi
   if (typeof input.query !== "string" || !input.query.trim() || input.query.length > 2000) throw new ServiceError("invalid_argument", "A search query of 1–2000 characters is required")
   const topK = input.topK === undefined ? 20 : Number(input.topK)
   if (!Number.isInteger(topK) || topK < 1 || topK > 100) throw new ServiceError("invalid_argument", "topK must be 1–100")
-  const tokens = tokenizeQuery(input.query), found = []
+  let domainFilter: string[] | undefined
   const filter = domainFilterFromInput(input.domainFilter)
-  let cursor: string | null = null
-  for (;;) {
+  if (filter) {
+    domainFilter = []
+    let cursor: string | null = null
+    for (;;) {
     const page = await service.list(project, "wiki", "200", cursor, filter)
-    const pages = page.items
-    for (const page of pages) {
-      const data = page.data as { content: string }, lower = data.content.toLowerCase(), score = tokens.filter(token => lower.includes(token)).length
-      if (score) found.push({ path: page.key, title: page.key, snippet: data.content.slice(0, 300), score, ...(input.includeContent === true ? { content: data.content } : {}) })
-    }
+    domainFilter.push(...page.items.map(item => item.key))
     if (!page.nextCursor) break
     cursor = page.nextCursor
+    }
+    if (!domainFilter.length) return { mode: "keyword", results: [], tokenHits: 0, vectorHits: 0 }
   }
-  return { mode: "keyword", results: found.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path)).slice(0, topK) }
+  const found = await service.searchWiki(project, { query: input.query, limit: topK, domainFilter })
+  return { mode: "keyword", results: found.map(row => ({ ...row, projectId: project, images: [] })), tokenHits: found.length, vectorHits: 0 }
 }
 export function executionPermission(kind: "tasks" | "cli", context: AccessContext) { requireContextPermission(context, kind === "tasks" ? "tasks.manage" : "agent.run") }

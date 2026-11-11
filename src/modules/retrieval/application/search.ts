@@ -1,6 +1,8 @@
 import { normalizeRetrievalPath } from "../domain"
 import type { BackendSearchResponse, EmbeddingConfig, RetrievalEvidence } from "../domain"
 export interface SearchIndexRequest {
+  accessScope?: { allowedProjectIds: string[] }
+  domainFilter?: string[]
   projectPath: string
   query: string
   topK: number
@@ -13,6 +15,8 @@ export interface ProjectSearchIndex {
   search(input: SearchIndexRequest): Promise<BackendSearchResponse>
 }
 export interface RetrievalOptions {
+  accessScope?: { allowedProjectIds: string[] }
+  domainFilter?: string[]
   localOnly?: boolean
   embeddingConfig?: EmbeddingConfig | null
   topK?: number
@@ -37,6 +41,8 @@ export function createRetrievalService(index: ProjectSearchIndex) {
     if (!query.trim()) return empty()
     const project = normalizeRetrievalPath(projectPath).replace(/\/+$/, "")
     const response = await index.search({
+      ...(options.accessScope ? { accessScope: options.accessScope } : {}),
+      ...(options.domainFilter ? { domainFilter: options.domainFilter } : {}),
       projectPath: project,
       query,
       topK: topK(options.topK),
@@ -46,9 +52,11 @@ export function createRetrievalService(index: ProjectSearchIndex) {
       embeddingConfig: options.localOnly ? null : options.embeddingConfig ?? null,
     })
     check(options.signal) // Native I/O may finish, but cancelled results never reach the caller.
+    const allowed = response.results.filter(result => !options.accessScope || (result.projectId !== undefined && options.accessScope.allowedProjectIds.includes(result.projectId)))
     return {
       ...response,
-      results: response.results.map(result => ({ ...result, path: `${project}/${relativeResultPath(result.path)}` })),
+      ...(options.accessScope ? { deniedCount: (response.deniedCount ?? 0) + response.results.length - allowed.length } : {}),
+      results: allowed.map(result => ({ ...result, path: `${project}/${relativeResultPath(result.path)}` })),
     }
   }
   return {

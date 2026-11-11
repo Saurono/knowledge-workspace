@@ -41,3 +41,15 @@ describe("retrieval service contracts", () => {
     await expect(createRetrievalService({ search: async () => response([page(path)]) }).search("/p", "q")).rejects.toThrow("project-relative")
   })
 })
+
+it("enforces scope and forwards filters while preserving unscoped results", async () => {
+ const search = vi.fn().mockResolvedValue(response([{ ...page("a.md"), projectId: "a" }, { ...page("b.md"), projectId: "b" }]))
+ const service = createRetrievalService({ search })
+ const scoped = await service.search("/p", "q", { accessScope: { allowedProjectIds: ["a"] }, domainFilter: ["engineering"] })
+ expect(scoped.results.map(r => r.projectId)).toEqual(["a"])
+ expect(scoped.deniedCount).toBe(1)
+ expect(search).toHaveBeenCalledWith(expect.objectContaining({ accessScope: { allowedProjectIds: ["a"] }, domainFilter: ["engineering"] }))
+ const all = await service.search("/p", "q")
+ expect(all.results).toHaveLength(2)
+ expect(all.deniedCount ?? 0).toBe(0)
+})

@@ -67,6 +67,7 @@ async fn agent_start_turn(
     project_id: String,
     mut request: agent::AgentChatRequest,
     llm_config: Option<agent::provider::LlmConfig>,
+    retrieval_scope: Option<agent::tools::AgentRetrievalScope>,
 ) -> Result<agent::types::AgentChatResponse, String> {
     let project = resolve_agent_project(&app, &project_id)?;
     if request
@@ -89,6 +90,9 @@ async fn agent_start_turn(
         request.run_id = Some(format!("run_{}", Uuid::new_v4()));
     }
     let active_run_id = request.run_id.clone().unwrap_or_default();
+    let retrieval_scope = retrieval_scope
+        .map(|scope| agent::tools::validate_retrieval_scope(scope, &project.path, &active_run_id))
+        .transpose()?;
     if let Some(session_id) = request.session_id.clone() {
         if request.history.is_empty() && !request.history_explicit {
             request.history = app
@@ -104,13 +108,14 @@ async fn agent_start_turn(
     }
     let mut runtime_config = load_agent_runtime_config(&app);
     runtime_config.llm = llm_config.or(runtime_config.llm);
-    let runtime = agent::AgentRuntime::new(
+    let runtime = agent::AgentRuntime::new_scoped(
         project.id.clone(),
         project.path.clone(),
         runtime_config.embedding,
         runtime_config.llm,
         runtime_config.web_search,
         runtime_config.anytxt,
+        retrieval_scope,
     );
     let user_message = request.message.clone();
     let persist_session = request.persist_session;
@@ -155,6 +160,7 @@ async fn agent_start_turn_stream(
     project_id: String,
     mut request: agent::AgentChatRequest,
     llm_config: Option<agent::provider::LlmConfig>,
+    retrieval_scope: Option<agent::tools::AgentRetrievalScope>,
 ) -> Result<String, String> {
     let project = resolve_agent_project(&app, &project_id)?;
     if request
@@ -177,6 +183,9 @@ async fn agent_start_turn_stream(
         request.run_id = Some(format!("run_{}", Uuid::new_v4()));
     }
     let active_run_id = request.run_id.clone().unwrap_or_default();
+    let retrieval_scope = retrieval_scope
+        .map(|scope| agent::tools::validate_retrieval_scope(scope, &project.path, &active_run_id))
+        .transpose()?;
     if request.history.is_empty() && !request.history_explicit {
         request.history = app
             .state::<agent::session::AgentSessionStore>()
@@ -190,13 +199,14 @@ async fn agent_start_turn_stream(
     }
     let mut runtime_config = load_agent_runtime_config(&app);
     runtime_config.llm = llm_config.or(runtime_config.llm);
-    let runtime = agent::AgentRuntime::new(
+    let runtime = agent::AgentRuntime::new_scoped(
         project.id.clone(),
         project.path.clone(),
         runtime_config.embedding,
         runtime_config.llm,
         runtime_config.web_search,
         runtime_config.anytxt,
+        retrieval_scope,
     );
     let app_for_task = app.clone();
     let project_for_task = project.clone();

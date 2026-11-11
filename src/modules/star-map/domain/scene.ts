@@ -3,6 +3,8 @@
  * See src/modules/star-map/LICENSE.
  * Adapters keep application graph semantics independent of the reference data model.
  */
+import type { CelestialBody } from "./bodies"
+
 export interface SeaPoint {
   id: string
   title: string
@@ -12,6 +14,9 @@ export interface SeaPoint {
   weight: number
   path?: string
   createdAt?: string
+  body?: CelestialBody
+  size?: number
+  brightness?: number
 }
 export interface SeaEdge {
   source: string

@@ -180,7 +180,7 @@ export function createLintService<Config>(ports: LintPorts<Config>) {
     const existingPageNames = new Set<string>()
     for (const f of wikiFiles) {
       if (signal?.aborted) {
-      activity.updateItem(activityId, { status: "error", detail: "Semantic check cancelled" })
+      activity.updateItem(activityId, { status: "cancelled", detail: "Semantic check cancelled" })
       throw new DOMException("Semantic lint cancelled", "AbortError")
     }
       const basename = f.name.replace(/\.md$/i, "")
@@ -259,7 +259,7 @@ export function createLintService<Config>(ports: LintPorts<Config>) {
     )
 
     if (signal?.aborted) {
-      activity.updateItem(activityId, { status: "error", detail: "Semantic check cancelled" })
+      activity.updateItem(activityId, { status: "cancelled", detail: "Semantic check cancelled" })
       throw new DOMException("Semantic lint cancelled", "AbortError")
     }
     if (hadError) return []

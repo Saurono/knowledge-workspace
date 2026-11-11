@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import {
-  ChevronUp, ChevronDown, Loader2, CheckCircle2, AlertCircle,
+  ChevronUp, ChevronDown, Loader2, CheckCircle2, AlertCircle, Ban,
   FileText, Users, Lightbulb, BookOpen, GitMerge, BarChart3, HelpCircle, Layout,
   RotateCcw, X, Clock, TrendingUp, Target, Pause, Play,
   ArrowUp, ArrowDown, Trash2,
@@ -656,6 +656,7 @@ function ActivityRow({ item, onCancel }: { item: ActivityItem; onCancel?: () => 
           {item.status === "running" && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
           {item.status === "done" && <CheckCircle2 className="h-3 w-3 text-emerald-500" />}
           {item.status === "error" && <AlertCircle className="h-3 w-3 text-destructive" />}
+          {item.status === "cancelled" && <Ban className="h-3 w-3 text-muted-foreground" />}
         </div>
         <div className="min-w-0 flex-1">
           <div className="font-medium">{item.title}</div>

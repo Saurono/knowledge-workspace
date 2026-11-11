@@ -13,14 +13,14 @@ use crate::commands::search::SearchEmbeddingConfig;
 use super::cancel::AgentCancellationToken;
 use super::context::{
     build_agent_context, collapse_whitespace, intent_label, load_explicit_context_files,
-    load_project_context, trim_chars, AgentContextInput, BuiltAgentContext,
+    load_project_context, trim_chars, AgentContextInput, BuiltAgentContext, ProjectContext,
 };
 use super::events::AgentEvent;
 use super::permissions::{AgentCapability, PermissionPolicy};
 use super::provider::{AgentLlmProvider, LlmClient, LlmConfig};
 use super::router::route_query;
 use super::skills::{load_project_skills, AgentSkill};
-use super::tools::{self, AnyTxtConfig, ToolRegistry, WebSearchConfig};
+use super::tools::{self, AgentRetrievalScope, AnyTxtConfig, ToolRegistry, WebSearchConfig};
 use super::types::{
     AgentChatRequest, AgentChatResponse, AgentMode, AgentReference, AgentRetrievalMode,
     AgentSkillMode, AgentToolEvent, AgentUsage, AgentUserInputField, AgentUserInputOption,
@@ -54,6 +54,7 @@ pub struct AgentRuntime {
     llm_config: Option<LlmConfig>,
     web_search_config: Option<WebSearchConfig>,
     anytxt_config: Option<AnyTxtConfig>,
+    retrieval_scope: Option<AgentRetrievalScope>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -136,6 +137,18 @@ impl AgentRuntime {
         web_search_config: Option<WebSearchConfig>,
         anytxt_config: Option<AnyTxtConfig>,
     ) -> Self {
+        Self::new_scoped(project_id, project_path, embedding_config, llm_config, web_search_config, anytxt_config, None)
+    }
+
+    pub fn new_scoped(
+        project_id: impl Into<String>,
+        project_path: impl Into<String>,
+        embedding_config: Option<SearchEmbeddingConfig>,
+        llm_config: Option<LlmConfig>,
+        web_search_config: Option<WebSearchConfig>,
+        anytxt_config: Option<AnyTxtConfig>,
+        retrieval_scope: Option<AgentRetrievalScope>,
+    ) -> Self {
         Self {
             project_id: project_id.into(),
             project_path: project_path.into(),
@@ -143,6 +156,7 @@ impl AgentRuntime {
             llm_config,
             web_search_config,
             anytxt_config,
+            retrieval_scope,
         }
     }
 
@@ -162,10 +176,21 @@ impl AgentRuntime {
 
     pub async fn run_once_with_cancel_and_events(
         &self,
-        request: AgentChatRequest,
+        mut request: AgentChatRequest,
         cancellation: Option<AgentCancellationToken>,
         event_sink: Option<AgentEventSink>,
     ) -> Result<AgentChatResponse, String> {
+        if let Some(scope) = &self.retrieval_scope {
+            request.tools.web = false;
+            request.tools.anytxt = false;
+            request.approved_shell_commands.clear();
+            request.shell_command = None;
+            request.context_files.retain(|path| {
+                let normalized = path.trim().replace('\\', "/");
+                scope.allowed_wiki_paths.iter().any(|allowed| allowed == &normalized)
+                    || scope.allowed_raw_source_paths.iter().any(|allowed| allowed == &normalized)
+            });
+        }
         let message = request.message.trim();
         if message.is_empty() {
             return Err("message is required".to_string());
@@ -327,7 +352,7 @@ impl AgentRuntime {
                 || matches!(request.mode, AgentMode::Deep));
         let deep_research = matches!(request.mode, AgentMode::Deep)
             && (should_run_web || should_run_anytxt || should_include_sources);
-        let shell_call = if skills.is_empty() {
+        let shell_call = if self.retrieval_scope.is_some() || skills.is_empty() {
             None
         } else if let Some(command) = request
             .shell_command
@@ -1152,10 +1177,15 @@ impl AgentRuntime {
             }
         }
         let retrieval_summary = retrieval_parts.join("\n\n");
-        let project_context = project_context_for_retrieval_mode(
-            load_project_context(&self.project_path),
-            request.retrieval_mode,
-        );
+        let project_context = if self.retrieval_scope.is_some() {
+            ProjectContext {
+                overview: None,
+                schema: None,
+                agent_workspace: agent_workspace_display(Path::new(&self.project_path)),
+            }
+        } else {
+            project_context_for_retrieval_mode(load_project_context(&self.project_path), request.retrieval_mode)
+        };
         let explicit_files =
             load_explicit_context_files(&self.project_path, &request.context_files).await;
         let built_context = fit_context_to_model(
@@ -2416,6 +2446,7 @@ impl AgentRuntime {
             embedding_config: self.embedding_config.clone(),
             web_search_config: self.web_search_config.clone(),
             anytxt_config: self.anytxt_config.clone(),
+            retrieval_scope: self.retrieval_scope.clone(),
         }
     }
 

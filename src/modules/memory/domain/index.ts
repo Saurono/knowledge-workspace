@@ -2,3 +2,12 @@ export { validateMemories, removeMemoryRecord, detachMemoryDomain } from "./mode
 export type { MemoryRecord } from "./model"
 
 export * from "./access"
+export { createMemoryRecord } from "./model"
+export type { MemoryRevision, MemorySource, MemoryValidity, MemoryRelation } from "./model"
+export { migrateMemoryV1, migrateMemoriesV1 } from "./migrate"
+export type { MemoryStatus, MemoryTransition } from "./model"
+export { transitionMemory, expireDue, activeMemories, detectConflicts } from "./lifecycle"
+export { compactRevisions, stableDigest } from "./compaction"
+export type { ArchivedRevision } from "./compaction"
+export { MEMORY_CATEGORIES, DEFAULT_MEMORY_CATEGORY, isMemoryCategory, normalizeMemoryCategory } from "./category"
+export type { MemoryCategory } from "./category"

@@ -10,11 +10,11 @@ vi.mock("@/commands/fs", () => ({
 }))
 import { executeWorkspaceCommand } from "../services"
 import { loadWorkspaceData, updateWorkspaceData } from "../json-repository"
-import type { MemoryRecord } from "../snapshot"
+import { createMemoryRecord } from "@/modules/memory/domain"
 beforeEach(() => files.clear())
 describe("version-one workspace module adapters", () => {
   it("coordinates domain deletion across modules in one persisted update", async () => {
-    const memory: MemoryRecord = {
+    const memory = createMemoryRecord({
       id: "m",
       title: "M",
       content: "Keep",
@@ -23,7 +23,7 @@ describe("version-one workspace module adapters", () => {
       relatedIds: [],
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
-    }
+    })
     await executeWorkspaceCommand("/p", { type: "domain.add", tag: { id: "d", name: "Domain" } })
     await executeWorkspaceCommand("/p", { type: "memory.save", record: memory })
     await executeWorkspaceCommand("/p", {

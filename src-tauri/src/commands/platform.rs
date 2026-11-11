@@ -28,6 +28,7 @@ pub async fn platform_shell_exec(
                 embedding_config: None,
                 web_search_config: None,
                 anytxt_config: None,
+                retrieval_scope: None,
             },
         )
         .await

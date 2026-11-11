@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next"
 import { useWikiStore } from "@/stores/wiki-store"
 import { loadIngestRecords, type IngestRecords } from "@/lib/ingest-receipts"
 import { normalizePath } from "@/lib/path-utils"
+import { WikiAuthorshipView } from "./wiki-authorship-view"
 
 export function WikiProvenance({ filePath }: { filePath: string }) {
   const { t } = useTranslation()
@@ -39,6 +40,7 @@ export function WikiProvenance({ filePath }: { filePath: string }) {
     date ? new Date(date).toLocaleString() : t("workspace.unknownTime")
   return (
     <div className="space-y-1 border-b px-3 py-2 text-xs text-muted-foreground">
+      <WikiAuthorshipView authorship={page} />
       <p>
         {t("workspace.wikiCreatedAt")}: {format(page?.createdAt)}
       </p>

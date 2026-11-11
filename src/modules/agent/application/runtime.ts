@@ -1,7 +1,8 @@
-import type { AvailableAgentSkill, BackendAgentEventPayload, BackendAgentResponse } from "../domain"
+import type { AgentRetrievalScope, AvailableAgentSkill, BackendAgentEventPayload, BackendAgentResponse } from "../domain"
 export interface AgentTurnInput<Config> {
   projectId: string
   llmConfig: Config
+  retrievalScope?: AgentRetrievalScope | null
   request: { sessionId: string; runId?: string; message: string; [key: string]: unknown }
 }
 export interface AgentRunIdentity { projectId: string; sessionId: string; runId?: string }

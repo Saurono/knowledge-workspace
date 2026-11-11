@@ -623,7 +623,6 @@
           "max": "Макс.",
           "custom": "Пользовательское",
           "budgetTokens": "токенов бюджета размышления",
-
           "hint": "Управляет рассуждением в чате. Для обработки документов используется отдельная настройка ниже.",
           "ingestTitle": "Рассуждение при импорте",
           "ingestHint": "Обычно лучше выключить: импорт запрашивает структурированный вывод, а рассуждение отнимает время, не улучшая результат. Повышайте только если модель отказывается работать с выключенным рассуждением."
@@ -1178,6 +1177,8 @@
     "daysAgo": "{{count}} дн. назад"
   },
   "workspace": {
+    "loadingMemory": "Загрузка…",
+    "memoryDisplay": {"compacted":"Тексты версий v1–v{{to}} в архиве","resolveBoth":"Сохранить обе","resolveMerged":"Объединены","promote":"Сделать активной","archive":"Архивировать","supersede":"Заменить на…","supersedeTarget":"Выберите замену","candidate":"Кандидат","active":"Активна","superseded":"Заменена","expired":"Истекла","archived":"В архиве","until":"Действует до","importance":"Важность","credibility":"Достоверность","unknown":"Неизвестно","history":"История версий","audit":"Аудит состояний","access":"Область доступа","project":"Видно в проекте","role":"Видно ролям","private":"Личное","owner":"Владелец","roles":"Рабочие роли","conflicts":"Конфликты"},
     "domains": "Knowledge domains",
     "newDomain": "New domain tag",
     "add": "Add",
@@ -1191,7 +1192,16 @@
     "noMemories": "No memories in this scope. Create a memory in the memory library.",
     "title": "Title",
     "category": "Memory category",
-    "categoryHint": "Optional; use your own memory taxonomy",
+    "categoryHint": "Категории образуют гибкий словарь; выберите одну из семи категорий",
+    "categoryOption": {
+      "identity": "Идентичность",
+      "preference": "Предпочтение",
+      "fact": "Факт",
+      "decision": "Решение",
+      "procedure": "Процедура",
+      "context": "Контекст",
+      "reflection": "Рефлексия"
+    },
     "content": "Content",
     "relatedMemories": "Related memories",
     "createdAt": "Created at",
@@ -1233,6 +1243,7 @@
     "connectedVault": "Independent JSON receipts; original notes are unchanged.",
     "seaCanvas": "Interactive 3D relationship star sea",
     "canvasUnavailable": "Canvas is unavailable. Use the node selector to inspect graph data.",
+    "canvasFallback": "Эта среда не поддерживает 2D-холст. Включён режим списка.",
     "focus": "Highlight focus",
     "labels": "Labels",
     "motion": "Motion",

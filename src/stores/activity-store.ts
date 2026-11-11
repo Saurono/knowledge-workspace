@@ -7,8 +7,9 @@ export interface ActivityItem {
   sourcePath?: string
   type: "ingest" | "lint" | "query"
   title: string
-  status: "running" | "done" | "error"
+  status: "running" | "done" | "error" | "cancelled"
   detail: string
+  log?: string[]
   filesWritten: string[]
   createdAt: number
 }
@@ -16,7 +17,7 @@ export interface ActivityItem {
 interface ActivityState {
   items: ActivityItem[]
   addItem: (item: Omit<ActivityItem, "id" | "createdAt">) => string
-  updateItem: (id: string, updates: Partial<Pick<ActivityItem, "status" | "detail" | "filesWritten">>) => void
+  updateItem: (id: string, updates: Partial<Pick<ActivityItem, "status" | "detail" | "log" | "filesWritten">>) => void
   appendDetail: (id: string, text: string) => void
   clearDone: () => void
 }

@@ -12,12 +12,24 @@ import { useActivityStore } from "@/stores/activity-store"
 /** Application wiring adapts the old lint engine and activity projection to module ports. */
 const runtime = createTaskRuntime({
   isScopeCurrent: (path) => useWikiStore.getState().project?.path === path,
-  onEvent: (task) =>
-    useActivityStore.getState().updateItem(task.id, {
+  onEvent: (task) => {
+    const activity = useActivityStore.getState()
+    const current = activity.items.find((item) => item.id === task.id)
+    activity.updateItem(task.id, {
       status:
-        task.status === "running" ? "running" : task.status === "succeeded" ? "done" : "error",
+        task.status === "running"
+          ? "running"
+          : task.status === "succeeded"
+            ? "done"
+            : task.status === "cancelled"
+              ? "cancelled"
+              : "error",
       detail: task.detail || "Reading wiki pages",
-    }),
+      ...(task.detail && task.detail !== current?.detail
+        ? { log: [...(current?.log ?? []), task.detail] }
+        : {}),
+    })
+  },
   onObserverError: (error) => console.warn("Maintenance activity projection failed", error),
 })
 runtime.register(
@@ -44,6 +56,7 @@ export async function runMaintenanceCheck(
       title: "Wiki check",
       status: "running",
       detail: "Reading wiki pages",
+      log: [],
       filesWritten: [],
     })
   const result = await runtime.execute<unknown, QualityFinding[]>(

@@ -493,6 +493,6 @@ export async function executeMerge(
       const rewritten = rewriteIndexMd(currentIndex, removed)
       if (rewritten !== currentIndex) await commit.write(indexPath, rewritten)
     }
-  })
+  }, { actor: { kind: "agent", id: "local-agent-run", entrypoint: "wiki-dedup" } })
   return result
 }

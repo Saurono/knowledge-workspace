@@ -2,17 +2,30 @@ import { ServiceError } from "../domain"
 import type { AccessContext, MemoryGrant } from "@/modules/identity/domain"
 import type { MemoryRecord } from "@/modules/memory/domain"
 import type { SharedWorkspace } from "./workspace"
+export interface MemoryAccessView {
+  id: string
+  status: MemoryRecord["status"]
+  source: { kind: string; actorId?: string | null }
+  access?: MemoryRecord["access"]
+}
 export function canAccessMemory(context: AccessContext, memory: MemoryRecord, grants: MemoryGrant[], now: string, action: "read" | "write") {
+  return canAccessMemoryView(context, memory, grants, now, action)
+}
+export function canAccessMemoryView(context: AccessContext, view: MemoryAccessView, grants: MemoryGrant[], now: string, action: "read" | "write"): boolean {
   if (!context.permissions.includes(action === "read" ? "memory.read" : "memory.write")) return false
-  const access = memory.access
+  if (action === "read" && view.status !== "active") {
+    return context.actorId === context.effectiveAccountId && (view.source.actorId === context.actorId || view.access?.ownerId === context.actorId)
+  }
+  const access = view.access
   if (!access || access.visibility === "project") return true
-  if (access.visibility === "role") return !!context.workRoleId && !!access.workRoleIds?.includes(context.workRoleId)
+  if (access.visibility === "role") return !!context.workRoleId && !!access.workRoleIds?.length && access.workRoleIds.includes(context.workRoleId)
   if (context.actorId === context.effectiveAccountId && access.ownerId === context.actorId) return true
-  return grants.some(grant => grant.projectId === context.projectId && grant.memoryId === memory.id && grant.ownerId === access.ownerId && grant.accountId === context.actorId && grant.actions.includes(action) && !grant.revokedAt && Date.parse(grant.expiresAt) > Date.parse(now))
+  return grants.some(grant => grant.projectId === context.projectId && grant.memoryId === view.id && grant.ownerId === access.ownerId && grant.accountId === context.actorId && grant.actions.includes(action) && !grant.revokedAt && Date.parse(grant.expiresAt) > Date.parse(now))
 }
 export function visibleWorkspace(workspace: SharedWorkspace, context: AccessContext, grants: MemoryGrant[], now: string): SharedWorkspace {
-  const memories = workspace.memories.filter(memory => canAccessMemory(context, memory, grants, now, "read")), ids = new Set(memories.map(memory => memory.id))
-  return { version: 1, domains: workspace.domains, resourceDomains: Object.fromEntries(Object.entries(workspace.resourceDomains).filter(([path]) => path.startsWith("wiki/") ? context.permissions.includes("wiki.read") : path.startsWith("raw/") && context.permissions.includes("documents.read"))), memories: memories.map(memory => ({ ...memory, relatedIds: memory.relatedIds.filter(id => ids.has(id)) })) }
+  // Read-time filtering is not a state transition; expireDue persists expiry.
+  const memories = workspace.memories.filter(memory => canAccessMemory(context, memory, grants, now, "read")).filter(memory => !memory.validity?.until || !(Date.parse(memory.validity.until) <= Date.parse(now))), ids = new Set(memories.map(memory => memory.id))
+  return { version: 1, domains: workspace.domains, resourceDomains: Object.fromEntries(Object.entries(workspace.resourceDomains).filter(([path]) => path.startsWith("wiki/") ? context.permissions.includes("wiki.read") : path.startsWith("raw/") && context.permissions.includes("documents.read"))), memories: memories.map(memory => ({ ...memory, relatedIds: memory.relatedIds.filter(id => ids.has(id)), relations: memory.relations.filter(relation => ids.has(relation.targetId) || relation.targetId === memory.id) })) }
 }
 export function mergeAuthorizedWorkspace(current: SharedWorkspace, proposed: SharedWorkspace, context: AccessContext, grants: MemoryGrant[], now: string): SharedWorkspace {
   const visible = visibleWorkspace(current, context, grants, now), shown = new Map(visible.memories.map(memory => [memory.id, memory])), originals = new Map(current.memories.map(memory => [memory.id, memory])), incoming = new Map(proposed.memories.map(memory => [memory.id, memory]))

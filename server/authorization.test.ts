@@ -3,6 +3,7 @@ import { accountFixture } from "./testing"
 import { createAuthorizedRepository, createSharedService } from "@/modules/service-api/application"
 import type { ExecutionGateway } from "./resource-tools"
 import type { ProjectPermission } from "@/modules/identity/domain"
+import { createMemoryRecord } from "@/modules/memory/domain"
 const closers: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of closers.splice(0)) await close() })
 async function fixture(executions?: ExecutionGateway) {
@@ -78,18 +79,34 @@ describe("shared service authorization across all resource entry points", () => 
       createProject: async () => { throw new Error("unused") }, project: async () => ({ id: "p", name: "P", createdAt: "now" }),
       projects: async () => [], get: async () => ({ projectId: "p", kind: "workspace" as const, key: "default", data: { version: 1, domains: [], resourceDomains: {}, memories: [] }, revision: 1, createdAt: "now", updatedAt: "now" }),
       list: async () => [], save: async () => { throw new Error("unused") }, remove: async () => {}, events: async () => [],
+      searchWiki: async () => [],
+      governanceWorkspace: async () => null,
+      saveMemoryAtomic: async () => { throw new Error("unused") },
+      governanceSaveWorkspace: async () => { throw new Error("unused") },
+      proposals: async () => [],
+      memoryWriteReplay: async () => null,
+      memorySummaries: async () => ({ items: [], nextCursor: null }),
+      memoryGraph: async () => [],
+      archiveMemoryRevisions: async () => {},
+      saveMemoryWriteReplay: async () => {},
+      proposal: async () => null,
+      saveProposal: async (proposal: import("@/modules/service-api/domain/protocol").WriteProposal) => proposal,
     }
     const service = createSharedService(createAuthorizedRepository(backing, access, async () => [], () => "now"), { id: () => "id", now: () => "now" })
     await expect(service.list("p", "wiki", undefined, undefined, { domainIds: [], match: "any", unclassified: true })).rejects.toMatchObject({ code: "forbidden" })
   })
   it("filters private memories and hidden relations, preserves them on visible saves and requires an actual-owner grant even for admin", async () => {
     const f = await fixture(), base = (await f.json(f.root + "/workspace", "GET", undefined, f.alice.cookie)).data
-    const memory = (id: string, title: string, relatedIds: string[] = []) => ({ id, title, content: title, category: "fact", domainIds: [], relatedIds, createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z" })
+    const memory = (id: string, title: string, relatedIds: string[] = []) => createMemoryRecord({ id, title, content: title, category: "fact", domainIds: [], relatedIds, createdAt: "2026-11-01T00:00:00Z", updatedAt: "2026-11-01T00:00:00Z" })
     const privateMemory = { ...memory("private", "PRIVATE-CONTENT"), access: { visibility: "private", ownerId: f.aliceAccount.id } }
     await f.json(f.root + "/workspace", "PUT", { ...base.data, memories: [memory("public", "Public", ["private"]), privateMemory] }, f.alice.cookie, { "If-Match": `"v${base.revision}"` })
     let view = (await f.json(f.root + "/workspace", "GET", undefined, f.admin.cookie)).data
     expect(JSON.stringify(view)).not.toContain("PRIVATE-CONTENT"); expect(view.data.memories[0].relatedIds).toEqual([])
     view.data.memories[0].content = "public edit"
+    const edited = view.data.memories[0]
+    edited.version += 1
+    edited.updatedAt = new Date().toISOString()
+    edited.revisions.push({ version: edited.version, title: edited.title, content: edited.content, at: edited.updatedAt, source: edited.source })
     expect((await f.json(f.root + "/workspace", "PUT", view.data, f.admin.cookie, { "If-Match": `"v${view.revision}"` })).response.status).toBe(200)
     const preserved = (await f.json(f.root + "/workspace", "GET", undefined, f.alice.cookie)).data
     expect(preserved.data.memories.find((memory: { id: string }) => memory.id === "private").content).toBe("PRIVATE-CONTENT")
@@ -99,7 +116,11 @@ describe("shared service authorization across all resource entry points", () => 
     const grant = (await f.json(f.root + "/memories/private/grants", "POST", { accountId: f.admin.data.account.id, actions: ["read"], expiresAt: "2026-11-02T00:00:00Z" }, f.alice.cookie)).data
     view = (await f.json(f.root + "/workspace", "GET", undefined, f.admin.cookie)).data
     expect(view.data.memories).toHaveLength(2)
-    view.data.memories.find((memory: { id: string }) => memory.id === "private").content = "denied"
+    const denied = view.data.memories.find((memory: { id: string }) => memory.id === "private")
+    denied.content = "denied"
+    denied.version += 1
+    denied.updatedAt = new Date().toISOString()
+    denied.revisions.push({ version: denied.version, title: denied.title, content: denied.content, at: denied.updatedAt, source: denied.source })
     expect((await f.request(f.root + "/workspace", "PUT", view.data, f.admin.cookie, { "If-Match": `"v${view.revision}"` })).status).toBe(403)
     await f.request(f.root + "/memories/private/grants/" + grant.id, "DELETE", undefined, f.alice.cookie)
     expect(JSON.stringify((await f.json(f.root + "/workspace", "GET", undefined, f.admin.cookie)).data)).not.toContain("PRIVATE-CONTENT")
@@ -142,7 +163,7 @@ describe("shared service authorization across all resource entry points", () => 
     const selected = (await f.json(f.root + "/contexts", "POST", { workRoleId: role.id }, f.alice.cookie)).data
     const headers = { "X-KW-Context": selected.id }
     const base = (await f.json(f.root + "/workspace", "GET", undefined, f.alice.cookie, headers)).data
-    const memory = { id: "role-memory", title: "ROLE-SECRET", content: "ROLE-SECRET", category: "fact", domainIds: [], relatedIds: [], createdAt: "time", updatedAt: "time", access: { visibility: "role", ownerId: f.aliceAccount.id, workRoleIds: [role.id] } }
+    const memory = createMemoryRecord({ id: "role-memory", title: "ROLE-SECRET", content: "ROLE-SECRET", category: "fact", domainIds: [], relatedIds: [], createdAt: "time", updatedAt: "time", access: { visibility: "role", ownerId: f.aliceAccount.id, workRoleIds: [role.id] } })
     expect((await f.json(f.root + "/workspace", "PUT", { ...base.data, memories: [memory] }, f.alice.cookie, { ...headers, "If-Match": `"v${base.revision}"` })).response.status).toBe(200)
     expect(JSON.stringify((await f.json(f.root + "/workspace", "GET", undefined, f.alice.cookie)).data)).not.toContain("ROLE-SECRET")
     expect(JSON.stringify((await f.json(f.root + "/workspace", "GET", undefined, f.alice.cookie, headers)).data)).toContain("ROLE-SECRET")

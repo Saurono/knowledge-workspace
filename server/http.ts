@@ -1,4 +1,6 @@
 import { auditAction } from "./audit"
+import { removeDocumentCascade } from "./document-lifecycle"
+import { scanOrphanUploads, removeOrphanUploads, createProjectDocumentSourceLister } from "./orphan-uploads"
 import { serveWeb } from "./static"
 import { streamProjectEvents } from "./events"
 import { createServer } from "node:http"
@@ -15,8 +17,10 @@ import type { AccountAuthentication } from "./auth-http"
 import { createDocumentCheckpointRepository } from "./ingestion-checkpoints"
 import { summarizeIngestion } from "@/modules/ingestion/domain"
 import { projectPhaseReceipt } from "@/modules/obsidian/application"
-import { domainFilterFromQuery } from "@/modules/service-api/application"
-export interface ServiceOptions { repository: SqliteRepository; authentication: AccountAuthentication; executions?: ExecutionGateway; maxJsonBytes?: number; uploads?: UploadStorage; uploadRegistry?: UploadRegistry; maxUploadBytes?: number; webRoot?: string }
+import { domainFilterFromQuery, recallForContext, createExportBundle, validateExportBundle, planImport, validateSharedWorkspace } from "@/modules/service-api/application"
+import type { SharedWorkspace } from "@/modules/service-api/application"
+import type { SubmitProposalInput } from "@/modules/service-api/domain"
+export interface ServiceOptions { repository: SqliteRepository; authentication: AccountAuthentication; executions?: ExecutionGateway; maxJsonBytes?: number; uploads?: UploadStorage; uploadRegistry?: UploadRegistry; maxUploadBytes?: number; webRoot?: string; dataRoot?: string }
 export function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     let size = 0, failed = false
@@ -98,6 +102,17 @@ export function createServiceHttp(options: ServiceOptions) {
       try { id = decodeURIComponent(route[1]) } catch { throw new ServiceError("invalid_argument", "Invalid project identifier") }
       const part = route[2]
       const context = await access(id)
+      if (part === "orphans" && (method === "GET" || method === "DELETE")) {
+        requireContextPermission(context, "documents.write")
+        if (method === "DELETE" && url.searchParams.get("confirm") !== "1") throw new ServiceError("invalid_argument", "Deleting orphan uploads requires confirm=1")
+        if (!options.dataRoot) throw new ServiceError("unsupported", "Orphan upload maintenance requires a data root")
+        const scan = await scanOrphanUploads({ root: options.dataRoot, listDocumentSourceIds: createProjectDocumentSourceLister(options.repository) })
+        const orphans = scan.orphans.filter(orphan => orphan.projectId === id)
+        if (method === "GET") return send(200, { orphans, totalBytes: orphans.reduce((total, orphan) => total + orphan.bytes, 0), scannedUploads: scan.scannedUploads })
+        const result = await removeOrphanUploads({ root: options.dataRoot, orphans })
+        return send(200, { requested: orphans.length, removed: result.removed, failed: result.failed.map(({ projectId, sourceId }) => ({ projectId, sourceId, reason: "Failed to remove orphan upload" })) })
+      }
+      const actor = { kind: context.actorKind === "admin" ? "user" as const : context.actorKind, id: context.actorId, entrypoint: context.entrypoint }
       if (!part) requireContextPermission(context, "project.read")
       if (part?.startsWith("wiki")) requireContextPermission(context, method === "GET" ? "wiki.read" : "wiki.write")
       if (part?.startsWith("documents")) requireContextPermission(context, method === "GET" ? "documents.read" : "documents.write")
@@ -131,13 +146,58 @@ export function createServiceHttp(options: ServiceOptions) {
         return send(200, projected)
       }
       if (part === "memories" && method === "GET") { requireContextPermission(context, "memory.read"); return send(200, (await service.readWorkspace(id)).data) }
+      if (part === "memories" && method === "POST") {
+        requireContextPermission(context, "memory.write")
+        const body = await json()
+        if (typeof body.memoryId !== "string" || !body.memoryId || !Object.prototype.hasOwnProperty.call(body, "expectedVersion")) throw new ServiceError("invalid_argument", "Invalid memory write")
+        return send(200, await service.writeMemory(id, body.memoryId, body.input as Record<string, unknown>, { expectedVersion: body.expectedVersion as number | null, idempotencyKey: body.idempotencyKey as string | undefined }, actor))
+      }
+      if (part === "memories/expire" && method === "POST") { requireContextPermission(context, "memory.write"); return send(200, await service.expireMemories(id, options.authentication.now())) }
+      if (part === "memories/summaries" && method === "GET") { requireContextPermission(context, "memory.read"); return send(200, await service.readMemorySummaries(id, url.searchParams.get("limit"), url.searchParams.get("cursor"))) }
+      if (part === "memories/graph" && method === "GET") { requireContextPermission(context, "memory.read"); return send(200, await service.readMemoryGraph(id, url.searchParams.get("limit"))) }
+      if (part === "memories/search" && method === "POST") {
+        requireContextPermission(context, "memory.read")
+        const body = await json(), limit = body.limit ?? 20
+        if (typeof body.query !== "string" || !body.query.trim() || body.query.length > 2000 || !Number.isInteger(limit) || Number(limit) < 1 || Number(limit) > 100) throw new ServiceError("invalid_argument", "Invalid memory search")
+        const workspace = (await service.readWorkspace(id)).data as SharedWorkspace
+        const visible = new Set(workspace.memories.filter(memory => memory.status === "active" && (!memory.validity?.until || Date.parse(memory.validity.until) > Date.parse(options.authentication.now()))).map(memory => memory.id))
+        const results = (await options.repository.searchMemories({ projectId: id, query: body.query, limit: limit as number })).filter(row => visible.has(row.memoryId))
+        return send(200, { results, returned: results.length })
+      }
+      if (part === "memories/recall" && method === "POST") {
+        requireContextPermission(context, "memory.read")
+        const body = await json(), limit = body.limit ?? 5, maxChars = body.maxChars ?? 4000
+        if (!Number.isInteger(limit) || Number(limit) < 1 || Number(limit) > 50 || !Number.isInteger(maxChars) || Number(maxChars) < 100 || Number(maxChars) > 20000 || (body.taskId !== undefined && typeof body.taskId !== "string")) throw new ServiceError("invalid_argument", "Invalid recall parameters")
+        const result = recallForContext((await service.readWorkspace(id)).data as SharedWorkspace, context, await options.repository.memoryGrants.list(id), { limit: limit as number, maxChars: maxChars as number, taskId: body.taskId as string | undefined, now: options.authentication.now() })
+        return send(200, { ...result, recall: { ...result.recall, hits: result.recall.hits.map(({ memory, score, reason }) => ({ memoryId: memory.id, version: memory.version, score, reason })) } })
+      }
+      const memoryRoute = part?.match(/^memories\/([^/]+)(?:\/(promote|archive|supersede|resolve))?$/)
+      if (memoryRoute && method === "GET" && !memoryRoute[2]) {
+        requireContextPermission(context, "memory.read")
+        const workspace = await service.readWorkspace(id), memory = (workspace.data as SharedWorkspace).memories.find(item => item.id === decodeURIComponent(memoryRoute[1]))
+        if (!memory) throw new ServiceError("not_found", "Memory not found")
+        return send(200, { memory, revision: workspace.revision })
+      }
+      if (memoryRoute?.[2] && method === "POST") {
+        requireContextPermission(context, "memory.write")
+        const memoryId = decodeURIComponent(memoryRoute[1])
+        if (memoryRoute[2] === "promote") return send(200, await service.promoteMemory(id, memoryId, actor))
+        if (memoryRoute[2] === "archive") return send(200, await service.archiveMemory(id, memoryId, actor))
+        const body = await json()
+        if (memoryRoute[2] === "supersede") {
+          if (typeof body.newId !== "string" || !body.newId) throw new ServiceError("invalid_argument", "Invalid replacement memory")
+          return send(200, await service.supersedeMemory(id, memoryId, body.newId, actor))
+        }
+        if (typeof body.withId !== "string" || !body.withId || !["a-canonical", "both-intentional", "merged"].includes(body.decision as string) || (body.note !== undefined && typeof body.note !== "string")) throw new ServiceError("invalid_argument", "Invalid conflict resolution")
+        return send(200, await service.resolveConflict(id, memoryId, body.withId, body.decision as "a-canonical" | "both-intentional" | "merged", actor, body.note as string | undefined))
+      }
       if ((part === "retrieval" || part === "search") && method === "POST") { requireContextPermission(context, "wiki.read"); return send(200, await keywordSearch(service, id, await json())) }
       let executionInput: Record<string, unknown> | undefined
       if ((part === "mcp" || part === "cli") && method === "POST") {
         const body = await json()
         if (body.tool === "search") { requireContextPermission(context, "wiki.read"); return send(200, await keywordSearch(service, id, body)) }
         if (body.tool === "memory.list") requireContextPermission(context, "memory.read")
-        if (typeof body.tool === "string") return send(200, await resourceTool(service, id, body.tool, body))
+        if (typeof body.tool === "string") return send(200, await resourceTool(service, id, body.tool, body, { context }))
         if (part === "mcp") throw new ServiceError("invalid_argument", "Choose a supported resource tool")
         executionInput = body
       }
@@ -157,6 +217,105 @@ export function createServiceHttp(options: ServiceOptions) {
         return send(200, result)
       }
       if (part === "access" && method === "GET") return send(200, context)
+      if (part === "proposals" && method === "GET") { requireContextPermission(context, "wiki.read"); return send(200, await service.proposals(id)) }
+      if (part === "proposals" && method === "POST") {
+        requireContextPermission(context, "wiki.write")
+        const result = await service.submitProposal(id, await json() as unknown as SubmitProposalInput, actor)
+        return send(result.created ? 201 : 200, result)
+      }
+      if (part === "proposals/approve-batch" && method === "POST") {
+        requireContextPermission(context, "wiki.write")
+        const body = await json()
+        if ((body.ids !== undefined && (!Array.isArray(body.ids) || body.ids.some((value: unknown) => typeof value !== "string" || !value.trim()))) || (body.kind !== undefined && body.kind !== "wiki" && body.kind !== "memory") || (body.dryRun !== undefined && typeof body.dryRun !== "boolean")) throw new ServiceError("invalid_argument", "Invalid batch approval")
+        return send(200, await service.approveProposals(id, body as { ids?: string[]; kind?: "wiki" | "memory"; dryRun?: boolean }, { ...actor, via: "manual" }))
+      }
+      const proposalRoute = part?.match(/^proposals\/([^/]+)\/(approve|reject)$/)
+      if (proposalRoute && method === "POST") {
+        requireContextPermission(context, "wiki.write")
+        const proposalId = decodeURIComponent(proposalRoute[1]), decisionActor = { ...actor, via: "manual" as const }
+        if (proposalRoute[2] === "approve") return send(200, await service.approveProposal(id, proposalId, decisionActor))
+        const body = await json()
+        if (typeof body.reason !== "string" || !body.reason.trim()) throw new ServiceError("invalid_argument", "A rejection reason is required")
+        return send(200, await service.rejectProposal(id, proposalId, decisionActor, body.reason))
+      }
+      if (part === "export" && method === "GET") {
+        requireContextPermission(context, "project.read")
+        const wiki: Array<{ path: string; content: string }> = [], documents: Array<{ sourceId: string; name: string; size: number; mediaType?: string; byteRevision?: string }> = []
+        for (const kind of ["wiki", "document"] as const) {
+          if (!context.permissions.includes(kind === "wiki" ? "wiki.read" : "documents.read")) continue
+          let cursor: string | null = null
+          do {
+            const page = await service.list(id, kind, "200", cursor)
+            for (const record of page.items) {
+              const data = record.data as Record<string, unknown>
+              if (kind === "wiki") wiki.push({ path: record.key, content: data.content as string })
+              else documents.push({ sourceId: data.sourceId as string, name: data.name as string, size: data.size as number, ...(typeof data.mediaType === "string" ? { mediaType: data.mediaType } : {}), ...(typeof data.byteRevision === "string" ? { byteRevision: data.byteRevision } : {}) })
+            }
+            cursor = page.nextCursor
+          } while (cursor)
+        }
+        const bundle = createExportBundle({ projectName: (await service.project(id)).name, exportedAt: options.authentication.now(), workspace: (await service.readWorkspace(id)).data as SharedWorkspace, wiki, documents })
+        response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" }); response.end(JSON.stringify(bundle)); return
+      }
+      if (part === "import" && method === "POST") {
+        requireContextPermission(context, "project.read")
+        const dryRun = url.searchParams.get("dryRun") === "1"
+        if (!dryRun && !context.permissions.includes("memory.write") && !context.permissions.includes("domains.manage")) throw new ServiceError("forbidden", "Workspace write permission required")
+        const applied = { memories: 0, domains: 0, wikiCreated: 0, wikiUpdated: 0 }
+        try {
+          const input = await json()
+          let bundle: ReturnType<typeof validateExportBundle>
+          try { bundle = validateExportBundle(input) }
+          catch (error) {
+            if (error instanceof Error && error.message === "Workspace contains unknown references") {
+              const workspace = input.workspace as SharedWorkspace
+              const domains = new Set(workspace.domains.map(item => item.id)), memories = new Set(workspace.memories.map(item => item.id))
+              const missing = workspace.memories.flatMap(item => [...item.domainIds.filter(id => !domains.has(id)), ...item.relatedIds.filter(id => !memories.has(id))])
+              throw new ServiceError("invalid_argument", `Workspace contains unknown references: ${missing.join(", ")}`)
+            }
+            throw new ServiceError("invalid_argument", error instanceof Error ? error.message : "Invalid export bundle")
+          }
+          const wikiPaths: string[] = [], documentSourceIds: string[] = []
+          for (const kind of ["wiki", "document"] as const) {
+            let cursor: string | null = null
+            for (let pageNumber = 0; pageNumber < 50; pageNumber++) {
+              const page = await service.list(id, kind, "200", cursor)
+              for (const record of page.items) {
+                if (kind === "wiki") wikiPaths.push(record.key)
+                else documentSourceIds.push((record.data as { sourceId: string }).sourceId)
+              }
+              cursor = page.nextCursor
+              if (!cursor) break
+              if (pageNumber === 49) throw new ServiceError("too_large", "Import state exceeds 50 pages")
+            }
+          }
+          const plan = planImport(bundle, { wikiPaths, documentSourceIds })
+          if (dryRun) return send(200, { dryRun: true, plan })
+          const current = await service.readWorkspace(id), workspace = current.data as SharedWorkspace
+          const merged = { ...workspace,
+            domains: [...new Map([...workspace.domains, ...bundle.workspace.domains].map(item => [item.id, item])).values()],
+            memories: [...new Map([...workspace.memories, ...bundle.workspace.memories].map(item => [item.id, item])).values()],
+          }
+          const domainIds = new Set(merged.domains.map(item => item.id)), memoryIds = new Set(merged.memories.map(item => item.id))
+          for (const memory of merged.memories) {
+            for (const reference of memory.domainIds) if (!domainIds.has(reference)) throw new ServiceError("invalid_argument", `Unknown domain id: ${reference}`)
+            for (const reference of memory.relatedIds) if (!memoryIds.has(reference)) throw new ServiceError("invalid_argument", `Unknown memory id: ${reference}`)
+          }
+          await service.saveWorkspace(id, validateSharedWorkspace(merged), current.revision)
+          applied.memories = bundle.workspace.memories.length; applied.domains = bundle.workspace.domains.length
+          const actor = { kind: context.actorKind, id: context.actorId, entrypoint: context.entrypoint }
+          const contents = new Map(bundle.wiki.map(item => [item.path, item.content]))
+          for (const path of plan.wiki.create) { await service.saveWiki(id, path, { content: contents.get(path)! }, null, actor); applied.wikiCreated++ }
+          for (const path of plan.wiki.update) {
+            const current = await service.readWiki(id, path)
+            await service.saveWiki(id, path, { content: contents.get(path)! }, current.revision, actor); applied.wikiUpdated++
+          }
+          return send(200, { dryRun: false, applied, documents: { imported: 0, skippedReason: "document bytes are not part of the export bundle" }, plan })
+        } catch (error) {
+          const failure = error instanceof ServiceError ? error : error instanceof AuthError ? new ServiceError(error.code, error.message) : error instanceof IdentityError ? new ServiceError(error.code === "last_admin" ? "conflict" : error.code, error.message) : new ServiceError("internal", "Service request failed")
+          throw new ServiceError(failure.code, failure.message, { ...failure.details, applied })
+        }
+      }
       if (!part && method === "GET") return send(200, await service.project(id))
       if ((part === "wiki" || part === "documents") && method === "GET") {
         const page = await service.list(id, part === "wiki" ? "wiki" : "document", url.searchParams.get("limit"), url.searchParams.get("cursor"), domainFilterFromQuery(url.searchParams))
@@ -186,6 +345,16 @@ export function createServiceHttp(options: ServiceOptions) {
         const bytes = await receiver.content(id, decodeURIComponent(document[1]))
         response.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Disposition": "attachment; filename=source.bin" }); response.end(bytes); return
       }
+      const documentDelete = part?.match(/^documents\/([^/]+)$/)
+      if (documentDelete && method === "DELETE") {
+        requireContextPermission(context, "documents.write")
+        const expected = version()
+        if (expected === null) throw new ServiceError("invalid_argument", "Deletion requires an existing revision")
+        if (!options.uploads) throw new ServiceError("unsupported", "Document deletion requires uploads configuration")
+        const key = decodeURIComponent(documentDelete[1])
+        const result = await removeDocumentCascade({ repository: options.repository, uploads: options.uploads, projectId: id, key, expectedRevision: expected, now: options.authentication.now() })
+        return send(200, result)
+      }
       if (part === "events/stream" && method === "GET") {
         const after = Number(url.searchParams.get("after") ?? request.headers["last-event-id"] ?? 0)
         await service.events(id, after, 1)
@@ -196,12 +365,16 @@ export function createServiceHttp(options: ServiceOptions) {
       if (part === "wiki/page") {
         const path = url.searchParams.get("path") ?? ""
         if (method === "GET") { const value = await service.readWiki(id, path); response.setHeader("ETag", etag(value.revision)); return send(200, value) }
-        if (method === "PUT") { const expected = version(), body = await json(); const value = await service.saveWiki(id, path, body?.content, expected); response.setHeader("ETag", etag(value.revision)); return send(200, value) }
+        if (method === "PUT") { const expected = version(), body = await json(); const value = await service.saveWiki(id, path, body, expected, { kind: context.actorKind, id: context.actorId, entrypoint: context.entrypoint }); response.setHeader("ETag", etag(value.revision)); return send(200, value) }
         if (method === "DELETE") { await service.removeWiki(id, path, version()); return send(200, null) }
       }
       if (part === "workspace") {
         if (method === "PUT" && !context.permissions.includes("memory.write") && !context.permissions.includes("domains.manage")) throw new ServiceError("forbidden", "Workspace write permission required")
-        if (method === "GET") { const value = await service.readWorkspace(id); response.setHeader("ETag", etag(value.revision)); return send(200, value) }
+        if (method === "GET") {
+          const memories = url.searchParams.get("memories")
+          if (url.searchParams.getAll("memories").length > 1 || (memories !== null && memories !== "none")) throw new ServiceError("invalid_argument", "Invalid memories projection")
+          const value = await service.readWorkspace(id); response.setHeader("ETag", etag(value.revision)); return send(200, memories === "none" ? { ...value, data: { ...value.data as SharedWorkspace, memories: [] } } : value)
+        }
         if (method === "PUT") { const expected = version(), value = await service.saveWorkspace(id, await json(), expected); response.setHeader("ETag", etag(value.revision)); return send(200, value) }
       }
       if (part === "events" && method === "GET") return send(200, await service.events(id, Number(url.searchParams.get("after") ?? 0), Number(url.searchParams.get("limit") ?? 100)))

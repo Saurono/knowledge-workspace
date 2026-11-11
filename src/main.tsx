@@ -1,3 +1,5 @@
+import { setChatUsageSink } from "@/lib/chat-usage";
+import { projectChatUsageSink } from "@/app/model-usage";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
@@ -15,6 +17,7 @@ function applyPlatformClass() {
 
 // Apply theme before render to avoid flash
 async function initApp() {
+  setChatUsageSink(projectChatUsageSink);
   try {
     applyPlatformClass();
     await loadAndApplyTheme();
