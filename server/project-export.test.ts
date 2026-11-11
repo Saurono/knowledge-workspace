@@ -50,7 +50,8 @@ it("omits wiki without wiki.read while preserving other permitted data", async (
   expect(value.documents).toHaveLength(1)
   expect(value.workspace.memories).toHaveLength(2)
 })
+// 201 页那条在 Windows CI 上会超过默认 5s（写盘 + 导出分页），给足超时，别用调小页数来"通过"。
 it.each([3, 201])("exports all %i wiki pages", async count => {
   for (let i = 1; i < count; i++) await f.repository.save(id, "wiki", `wiki/${i}.md`, { path: `wiki/${i}.md`, content: "Page" }, null, "2026-11-01T00:00:00.000Z")
   expect((await bundle()).wiki).toHaveLength(count)
-})
+}, 60_000)
