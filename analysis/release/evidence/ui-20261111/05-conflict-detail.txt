@@ -1,0 +1,103 @@
+Knowledge Workspace
+
+共享知识工作区 · Web
+
+UI 验收 · admin
+身份与授权
+退出登录
+当前项目
+选择项目
+UI 验收
+创建项目
+有效身份与工作角色
+UI 验收 · 成员默认权限
+刷新身份授权
+
+真实操作者：UI 验收（admin） · 有效身份：UI 验收
+
+当前权限：project.read · wiki.read · wiki.write · documents.read · documents.write · memory.read · memory.write · domains.manage · agent.run · tasks.manage · project.settings.manage · members.manage · roles.manage
+
+切换仅使用已获授权的身份，并关闭当前编辑。已运行任务保留原上下文；实际访问仍由服务端逐次校验。
+
+Wiki
+文档
+记忆库
+星图
+知识领域
+导出项目
+导入项目
+
+事件连接：已连接
+
+清理过期记忆
+记忆库
+全部领域
+新建记忆
+上下文：本轮范围
+生效 v1
+context
+流程：先读后改
+生效 v1
+procedure
+偏好：先给结论
+生效 v1
+preference
+构建时间 5 分钟
+生效 v1
+fact
+构建时间 30 秒
+生效 v1
+fact
+星图：核心结论
+生效 v1
+decision
+星图：卫星
+生效 v1
+fact
+星图：行星
+生效 v1
+fact
+归档
+选择替代目标
+上下文：本轮范围
+流程：先读后改
+偏好：先给结论
+构建时间 5 分钟
+星图：核心结论
+星图：卫星
+星图：行星
+替代为…
+版本历史
+v1 / 2026-11-11T08:59:58.517Z / user
+状态审计
+授权范围
+
+项目内可见
+
+冲突
+conflict-b / 构建时间 5 分钟
+标题
+记忆分类
+身份
+偏好
+事实
+决定
+步骤
+上下文
+反思
+内容
+知识领域
+关联记忆
+上下文：本轮范围
+流程：先读后改
+偏好：先给结论
+构建时间 5 分钟
+星图：核心结论
+星图：卫星
+星图：行星
+
+建立时间: 2026/11/11 16:59:58
+
+保存
+删除
+Web 使用服务端资源；本机 Shell、文件监听和 Obsidian Vault 需本机连接器。
