@@ -1,0 +1,283 @@
+[
+  {
+    "id": "cli:wiki.list",
+    "kind": "cli-tool",
+    "name": "wiki.list",
+    "permission": "wiki.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "src/modules/cli/application/remote.ts:createRemoteCli"
+  },
+  {
+    "id": "cli:wiki.read",
+    "kind": "cli-tool",
+    "name": "wiki.read",
+    "permission": "wiki.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "src/modules/cli/application/remote.ts:createRemoteCli"
+  },
+  {
+    "id": "cli:wiki.write",
+    "kind": "cli-tool",
+    "name": "wiki.write",
+    "permission": "wiki.write",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "src/modules/cli/application/remote.ts:createRemoteCli"
+  },
+  {
+    "id": "cli:documents.list",
+    "kind": "cli-tool",
+    "name": "documents.list",
+    "permission": "documents.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "src/modules/cli/application/remote.ts:createRemoteCli"
+  },
+  {
+    "id": "cli:memory.list",
+    "kind": "cli-tool",
+    "name": "memory.list",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "src/modules/cli/application/remote.ts:createRemoteCli"
+  },
+  {
+    "id": "cli:memory.summaries",
+    "kind": "cli-tool",
+    "name": "memory.summaries",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "src/modules/cli/application/remote.ts:createRemoteCli"
+  },
+  {
+    "id": "cli:memory.graph",
+    "kind": "cli-tool",
+    "name": "memory.graph",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "src/modules/cli/application/remote.ts:createRemoteCli"
+  },
+  {
+    "id": "cli:search",
+    "kind": "cli-tool",
+    "name": "search",
+    "permission": "wiki.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "src/modules/cli/application/remote.ts:createRemoteCli"
+  },
+  {
+    "id": "cli:proposal.submit",
+    "kind": "cli-tool",
+    "name": "proposal.submit",
+    "permission": "wiki.write",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "src/modules/cli/application/remote.ts:createRemoteCli"
+  },
+  {
+    "id": "cli:proposal.list",
+    "kind": "cli-tool",
+    "name": "proposal.list",
+    "permission": "wiki.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "src/modules/cli/application/remote.ts:createRemoteCli"
+  },
+  {
+    "id": "cli:context.switch",
+    "kind": "cli-special",
+    "name": "context.switch",
+    "method": "POST",
+    "path": "/api/v1/projects/:id/contexts",
+    "permission": "已认证主体；contexts.switch 校验身份选择与项目范围",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "server/auth-http.ts:84"
+  },
+  {
+    "id": "mcp:kw_wiki_list",
+    "kind": "mcp-tool",
+    "name": "kw_wiki_list",
+    "operation": "wiki.list",
+    "permission": "wiki.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "mcp:kw_wiki_read",
+    "kind": "mcp-tool",
+    "name": "kw_wiki_read",
+    "operation": "wiki.read",
+    "permission": "wiki.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "mcp:kw_wiki_write",
+    "kind": "mcp-tool",
+    "name": "kw_wiki_write",
+    "operation": "wiki.write",
+    "permission": "wiki.write",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "mcp:kw_documents",
+    "kind": "mcp-tool",
+    "name": "kw_documents",
+    "operation": "documents.list",
+    "permission": "documents.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "mcp:kw_memories",
+    "kind": "mcp-tool",
+    "name": "kw_memories",
+    "operation": "memory.list",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "mcp:kw_memory_summaries",
+    "kind": "mcp-tool",
+    "name": "kw_memory_summaries",
+    "operation": "memory.summaries",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "mcp:kw_memory_graph",
+    "kind": "mcp-tool",
+    "name": "kw_memory_graph",
+    "operation": "memory.graph",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "mcp:kw_search",
+    "kind": "mcp-tool",
+    "name": "kw_search",
+    "operation": "search",
+    "permission": "wiki.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "mcp:kw_proposal_submit",
+    "kind": "mcp-tool",
+    "name": "kw_proposal_submit",
+    "operation": "proposal.submit",
+    "permission": "wiki.write",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "mcp:kw_proposal_list",
+    "kind": "mcp-tool",
+    "name": "kw_proposal_list",
+    "operation": "proposal.list",
+    "permission": "wiki.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "mcp:kw_switch_context",
+    "kind": "mcp-tool",
+    "name": "kw_switch_context",
+    "operation": "context.switch",
+    "permission": "已认证主体；contexts.switch 校验身份选择与项目范围",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
+    "id": "route:cli",
+    "kind": "route",
+    "method": "POST",
+    "path": "/api/v1/projects/:id/cli",
+    "permission": "按 tool 分流；资源权限同对应操作；无 tool 时 agent.run",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "server/http.ts:196"
+  },
+  {
+    "id": "route:mcp",
+    "kind": "route",
+    "method": "POST",
+    "path": "/api/v1/projects/:id/mcp",
+    "permission": "按 tool 分流；资源权限同对应操作",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "server/http.ts:196"
+  },
+  {
+    "id": "route:contexts",
+    "kind": "route",
+    "method": "POST",
+    "path": "/api/v1/projects/:id/contexts",
+    "permission": "已认证主体；contexts.switch 校验身份选择与项目范围",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "server/auth-http.ts:84"
+  },
+  {
+    "id": "route:memories/summaries",
+    "kind": "route",
+    "method": "GET",
+    "path": "/api/v1/projects/:id/memories/summaries",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "server/http.ts:156"
+  },
+  {
+    "id": "route:memories/graph",
+    "kind": "route",
+    "method": "GET",
+    "path": "/api/v1/projects/:id/memories/graph",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "server/http.ts:157"
+  },
+  {
+    "id": "route:proposals",
+    "kind": "route",
+    "method": "GET|POST",
+    "path": "/api/v1/projects/:id/proposals",
+    "permission": "GET: wiki.read；POST: wiki.write",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "server/http.ts:220"
+  },
+  {
+    "id": "route:proposals/:proposalId/approve",
+    "kind": "route",
+    "method": "POST",
+    "path": "/api/v1/projects/:id/proposals/:proposalId/approve",
+    "permission": "wiki.write",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "server/http.ts:232"
+  }
+]
