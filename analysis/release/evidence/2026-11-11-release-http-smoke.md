@@ -24,7 +24,11 @@ ok orphan detected
 ok delete orphans without confirm -> 400
 ok delete orphans with confirm -> 200
 ok orphan removed
-SMOKE_OK project=7ea48ecd-d3a3-481b-9ab0-1b0eeb83fdfc
+ok upload document -> 201
+ok delete document without If-Match -> 428
+ok delete document with If-Match -> 200
+ok document byte + record removed
+SMOKE_OK project=1c31b7f5-5fdf-487c-b0cc-d9f55dc113bd
 SMOKE_EXIT=0
 ```
 
@@ -34,6 +38,7 @@ SMOKE_EXIT=0
 - `POST /projects/:id/import?dryRun=1` 与真导入都 200，真导入报 `{memories:1, domains:0, wikiCreated:0, wikiUpdated:1}`（同一个包再导一次覆盖而不新建）；
 - **再导一次不会把记忆变成两条**（`memory.summaries` 里 `m1` 仍只 1 条）；
 - 孤儿上传：磁盘上造一个没有文档记录的 `uploads/<projectId>/<sourceId>/blob.bin`，扫描能发现；**不带 `confirm=1` 删除返回 400**；带 `confirm=1` 删除返回 200 且文件真的没了。
+- 文档生命周期：`POST /projects/:id/documents`（`X-File-Name` 头 + 原始字节）→ **201**，返回资源记录 `key` 就是 documentId；`DELETE /projects/:id/documents/<id>` **不带 `If-Match` 返回 428**（不是 400），带 `If-Match: "v<revision>"` 返回 200，之后文档列表里不再有它。
 
 **它没证明什么**：
 
