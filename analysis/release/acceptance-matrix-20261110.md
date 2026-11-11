@@ -32,7 +32,7 @@
 | CI 三平台 | [工作流](../../.github/workflows/ci.yml) | 自动测试 | 绿 | 提交 `fb0852e` 的 [run 42970068338](https://github.com/Saurono/knowledge-workspace/actions/runs/42970068338)：`check (ubuntu-22.04)`、`check (macos-latest)`、`check (windows-latest)` 全部 success；含类型/构建/服务子集测试/CLI-MCP 冒烟/Rust `cargo build`+`cargo test --lib`。 |
 | 模块审计快照一致性 | [model-gateway README](../../src/modules/model-gateway/README.md)、[审计脚本](../../scripts/audit-modules.mjs)、[JSON 快照](../architecture/module-audit-v1.json)、[审计报告](../architecture/module-boundary-audit.md)；`node scripts/audit-modules.mjs --check` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑：Module audit passed (19 modules, 544 production source files)，EXIT 0；快照已在本轮重生成并随提交落库。 |
 | Tauri 桌面构建 | [桌面目录](../../src-tauri)、[构建脚本](../../package.json) | 未验证 | 红 | 本机缺 MSVC Build Tools（`link.exe returned an unexpected error`），本地 `tauri build` 未跑。**但 CI 三平台已绿**：run 42970068338 里 `cargo build`、`cargo test --lib`、`cargo build --features custom-protocol` 全过（含 Windows）。差别是 CI 不是本机、也没打安装包。 |
-| 安装包 | [桌面目录](../../src-tauri) | 未验证 | 未做 | 未产出；缺安装包文件、安装与启动验收。 |
+| 安装包 | [桌面目录](../../src-tauri)、[CI 产物证据](evidence/2026-11-11-windows-installer.md) | 手工（产物产出，未安装） | 未做 | 部分：CI run [42971789528](https://github.com/Saurono/knowledge-workspace/actions/runs/42971789528) 已产出 MSI / NSIS / portable zip（0.6.13，未签名，SHA256 见证据文件）；**未安装、未启动、未验数据目录与端口**。 |
 | 摘要模式冲突块 | [手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 手册明确摘要模式没有冲突块。 |
 | 网页星图/审批页 | [星图组件](../../src/web/memory-graph-view.tsx)、[网页接线](../../src/web/workspace.tsx)、[手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 星图已接入网页 graph 标签并检查 memory.read；未验证（没有浏览器交互验证）。审批页仍缺本轮页面验收证据。 |
 | 全入口 Agent 强制审批 | [手册](../operations/handbook-20261110.md) | 未验证 | 未做 | 缺统一禁止 Agent 直写/自批的角色拦截及全入口验收。 |
