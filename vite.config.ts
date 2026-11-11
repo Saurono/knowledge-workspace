@@ -55,6 +55,10 @@ export default defineConfig(async ({ mode }) => ({
   test: {
     environment: "node",
     exclude: ["**/node_modules/**", "**/.git/**", "**/mcp-server/**", "**/dist/**"],
+    // 默认 5s 在 CI runner 上不够：server 测试大量走真实 HTTP + SQLite，
+    // Windows runner 上写 200 条、登录限流这类用例会超 5s（不是挂死，是机器慢）。
+    // 断言语义不变，只是给足执行时间。
+    testTimeout: 20_000,
     // Loads .env.test.local into process.env for real-LLM tests.
     // The loader itself is a no-op if the file is absent, so this is
     // safe to keep on for every test run.
