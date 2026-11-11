@@ -1,6 +1,6 @@
 export interface SharedCliTransport { request(path: string, body: Record<string, unknown>, contextId?: string): Promise<unknown> }
 /** CLI 与共享 MCP 共用的操作白名单；单一来源，测试从这里取清单。 */
-export const SHARED_CLI_TOOLS = ["wiki.list", "wiki.read", "wiki.write", "documents.list", "memory.list", "memory.summaries", "memory.graph", "search", "proposal.submit", "proposal.list"] as const
+export const SHARED_CLI_TOOLS = ["wiki.list", "wiki.read", "wiki.write", "documents.list", "memory.list", "memory.summaries", "memory.graph", "memory.conflicts", "search", "proposal.submit", "proposal.list"] as const
 /** Remote CLI/MCP share the same guarded resource API; caller arguments never become an identity. */
 export function createRemoteCli(transport: SharedCliTransport) {
   return {

@@ -7,7 +7,7 @@ test("shared tools expose read-only memory summaries and graph", () => {
   assert.equal(SHARED_TOOL_OPERATIONS.kw_memory_graph, "memory.graph")
 })
 
-test("shared tools expose all eleven mappings", () => {
+test("shared tools expose all twelve mappings", () => {
   assert.equal(SHARED_TOOL_OPERATIONS.kw_wiki_list, "wiki.list")
   assert.equal(SHARED_TOOL_OPERATIONS.kw_wiki_read, "wiki.read")
   assert.equal(SHARED_TOOL_OPERATIONS.kw_wiki_write, "wiki.write")
@@ -19,7 +19,8 @@ test("shared tools expose all eleven mappings", () => {
   assert.equal(SHARED_TOOL_OPERATIONS.kw_memory_graph, "memory.graph")
   assert.equal(SHARED_TOOL_OPERATIONS.kw_proposal_submit, "proposal.submit")
   assert.equal(SHARED_TOOL_OPERATIONS.kw_proposal_list, "proposal.list")
-  assert.equal(Object.keys(SHARED_TOOL_OPERATIONS).length, 11)
+  assert.equal(SHARED_TOOL_OPERATIONS.kw_memory_conflicts, "memory.conflicts")
+  assert.equal(Object.keys(SHARED_TOOL_OPERATIONS).length, 12)
 })
 
 test("shared tool names are unique and use the kw_ prefix", () => {

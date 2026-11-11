@@ -1,6 +1,7 @@
 import { ServiceError } from "@/modules/service-api/domain"
 import type { SubmitProposalInput } from "@/modules/service-api/domain"
 import { requireContextPermission } from "@/modules/identity/domain"
+import { detectConflicts, migrateMemoriesV1 } from "@/modules/memory/domain"
 import type { AccessContext, ProjectPermission } from "@/modules/identity/domain"
 import { createSharedService, domainFilterFromInput } from "@/modules/service-api/application"
 import type { SharedRepository, SharedWorkspace } from "@/modules/service-api/application"
@@ -21,6 +22,13 @@ export async function resourceTool(service: ReturnType<typeof createSharedServic
   if (tool === "memory.list") return (await service.readWorkspace(project)).data as SharedWorkspace
   if (tool === "memory.summaries") { requireContextPermission(access.context, "memory.read"); return service.readMemorySummaries(project, input.limit as string, input.cursor as string) }
   if (tool === "memory.graph") { requireContextPermission(access.context, "memory.read"); return service.readMemoryGraph(project, input.limit as string) }
+  if (tool === "memory.conflicts") {
+    requireContextPermission(access.context, "memory.read")
+    const limit = input.limit === undefined ? 200 : Number(input.limit)
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new ServiceError("invalid_argument", "limit must be 1–1000")
+    const workspace = (await service.readWorkspace(project)).data as SharedWorkspace
+    return { items: detectConflicts(migrateMemoriesV1(workspace.memories)).slice(0, limit) }
+  }
   if (tool === "proposal.submit") {
     requireContextPermission(access.context, "wiki.write")
     if (Object.keys(input).some(key => !["tool", "target", "idempotencyKey", "evidence"].includes(key))) throw new ServiceError("invalid_argument", "Unexpected field")

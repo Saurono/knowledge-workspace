@@ -63,6 +63,15 @@
     "source": "src/modules/cli/application/remote.ts:createRemoteCli"
   },
   {
+    "id": "cli:memory.conflicts",
+    "kind": "cli-tool",
+    "name": "memory.conflicts",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "server/resource-tools.ts"
+  },
+  {
     "id": "cli:search",
     "kind": "cli-tool",
     "name": "search",
@@ -171,6 +180,16 @@
     "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
   },
   {
+    "id": "mcp:kw_memory_conflicts",
+    "kind": "mcp-tool",
+    "name": "kw_memory_conflicts",
+    "operation": "memory.conflicts",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "mcp-server/src/shared-tools.ts:SHARED_TOOL_OPERATIONS"
+  },
+  {
     "id": "mcp:kw_search",
     "kind": "mcp-tool",
     "name": "kw_search",
@@ -259,6 +278,16 @@
     "version": "v1",
     "since": "2026-11-11",
     "source": "server/http.ts:157"
+  },
+  {
+    "id": "route:memories/conflicts",
+    "kind": "route",
+    "method": "GET",
+    "path": "/api/v1/projects/:id/memories/conflicts",
+    "permission": "memory.read",
+    "version": "v1",
+    "since": "2026-11-11",
+    "source": "server/http.ts:159"
   },
   {
     "id": "route:proposals",

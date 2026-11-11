@@ -158,7 +158,7 @@
         },
         {
           "path": "domain/index.ts",
-          "productionImporters": 10
+          "productionImporters": 11
         },
         {
           "path": "application/index.ts",

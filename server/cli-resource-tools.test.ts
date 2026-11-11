@@ -57,6 +57,27 @@ it("rejects unsupported CLI memory tools", async () => {
   expect(result.error.code).toBe("unsupported")
 })
 
+it("reads memory conflicts through CLI", async () => {
+  const f = await fixture()
+  const result = await f.post({ tool: "memory.conflicts" })
+  expect(result.response.status).toBe(200)
+  expect(Array.isArray(result.data.items)).toBe(true)
+})
+
+it("rejects invalid CLI memory conflict limits", async () => {
+  const f = await fixture()
+  const result = await f.post({ tool: "memory.conflicts", limit: "0" })
+  expect(result.response.status).toBe(400)
+  expect(result.error.code).toBe("invalid_argument")
+})
+
+it("requires memory.read for CLI memory conflicts", async () => {
+  const f = await fixture(["project.read", "wiki.read"])
+  const result = await f.post({ tool: "memory.conflicts" })
+  expect(result.response.status).toBe(403)
+  expect(result.error.code).toBe("forbidden")
+})
+
 it("uses service validation for invalid CLI memory limits", async () => {
   const f = await fixture()
   for (const tool of ["memory.summaries", "memory.graph"]) {
