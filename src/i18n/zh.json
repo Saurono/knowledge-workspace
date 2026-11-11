@@ -1248,7 +1248,7 @@
     "labels": "标签",
     "motion": "动态效果",
     "resetView": "复位",
-    "seaHint": "左键拖动旋转 · 滚轮缩放 · 右键或 Shift 拖动平移 · 点击星点查看详情",
+    "seaHint": "左键拖动旋转 · Ctrl/⌘+滚轮缩放 · 右键或 Shift 拖动平移 · 点击星点查看详情",
     "seaSubtitle": "让知识与记忆的联系可见",
     "backToSea": "返回星海",
     "graphAnalysis": "图谱分析",

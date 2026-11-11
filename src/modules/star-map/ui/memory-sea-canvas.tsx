@@ -387,6 +387,9 @@ export function MemorySeaCanvas({ points, edges, selected, onSelect }: Props) {
       }
     }
     const wheel = (event: WheelEvent) => {
+      // 只有按住 Ctrl/⌘ 才缩放；否则让页面正常滚动，
+      // 不然画布盖满视口时滚轮被吃掉，用户退不回上面的标签栏。
+      if (!event.ctrlKey && !event.metaKey) return
       event.preventDefault()
       camera.current.distance = Math.min(
         3200,
