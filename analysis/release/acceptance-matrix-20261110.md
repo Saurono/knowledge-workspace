@@ -2,7 +2,7 @@
 
 最后核对：2026-11-11 13:43
 
-统计：绿 21 行 / 未验证 24 行 / 未做 24 行（仅计矩阵数据行，分类不互斥）。
+统计：绿 30 行 / 未验证 15 行 / 未做 15 行（仅计矩阵数据行，分类不互斥）。
 
 **怎么用这张表**：发布前逐行核对证据与当前候选版本，任何“未验证”不得当成绿。绿仅限注明的验证口径；已有记录不等于本轮重跑。固定状态列使用绿 / 红 / 未做，“部分”写入备注。本轮（11-11 下午）运行了类型检查、全量 mock 测试、模块边界与模块审计；不运行构建、基准或真实模型。工作区原有大量修改，状态检查应比较增量，不能要求整个工作区只剩本文件。
 
@@ -13,17 +13,17 @@
 | 模块边界 | [检查器](../../scripts/check-module-boundaries.mjs)；`node scripts/check-module-boundaries.mjs` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑：Module boundaries passed (19 modules)，EXIT 0。 |
 | 检索基线 | [报告](../evaluation/retrieval-baseline-20261110.md)、[评估器](../../scripts/eval-retrieval.mjs)；`node scripts/eval-retrieval.mjs` | 自动测试 | 绿 | recall@5 与 citationHitRate 均为 0.9714285714285714；越权返回 0。仅 mock 索引契约层。 |
 | 读路径基准 | [M10 报告](../evaluation/m10-read-path-20261110.md) | 自动测试 | 绿 | 1000 条 p50/p95 ms：A 22.9/27.6，B 29.8/33.5，C 3.6/4.0，D 并发组 A 111.6/190.1、C 17.5/29.4。D 为进程内同步调用；本轮未跑基准。 |
-| 私有/角色记忆可见性 | [测试](../../server/memory-summaries-auth.test.ts) | 未验证 | 未做 | 已有自动测试源码；本轮未运行，缺候选版本通过日志。 |
-| 记忆原子写并发 | [原子测试](../../server/memory-atomic.test.ts)、[规模测试](../../server/memory-scale-bench.test.ts) | 未验证 | 未做 | 源码覆盖不同记忆并发与同记忆版本竞争；缺本轮通过日志，不跑规模基准。 |
-| HTTP 并发 | [路由测试](../../server/memory-routes.test.ts) | 未验证 | 未做 | 新查：断言不同记忆 [200,200]、同记忆 [200,409]；缺本轮执行结果。 |
-| relations 不漏隐藏 id | [workspace-authorization.test.ts](../../src/modules/service-api/application/workspace-authorization.test.ts)：`filters hidden relations alongside relatedIds and preserves self references`；[memory-graph.test.ts](../../server/memory-graph.test.ts)：`removes private nodes and relations to them` | 未验证 | 未做 | 已核对直接断言：隐藏 B 后 relations 仅保留 C 与自身 A，原始数组保持 3 条；图测试也裁掉私有节点关系。缺候选版本测试通过日志。 |
-| 记忆更新 409 修复 | [memory-update-metadata.test.ts](../../server/memory-update-metadata.test.ts)：`updates metadata over HTTP, skips equivalent writes and rejects stale versions` | 未验证 | 未做 | 已有回归断言：元数据更新返回 200、版本递增；等价写不增版本；旧版本仍返回 409。未验证：本轮未运行，缺通过日志。 |
-| GET /memories/summaries | [memory-summaries-route.test.ts](../../server/memory-summaries-route.test.ts)：`routes memory summaries with pagination, defaults, validation and permission checks` | 未验证 | 未做 | 项目路径下接口已有分页、默认值、非法参数及 403 断言；未验证：缺本轮通过日志。 |
-| GET /memories/graph | [memory-graph-route.test.ts](../../server/memory-graph-route.test.ts)：`routes graph before memory IDs, validates limits, orders nodes and checks permissions` | 未验证 | 未做 | 项目路径下接口已有路由优先级、数量限制、排序及权限断言；未验证：缺本轮通过日志。 |
+| 私有/角色记忆可见性 | [测试](../../server/memory-summaries-auth.test.ts) | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑 `memory-summaries-auth.test.ts` 通过；同批 9 文件 / 75 用例全绿。 |
+| 记忆原子写并发 | [原子测试](../../server/memory-atomic.test.ts)、[规模测试](../../server/memory-scale-bench.test.ts) | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑 `memory-atomic.test.ts` 通过（同批 9 文件 / 75 用例）；**规模基准 `memory-scale-bench.test.ts` 仍按 `KW_BENCH` 门控跳过**，未重跑。 |
+| HTTP 并发 | [路由测试](../../server/memory-routes.test.ts) | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑 `memory-routes.test.ts` 通过（不同记忆 [200,200]、同记忆 [200,409] 均按断言成立，同批 9 文件 / 75 用例）。 |
+| relations 不漏隐藏 id | [workspace-authorization.test.ts](../../src/modules/service-api/application/workspace-authorization.test.ts)：`filters hidden relations alongside relatedIds and preserves self references`；[memory-graph.test.ts](../../server/memory-graph.test.ts)：`removes private nodes and relations to them` | 自动测试 | 绿 | 断言已在源码里核对（隐藏 B 后 relations 只剩 C 与自身 A，原始数组仍 3 条；图测试裁私有节点关系）；本轮（11-11 下午）`workspace-authorization.test.ts` 实跑通过（同批 9 文件 / 75 用例）。 |
+| 记忆更新 409 修复 | [memory-update-metadata.test.ts](../../server/memory-update-metadata.test.ts)：`updates metadata over HTTP, skips equivalent writes and rejects stale versions` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑通过：元数据更新 200 且版本递增、等价写不增版本、旧版本仍 409（同批 9 文件 / 75 用例）。 |
+| GET /memories/summaries | [memory-summaries-route.test.ts](../../server/memory-summaries-route.test.ts)：`routes memory summaries with pagination, defaults, validation and permission checks` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑通过：分页、默认值、非法参数、403 均按断言成立（同批 9 文件 / 75 用例）。 |
+| GET /memories/graph | [memory-graph-route.test.ts](../../server/memory-graph-route.test.ts)：`routes graph before memory IDs, validates limits, orders nodes and checks permissions` | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑通过：路由优先级、limit 校验、排序、权限均按断言成立（同批 9 文件 / 75 用例）。 |
 | GET /workspace?memories=none | [workspace-projection.test.ts](../../server/workspace-projection.test.ts)、[冒烟证据](evidence/2026-11-11-release-http-smoke.md) | 手工（真实服务） | 绿 | 本轮（11-11 下午）真实服务：`memories` 为空、`revision` 与完整 GET 相同（元数据真实）、非法投影 `memories=all` 返回 **400**；单测另有"隐藏 ID 不泄露"断言。 |
 | 提案批量批准 HTTP | [路由](../../server/http.ts)、[测试](../../server/proposal-batch.test.ts)、[冒烟证据](evidence/2026-11-11-release-http-smoke.md) | 手工（真实服务） | 绿 | 本轮（11-11 下午）真实服务：两条提案 dryRun 能列出 eligible、真批 approved 两条、批准后 `memory.summaries` 里出现两条；**按 ids 再批一次逐条报 `not_pending`**（不带 ids 时 `failed` 恒为空，是既有语义）。 |
-| 重启恢复 running/report/ingest 为 queued | [队列测试](../../src/modules/tasks/application/task-queue.test.ts) | 未验证 | 未做 | 新查：存在 interrupted records 恢复测试；进程内模拟，缺本轮执行日志。 |
-| 并发上限、同域串行、取消、重试 | [调度测试](../../src/modules/tasks/application/scheduler.test.ts) | 未验证 | 未做 | 新查：具备上述用例；进程内验证，缺本轮通过日志。 |
+| 重启恢复 running/report/ingest 为 queued | [队列测试](../../src/modules/tasks/application/task-queue.test.ts) | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑 `task-queue.test.ts` 通过：被中断记录恢复为 queued 且计数正确；进程内模拟，不代表跨进程恢复。 |
+| 并发上限、同域串行、取消、重试 | [调度测试](../../src/modules/tasks/application/scheduler.test.ts) | 自动测试 | 绿 | 本轮（11-11 下午）主控实跑 `scheduler.test.ts` 通过：并发上限、同域串行、取消让位、重试新开任务均按断言成立。 |
 | 任务恢复接真实入库执行器 | [队列](../../src/modules/tasks/application/task-queue.test.ts)、[调度器](../../src/modules/tasks/application/scheduler.test.ts) | 未验证 | 未做 | 未验证（缺端到端接线）；两套进程内测试不能证明真实入库执行器恢复。 |
 | real-llm 套件 | [脚本](../../package.json)、[模型测试](../../src/lib/llm-client.real-llm.test.ts)、[嵌入测试](../../src/lib/embedding.real-llm.test.ts)；`npm run test:llm` | 未验证 | 未做 | 有入口但本轮未运行，未确认真实凭据可用。嵌入测试需 RUN_LLM_TESTS=1、EMBEDDING_ENDPOINT、EMBEDDING_MODEL，按服务提供 EMBEDDING_API_KEY；缺真实模型通过日志，跳过不算通过。 |
 | 本地小模型接入 | [缺口记录](../implementation/project-gaps-20261110.md)、[任务清单](../../TASKS.md) | 未验证 | 未做 | 没有实现；缺接入实现及实机验收。 |
@@ -55,7 +55,7 @@
 | 孤儿上传扫描/清理 HTTP | [路由](../../server/http.ts)、[测试](../../server/orphan-uploads-route.test.ts)、[冒烟证据](evidence/2026-11-11-release-http-smoke.md) | 手工（真实服务） | 绿 | 本轮（11-11 下午）真实服务：磁盘造孤儿 → 扫描发现 → 不带 `confirm=1` 删除 400 → 带 `confirm=1` 删除 200 且文件消失。 |
 | 文档上传与级联删除 HTTP | [路由](../../server/http.ts)、[测试](../../server/document-lifecycle.test.ts)、[冒烟证据](evidence/2026-11-11-release-http-smoke.md) | 手工（真实服务） | 绿 | 本轮（11-11 下午）真实服务：上传 201（`X-File-Name` + 原始字节）→ 无 `If-Match` 删除 **428** → 带 `If-Match` 删除 200，字节与记录一起消失。 |
 
-统计口径：仅计矩阵数据行，绿 21 行、验证方式含“未验证”24 行、状态“未做”24 行；三者不是互斥分类。已有测试源码与修复脚本不等于本轮执行通过；其他数字引用已有报告。
+统计口径：仅计矩阵数据行，绿 30 行、验证方式含“未验证”15 行、状态“未做”15 行；三者不是互斥分类。已有测试源码与修复脚本不等于本轮执行通过；其他数字引用已有报告。
 
 ## 本轮（11-11）新证据
 
@@ -77,3 +77,5 @@
 - `vitest run server/cli-resource-tools.test.ts` → 5 passed；`vitest run server/cli-proposal-tools.test.ts` → 8 passed（同一轮定向跑过）。
 - `mcp-server`：`tsc -p tsconfig.json` EXIT 0；`node --test dist/test/version.test.js dist/test/shared-tools.test.js` → 8 pass / 0 fail。
 - 真实服务冒烟：`node scripts/build-service.mjs` EXIT 0 后起 `dist-service/server.mjs`，用 Agent Token 走 `/cli` 全链（summaries / graph / proposal.submit / proposal.list / 批准），**SMOKE_EXIT=0**；记录见 [证据](evidence/2026-11-11-shared-cli-smoke.md)。
+- 发布面 HTTP 冒烟：同一份真实服务脚本覆盖导出 / 导入 / 孤儿清理 / 文档级联删除 / 轻量 workspace / 批量批准，**SMOKE_EXIT=0**；记录见 [证据](evidence/2026-11-11-release-http-smoke.md)。
+- 旧「未验证」批量补跑（11-11 15:18）：`memory-summaries-auth`、`memory-atomic`、`memory-routes`、`workspace-authorization`、`memory-update-metadata`、`memory-summaries-route`、`memory-graph-route`、`task-queue`、`scheduler` —— **9 文件 / 75 用例全过，EXIT 0**；对应 9 行据此翻绿（规模基准仍按 `KW_BENCH` 门控跳过）。
